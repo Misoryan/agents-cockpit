@@ -131,6 +131,7 @@ button:disabled{opacity:.45}
     <button class="tab active" data-tab="new">➕ 新建</button>
     <button class="tab" data-tab="run">⚡ 运行中<span id="runcnt"></span></button>
     <button class="tab" data-tab="his">🕑 历史</button>
+    <button class="tab" data-tab="cc">📊 用量</button>
   </div>
 </header>
 <div class="notifybar" id="notifybar">
@@ -170,6 +171,13 @@ button:disabled{opacity:.45}
     <input class="search" id="hisearch" placeholder="🔍 搜索历史会话(标题/目录)…">
     <div style="font-size:11px;color:#8b91a0;margin:2px 2px 6px">按目录分组,点目录展开其下的会话</div>
     <div id="hilist"></div>
+  </main>
+</div>
+
+<div class="page" id="p-cc">
+  <main>
+    <div style="font-size:11px;color:#8b91a0;margin:4px 2px 6px">来自本地 CC Switch (~/.cc-switch/cc-switch.db,只读)</div>
+    <div id="cclist"></div>
   </main>
 </div>
 
@@ -614,6 +622,7 @@ document.querySelectorAll(".tab").forEach(function(t){
     if (t.dataset.tab === "run") refreshRun();
     if (t.dataset.tab === "his") refreshHis();
     if (t.dataset.tab === "new") refreshQuick();
+    if (t.dataset.tab === "cc") refreshCC();
   });
 });
 
@@ -786,12 +795,85 @@ function renderHis(q){
 }
 $("hisearch").addEventListener("input", function(){ renderHis($("hisearch").value); });
 
+/* ---- CC Switch 用量 ---- */
+var ccEnabled = false;
+function fmtUSD(v){ return "$" + (Number(v) || 0).toFixed(2); }
+function fmtTok(n){ n = Number(n) || 0; if (n >= 1e9) return (n/1e9).toFixed(2) + "B"; if (n >= 1e6) return (n/1e6).toFixed(1) + "M"; if (n >= 1e3) return (n/1e3).toFixed(1) + "k"; return String(n); }
+function fmtNum(n){ return (Number(n) || 0).toLocaleString("en-US"); }
+function ccBalanceTag(used){
+  var fg, bg;
+  if (used >= 95){ fg = "#ff8b8b"; bg = "#3a2230"; }
+  else if (used >= 80){ fg = "#ffb877"; bg = "#3a2e22"; }
+  else { fg = "#7ad7a0"; bg = "#2a3a2e"; }
+  return '<span class="tag" style="color:' + fg + ';background:' + bg + '">已用 ' + used + '%</span>';
+}
+function refreshCC(){
+  api("/api/cc_usage").then(function(d){
+    if (!d || !d.enabled){
+      ccEnabled = false;
+      var tb = document.querySelector('.tab[data-tab="cc"]'); if (tb) tb.style.display = "none";
+      $("cclist").innerHTML = '<div class="empty">未检测到 CC Switch (~/.cc-switch/cc-switch.db)</div>';
+      return;
+    }
+    ccEnabled = true;
+    if (d.error){ $("cclist").innerHTML = '<div class="err">读取失败:' + esc(d.error) + '</div>'; return; }
+    var u = d.usage || {}, list = [];
+    var b = d.balance;
+    if (b && b.supported && b.pending){
+      list.push('<div class="dirrow" style="cursor:default"><div class="nm" style="color:#8b91a0">剩余额度:查询中…</div><div class="mt">智谱 / Z.ai 编码套餐</div></div>');
+    } else if (b && b.supported && b.used_pct != null){
+      var resetTxt = "";
+      if (b.reset_ms){
+        var rd = new Date(b.reset_ms);
+        function pad(x){ return x < 10 ? "0" + x : x; }
+        var hrs = Math.max(0, Math.round((b.reset_ms - Date.now())/3600000));
+        resetTxt = ' · 约 ' + hrs + 'h 后重置 (' + pad(rd.getHours()) + ":" + pad(rd.getMinutes()) + ')';
+      }
+      list.push('<div class="dirrow" style="cursor:default">'
+        + '<div class="nm">' + ccBalanceTag(b.used_pct) + ' 剩余 ' + b.remaining_pct + '%'
+        + (b.plan ? ' · <span style="color:#c89bff">' + esc(b.plan) + ' 套餐</span>' : '') + '</div>'
+        + '<div class="mt">智谱 / Z.ai 编码套餐额度' + resetTxt + '</div></div>');
+    } else if (b && b.supported && b.error){
+      list.push('<div class="dirrow" style="cursor:default"><div class="nm" style="color:#8b91a0">剩余额度:查询失败</div><div class="mt">' + esc(b.error) + '</div></div>');
+    }
+    (d.providers || []).filter(function(p){ return p.is_current; }).forEach(function(p){
+      var be = p.app_type === "claude" ? '<span class="tag be-claude">Claude</span>'
+             : p.app_type === "codex" ? '<span class="tag be-codex">Codex</span>'
+             : '<span class="tag">' + esc(p.app_type) + '</span>';
+      list.push('<div class="dirrow" style="cursor:default"><div class="nm">' + be + ' ' + esc(p.name) + '</div>'
+        + '<div class="mt">模型 ' + (p.model ? esc(p.model) : '—') + ' · ' + (p.host ? esc(p.host) : '本机') + '</div></div>');
+    });
+    var t = u.today || {}, mo = u.month || {};
+    list.push('<div class="dirrow" style="cursor:default">'
+      + '<div class="nm">今日 ' + fmtUSD(t.cost) + ' · ' + fmtNum(t.requests) + ' 次</div>'
+      + '<div class="mt">输入 ' + fmtTok(t.input_tokens) + ' / 输出 ' + fmtTok(t.output_tokens) + ' / 缓存 ' + fmtTok(t.cache_tokens) + '</div>'
+      + '<div class="mt" style="margin-top:6px">本月 ' + fmtUSD(mo.cost) + ' · ' + fmtNum(mo.requests) + ' 次</div></div>');
+    var bm = u.by_model || [];
+    if (bm.length){
+      var maxCost = Math.max.apply(null, bm.map(function(x){ return x.cost; })) || 1;
+      var rows = bm.map(function(x){
+        var w = Math.max(4, Math.round(x.cost / maxCost * 100));
+        return '<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;font-size:12px">'
+          + '<span>' + esc(x.model) + '</span><span style="color:#8b91a0">' + fmtUSD(x.cost) + ' · ' + fmtNum(x.requests) + '次</span></div>'
+          + '<div style="height:5px;background:#23242c;border-radius:3px;margin-top:3px"><div style="height:5px;width:' + w + '%;background:#2a5bd7;border-radius:3px"></div></div></div>';
+      }).join("");
+      list.push('<div class="dirrow" style="cursor:default"><div class="nm" style="font-size:13px">按模型(今日)</div>' + rows + '</div>');
+    } else {
+      list.push('<div class="empty">暂无用量记录(请确认 CC Switch 的本地代理已启用并记录请求)</div>');
+    }
+    if (u.last_ts){ list.push('<div style="font-size:11px;color:#7f8691;margin:6px 2px">最近一条:' + fmtTime(u.last_ts) + (d.cached ? ' · (缓存)' : '') + '</div>'); }
+    $("cclist").innerHTML = list.join("");
+  }).catch(function(){ $("cclist").innerHTML = '<div class="err">加载失败</div>'; });
+}
+
 setInterval(function(){ if ($("p-run").classList.contains("active")) refreshRun(); }, 4000);
 setInterval(pollSessionSignals, 4000);
+setInterval(function(){ if (ccEnabled && $("p-cc").classList.contains("active")) refreshCC(); }, 20000);
 setInterval(function(){ runSessions.forEach(function(s){ var el = $("time-" + s.sid); if (el) el.textContent = elapsedStr(s.last_input_ts); }); }, 1000);
 go("");
 refreshQuick();
 pollSessionSignals();
+refreshCC();
 </script>
 </body>
 </html>

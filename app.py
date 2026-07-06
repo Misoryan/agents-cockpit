@@ -32,6 +32,7 @@ import hashlib
 import re
 import shlex
 import signal
+import sqlite3
 from datetime import datetime
 
 # ---- config (all overridable via env) ----
@@ -54,6 +55,14 @@ LOG_TEXT_CAP = int(os.environ.get("CODEX_LOG_TEXT_CAP", str(BUF_CAP)))
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
 MANAGER_HOST = "127.0.0.1"
 MANAGER_PORT = int(os.environ.get("CODEX_MANAGER_PORT", str(PICKER_PORT + 1000)))
+
+# ---- CC Switch integration (optional, read-only) ----
+# CC Switch (farion1231/cc-switch) keeps everything in a local SQLite db.
+# We only SELECT from it to surface per-request usage tracked by its proxy,
+# plus a best-effort Zhipu/Z.ai coding-plan remaining-quota query.
+CCSWITCH_DB = os.environ.get("CCSWITCH_DB") or os.path.join(os.path.expanduser("~"), ".cc-switch", "cc-switch.db")
+CCSWITCH_USAGE_TTL = int(os.environ.get("CCSWITCH_USAGE_TTL", "15"))    # db read cache (s)
+CCSWITCH_BALANCE_TTL = int(os.environ.get("CCSWITCH_BALANCE_TTL", "300"))  # quota cache (s)
 
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
 SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
@@ -678,6 +687,204 @@ def recent_dirs(limit=30):
     return sorted(by.values(), key=lambda x: x["last_ts"], reverse=True)[:limit]
 
 
+# ---------- CC Switch integration (optional, read-only) ----------
+def _toml_first(text, key):
+    m = re.search(r'(?m)^[ \t]*%s[ \t]*=[ \t]*"([^"]+)"' % re.escape(key), text or "")
+    return m.group(1) if m else None
+
+
+def _ccswitch_provider_meta(sc_json, app_type):
+    """Parse one provider's settings_config into model/base_url/host/api_key."""
+    try:
+        sc = json.loads(sc_json) if sc_json else {}
+    except ValueError:
+        sc = {}
+    if not isinstance(sc, dict):
+        sc = {}
+    env = sc.get("env") if isinstance(sc.get("env"), dict) else {}
+    api_key = ""
+    if app_type == "claude":
+        model = env.get("ANTHROPIC_MODEL") or env.get("ANTHROPIC_DEFAULT_SONNET_MODEL_NAME") or ""
+        base_url = env.get("ANTHROPIC_BASE_URL") or ""
+        api_key = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY") or ""
+    else:  # codex etc: config is a TOML string; auth may hold the key
+        cfg = sc.get("config") or ""
+        model = _toml_first(cfg, "model") or ""
+        base_url = _toml_first(cfg, "base_url") or ""
+        auth = sc.get("auth") if isinstance(sc.get("auth"), dict) else {}
+        api_key = auth.get("OPENAI_API_KEY") or ""
+    host = urllib.parse.urlparse(base_url).hostname if base_url else ""
+    return {"model": model, "base_url": base_url, "host": host or "", "api_key": api_key}
+
+
+def _ccswitch_open():
+    uri = "file:%s?mode=ro" % CCSWITCH_DB.replace("\\", "/").replace("?", "")
+    con = sqlite3.connect(uri, uri=True, timeout=2.0)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _day_start_epoch(now):
+    lt = time.localtime(now)
+    return time.mktime(time.struct_time((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+
+
+def _month_start_epoch(now):
+    lt = time.localtime(now)
+    return time.mktime(time.struct_time((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1)))
+
+
+def _usage_window(cur, since):
+    row = cur.execute(
+        "SELECT COUNT(*) n, TOTAL(CAST(total_cost_usd AS REAL)) cost, "
+        "TOTAL(input_tokens) it, TOTAL(output_tokens) ot, "
+        "TOTAL(COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0)) ct "
+        "FROM proxy_request_logs WHERE created_at>=? AND status_code<500", (since,)).fetchone()
+    return {"requests": int(row["n"] or 0), "cost": round(float(row["cost"] or 0.0), 4),
+            "input_tokens": int(row["it"] or 0), "output_tokens": int(row["ot"] or 0),
+            "cache_tokens": int(row["ct"] or 0)}
+
+
+def _usage_by_model(cur, since, limit=8):
+    rows = cur.execute(
+        "SELECT model, COUNT(*) n, TOTAL(CAST(total_cost_usd AS REAL)) cost, "
+        "TOTAL(input_tokens+output_tokens+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0)) tok "
+        "FROM proxy_request_logs WHERE created_at>=? AND status_code<500 "
+        "GROUP BY model ORDER BY cost DESC LIMIT ?", (since, limit)).fetchall()
+    return [{"model": r["model"] or "(unknown)", "requests": int(r["n"] or 0),
+             "cost": round(float(r["cost"] or 0.0), 4), "tokens": int(r["tok"] or 0)} for r in rows]
+
+
+_ccswitch_usage_cache = {"ts": 0.0, "data": None}
+
+
+def ccswitch_overview():
+    if not os.path.isfile(CCSWITCH_DB):
+        return {"enabled": False}
+    now = time.time()
+    cached = _ccswitch_usage_cache["data"]
+    if cached and now - _ccswitch_usage_cache["ts"] < CCSWITCH_USAGE_TTL:
+        out = dict(cached); out["cached"] = True; return out
+    try:
+        con = _ccswitch_open()
+    except Exception as e:
+        return {"enabled": True, "error": "open db: %s" % e, "providers": [], "usage": {}}
+    try:
+        cur = con.cursor()
+        providers = []
+        for r in cur.execute("SELECT app_type,name,is_current,settings_config FROM providers "
+                             "ORDER BY is_current DESC, app_type"):
+            m = _ccswitch_provider_meta(r["settings_config"], r["app_type"])
+            providers.append({"app_type": r["app_type"], "name": r["name"],
+                              "is_current": bool(r["is_current"]),
+                              "model": m["model"], "host": m["host"]})
+        usage = {"today": _usage_window(cur, _day_start_epoch(now)),
+                 "month": _usage_window(cur, _month_start_epoch(now)),
+                 "by_model": _usage_by_model(cur, _day_start_epoch(now)),
+                 "last_ts": int(cur.execute("SELECT MAX(created_at) m FROM proxy_request_logs").fetchone()["m"] or 0)}
+        out = {"enabled": True, "providers": providers, "usage": usage, "cached": False}
+        _ccswitch_usage_cache["data"] = out
+        _ccswitch_usage_cache["ts"] = now
+        return dict(out)
+    except Exception as e:
+        return {"enabled": True, "error": str(e), "providers": [], "usage": {}}
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def _zhipu_api_base(host):
+    h = (host or "").lower()
+    if "bigmodel.cn" in h:
+        return "https://open.bigmodel.cn"
+    if "z.ai" in h:
+        return "https://api.z.ai"
+    return None
+
+
+def _ccswitch_current_zhipu():
+    """Return (api_key, host) for the current claude provider if Zhipu/Z.ai, else None."""
+    try:
+        con = _ccswitch_open()
+    except Exception:
+        return None
+    try:
+        row = con.execute("SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1").fetchone()
+        if not row:
+            return None
+        m = _ccswitch_provider_meta(row["settings_config"], "claude")
+        if not m["api_key"] or not m["host"]:
+            return None
+        return (m["api_key"], m["host"])
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+_ccswitch_balance_cache = {"key": None, "host": None, "ts": 0.0, "data": None}
+_ccswitch_balance_lock = threading.Lock()
+_ccswitch_balance_refreshing = [False]
+
+
+def _ccswitch_balance_refresh(target_key, target_host):
+    out = None
+    try:
+        api_base = _zhipu_api_base(target_host)
+        if not api_base or not target_key:
+            out = {"supported": False}
+        else:
+            host = api_base.split("://", 1)[1]
+            conn = http.client.HTTPSConnection(host, timeout=6.0)
+            conn.request("GET", "/api/monitor/usage/quota/limit", headers={
+                "Authorization": target_key, "Accept-Language": "en-US,en",
+                "Content-Type": "application/json"})
+            resp = conn.getresponse(); body = resp.read(); conn.close()
+            if resp.status != 200:
+                raise RuntimeError("HTTP %d" % resp.status)
+            obj = json.loads(body.decode("utf-8", "replace"))
+            data = obj.get("data") or {}
+            limits = data.get("limits") or []
+            tok = next((x for x in limits if x.get("type") == "TOKENS_LIMIT"), None)
+            if tok is None:
+                raise RuntimeError("TOKENS_LIMIT not found in response")
+            pct = float(tok.get("percentage") or 0)
+            out = {"supported": True, "plan": str(data.get("level") or "ZHIPU").upper(),
+                   "used_pct": round(pct, 1), "remaining_pct": round(max(0.0, 100.0 - pct), 1),
+                   "reset_ms": tok.get("nextResetTime"), "fetched_at": time.time()}
+    except Exception as e:
+        out = {"supported": True, "error": str(e), "fetched_at": time.time()}
+    with _ccswitch_balance_lock:
+        _ccswitch_balance_cache.update(key=target_key, host=target_host, data=out, ts=time.time())
+        _ccswitch_balance_refreshing[0] = False
+
+
+def ccswitch_balance():
+    """Non-blocking: returns cached quota (maybe null), spawns a background refresh when stale."""
+    if not os.path.isfile(CCSWITCH_DB):
+        return {"supported": False}
+    info = _ccswitch_current_zhipu()
+    if not info:
+        return {"supported": False}
+    key, host = info
+    if not _zhipu_api_base(host) or not key:
+        return {"supported": False}
+    now = time.time()
+    with _ccswitch_balance_lock:
+        c = _ccswitch_balance_cache
+        same = (c["key"] == key and c["host"] == host)
+        if c["data"] is not None and same and now - c["ts"] < CCSWITCH_BALANCE_TTL:
+            return dict(c["data"])
+        served = dict(c["data"]) if (c["data"] is not None and same) else None
+        if not _ccswitch_balance_refreshing[0]:
+            _ccswitch_balance_refreshing[0] = True
+            threading.Thread(target=_ccswitch_balance_refresh, args=(key, host), daemon=True).start()
+        return served if served is not None else {"supported": True, "pending": True}
+
+
 # ---------- folder browse ----------
 def parent_of(path):
     if not path:
@@ -981,6 +1188,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/backends":
             self._json({"backends": [k for k, v in BACKENDS.items() if v["bin"] and os.path.isfile(v["bin"])],
                         "labels": {k: v["label"] for k, v in BACKENDS.items()}})
+        elif path == "/api/cc_usage":
+            out = ccswitch_overview()
+            if out.get("enabled"):
+                out["balance"] = ccswitch_balance()
+            self._json(out)
         else:
             self._json({"error": "not found"}, 404)
 

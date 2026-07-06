@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Codex-Web: phone-friendly launcher for codex with SHARED, multi-device terminals.
+Agent Cockpit: phone-friendly launcher for Codex / Claude with SHARED, multi-device terminals.
 
   console + embedded terminals : http://<lan-ip>:7682   (basic-auth)
 
@@ -42,7 +42,6 @@ PICKER_PORT = int(os.environ.get("CODEX_WEB_PORT", "7682"))
 PORT_BASE = int(os.environ.get("CODEX_PORT_BASE", str(PICKER_PORT + 1)))
 PORT_SKIP = {PICKER_PORT}
 INDEX = os.path.join(HERE, "index.html")
-SW_FILE = os.path.join(HERE, "sw.js")
 AUTH_FILE = os.environ.get("AUTH_FILE") or os.path.join(HERE, "auth.txt")
 BIND_IFACE = os.environ.get("CODEX_BIND", "127.0.0.1")  # ttyd loopback iface (Windows: 127.0.0.1)
 CREATE_NO_WINDOW = 0x08000000
@@ -51,7 +50,6 @@ BUF_CAP = 262144  # max replay buffer per session (~256KB)
 # auto-approve: codex --yolo / claude --dangerously-skip-permissions. CODEX_YOLO=0 to disable.
 AUTO_APPROVE = os.environ.get("CODEX_YOLO", "1") not in ("0", "", "false", "no")
 CODEX_NO_ALT_SCREEN = os.environ.get("CODEX_NO_ALT_SCREEN", "1") not in ("0", "", "false", "no")
-LOG_TEXT_CAP = int(os.environ.get("CODEX_LOG_TEXT_CAP", str(BUF_CAP)))
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
 MANAGER_HOST = "127.0.0.1"
 MANAGER_PORT = int(os.environ.get("CODEX_MANAGER_PORT", str(PICKER_PORT + 1000)))
@@ -67,6 +65,10 @@ CCSWITCH_BALANCE_TTL = int(os.environ.get("CCSWITCH_BALANCE_TTL", "300"))  # quo
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
 SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
 HISTORY_JSONL = os.path.join(CODEX_HOME, "history.jsonl")
+CLAUDE_HOME = os.environ.get("CLAUDE_HOME") or os.path.join(os.path.expanduser("~"), ".claude")
+CLAUDE_PROJECTS_DIR = os.path.join(CLAUDE_HOME, "projects")
+# 扫描单个 claude 会话文件的最大行数(标题/ai-title 通常在前若干行;超大转录用此封顶)
+CLAUDE_SCAN_CAP = 6000
 
 
 def _find_codex_under(root):
@@ -186,15 +188,7 @@ def manager_available():
         resp = conn.getresponse()
         resp.read()
         conn.close()
-        if not (200 <= resp.status < 500):
-            return False
-        # Old managers may answer /api/backends but not support the log API.
-        conn = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=0.8)
-        conn.request("GET", "/api/log?sid=__healthcheck__")
-        resp = conn.getresponse()
-        data = resp.read().decode("utf-8", "replace")
-        conn.close()
-        return resp.status == 404 and "session not found" in data
+        return 200 <= resp.status < 500
     except OSError:
         return False
 
@@ -225,7 +219,40 @@ def restart_web_soon():
                 srv.server_close()
             except Exception:
                 pass
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        os._exit(0)  # Win: os.execv 在多线程 ThreadingHTTPServer 下不可靠(进程直接退出且无后继) -> 干净退出,交由启动器循环立即重启
+    threading.Thread(target=_restart, daemon=True).start()
+
+
+def _ask_manager_to_exit():
+    """让 manager 杀掉所有会话并退出(最多重试几秒,返回是否已下线)。"""
+    for _ in range(8):
+        try:
+            c = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=2)
+            c.request("POST", "/api/_exit", body=b"{}",
+                      headers={"Authorization": EXPECTED_AUTH, "Content-Type": "application/json"})
+            c.getresponse().read(); c.close()
+        except Exception:
+            pass
+        time.sleep(0.3)
+        if not manager_available():
+            return True
+    return not manager_available()
+
+
+def restart_server_soon():
+    """完全重启:先让 manager 杀掉全部会话并退出,再退出本(web)进程(由启动器循环立即重启);
+    新 web 启动时 ensure_manager() 会用磁盘上的最新代码拉起全新 manager。"""
+    def _restart():
+        time.sleep(0.4)             # 让 HTTP 响应先 flush 回浏览器
+        _ask_manager_to_exit()
+        time.sleep(0.2)
+        srv = _server[0]
+        if srv:
+            try: srv.shutdown()
+            except Exception: pass
+            try: srv.server_close()
+            except Exception: pass
+        os._exit(0)  # 退出进程,交由启动器(run-stable.cmd / start.cmd 的循环)立即重启;不用 os.execv(Win 下不可靠)
     threading.Thread(target=_restart, daemon=True).start()
 
 
@@ -286,36 +313,6 @@ def ws_accept_key(key):
 
 # ---------- hub: one persistent codex, many browser clients ----------
 _CONFIRM_RE = re.compile(rb"(?i)(\bapprove\b|\ballow\b|\bconfirm\b|\[y/?n\]|\(yes/no\)|\(y/n\)|\byes/no\b)")
-_ANSI_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
-_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-
-
-def _strip_backspaces(text):
-    out = []
-    for ch in text:
-        if ch == "\b":
-            if out:
-                out.pop()
-        else:
-            out.append(ch)
-    return "".join(out)
-
-
-def _payload_to_plain_text(payload):
-    if not payload:
-        return ""
-    # ttyd prefixes stdout frames with "0"; other prefixes are control/input frames.
-    if payload[:1] == b"0":
-        data = payload[1:]
-    elif payload[:1] in (b"1", b"2", b"3", b"4", b"5"):
-        return ""
-    else:
-        data = payload
-    text = data.decode("utf-8", "replace")
-    text = _ANSI_RE.sub("", text)
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = _strip_backspaces(text)
-    return _CTRL_RE.sub("", text)
 
 
 class Hub:
@@ -324,7 +321,6 @@ class Hub:
         self.clients = set()       # browser raw sockets
         self.frames = []           # buffered output payloads (ttyd "0"+data), for replay
         self.frames_size = 0
-        self.frames_dropped = False
         self.upstream = None       # raw socket to ttyd
         self.clock = threading.Lock()
         self.started = time.time()
@@ -397,18 +393,6 @@ class Hub:
         while self.frames_size > BUF_CAP and len(self.frames) > 1:
             old = self.frames.pop(0)
             self.frames_size -= len(old)
-            self.frames_dropped = True
-
-    def plain_log(self):
-        with self.clock:
-            snapshot = list(self.frames)
-            truncated = self.frames_dropped
-            size = self.frames_size
-        text = "".join(_payload_to_plain_text(fr) for fr in snapshot)
-        if len(text) > LOG_TEXT_CAP:
-            text = text[-LOG_TEXT_CAP:]
-            truncated = True
-        return text, truncated, size
 
     def _broadcast(self, payload, opcode):
         dead = []
@@ -629,6 +613,76 @@ def iso_to_epoch(s):
         return 0
 
 
+def _claude_user_text(o):
+    """Pull the human-typed text out of a claude 'user' record (str or content blocks)."""
+    msg = o.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for c in content:
+            if isinstance(c, dict) and c.get("type") == "text":
+                parts.append(c.get("text") or "")
+        return " ".join(p for p in parts if p).strip()
+    return ""
+
+
+def load_claude_history():
+    """Scan ~/.claude/projects/*/<uuid>.jsonl into the same shape as codex history."""
+    out = []
+    if not os.path.isdir(CLAUDE_PROJECTS_DIR):
+        return out
+    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+        for fn in fs:
+            if not fn.endswith(".jsonl"):
+                continue
+            # 跳过子代理(sidechain)转写:它们躺在 <session-uuid>/subagents/ 下,
+            # 文件名以 agent- 开头,不是可独立 --resume 的会话。
+            if os.path.basename(dp) == "subagents" or fn.startswith("agent-"):
+                continue
+            sid = fn[:-6]  # strip .jsonl → 即 sessionId(== 文件名)
+            cwd = ts_str = first_user = ai_title = ""
+            try:
+                with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
+                    for i, line in enumerate(f):
+                        if i >= CLAUDE_SCAN_CAP:
+                            break
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            o = json.loads(line)
+                        except ValueError:
+                            continue
+                        if not cwd and o.get("cwd"):
+                            cwd = o["cwd"]
+                        if not ts_str and o.get("timestamp"):
+                            ts_str = o["timestamp"]
+                        t = o.get("type")
+                        if t == "ai-title" and not ai_title:
+                            ai_title = (o.get("aiTitle") or "").strip()
+                        elif t == "summary" and not ai_title:
+                            ai_title = (o.get("summary") or "").strip()
+                        elif t == "user" and not first_user:
+                            txt = _claude_user_text(o)
+                            if txt:
+                                first_user = txt
+                        if cwd and ts_str and ai_title:
+                            break
+            except OSError:
+                continue
+            if not cwd:
+                continue
+            title = (ai_title or first_user or "(无标题)").strip()
+            out.append({
+                "session_id": sid, "cwd": cwd,
+                "ts": iso_to_epoch(ts_str),
+                "title": title, "originator": "", "backend": "claude",
+            })
+    return out
+
+
 def load_history(limit=60):
     titles = {}
     try:
@@ -647,29 +701,30 @@ def load_history(limit=60):
     except OSError:
         pass
     out = []
-    if not os.path.isdir(SESSIONS_DIR):
-        return out
-    for dp, _dirs, fs in os.walk(SESSIONS_DIR):
-        for fn in fs:
-            if not fn.endswith(".jsonl"):
-                continue
-            try:
-                with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
-                    meta = json.loads(f.readline())
-            except (OSError, ValueError):
-                continue
-            if meta.get("type") != "session_meta":
-                continue
-            p = meta.get("payload", {})
-            sid = p.get("session_id")
-            if not sid:
-                continue
-            t = titles.get(sid, {})
-            out.append({
-                "session_id": sid, "cwd": p.get("cwd", ""),
-                "ts": t.get("ts") or iso_to_epoch(p.get("timestamp", "")),
-                "title": t.get("title") or "(无标题)", "originator": p.get("originator", ""),
-            })
+    if os.path.isdir(SESSIONS_DIR):
+        for dp, _dirs, fs in os.walk(SESSIONS_DIR):
+            for fn in fs:
+                if not fn.endswith(".jsonl"):
+                    continue
+                try:
+                    with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
+                        meta = json.loads(f.readline())
+                except (OSError, ValueError):
+                    continue
+                if meta.get("type") != "session_meta":
+                    continue
+                p = meta.get("payload", {})
+                sid = p.get("session_id")
+                if not sid:
+                    continue
+                t = titles.get(sid, {})
+                out.append({
+                    "session_id": sid, "cwd": p.get("cwd", ""),
+                    "ts": t.get("ts") or iso_to_epoch(p.get("timestamp", "")),
+                    "title": t.get("title") or "(无标题)", "originator": p.get("originator", ""),
+                    "backend": "codex",
+                })
+    out.extend(load_claude_history())
     out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
     return out[:limit]
 
@@ -941,7 +996,7 @@ def fetch_ttyd_html(port):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "codex-web/4.0"
+    server_version = "agent-cockpit/1.0"
 
     def log_message(self, *a):
         pass
@@ -952,7 +1007,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.headers.get("Authorization", "") == EXPECTED_AUTH:
             return True
         self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="codex-web"')
+        self.send_header("WWW-Authenticate", 'Basic realm="agent-cockpit"')
         self.send_header("Content-Length", "12"); self.end_headers()
         self.wfile.write(b"auth required")
         return False
@@ -1009,17 +1064,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json({"error": str(e)}, 500); return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
-
-    def _serve_sw(self):
-        try:
-            data = open(SW_FILE, "rb").read()
-        except OSError:
-            self._json({"error": "service worker not found"}, 404); return
-        self.send_response(200)
-        self.send_header("Content-Type", "application/javascript; charset=utf-8")
-        self.send_header("Service-Worker-Allowed", "/")
-        self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
     def _proxy_manager_http(self, method, body=None):
@@ -1112,8 +1156,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _web_get(self, path):
         if path in ("/", "/index.html"):
             self._serve_index(); return
-        if path == "/sw.js":
-            self._serve_sw(); return
         if path.startswith("/t/") and path.endswith("/ws"):
             self._proxy_manager_ws(); return
         if path.startswith("/t/") or path.startswith("/api/"):
@@ -1124,6 +1166,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/restart_web":
             self._json({"ok": True, "message": "web restarting"})
             restart_web_soon()
+            return
+        if path == "/api/restart":
+            self._json({"ok": True, "restarting": True})
+            restart_server_soon()
             return
         if path.startswith("/api/"):
             self._proxy_manager_http("POST", raw); return
@@ -1151,16 +1197,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
-        elif path == "/sw.js":
-            try:
-                data = open(SW_FILE, "rb").read()
-            except OSError:
-                self._json({"error": "service worker not found"}, 404); return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/javascript; charset=utf-8")
-            self.send_header("Service-Worker-Allowed", "/")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
         elif path == "/api/browse":
             q = urllib.parse.parse_qs(pr.query); self._json(browse(q.get("path", [""])[0]))
         elif path == "/api/sessions":
@@ -1169,16 +1205,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 items = [session_obj(sid, s, self.headers.get("Host", "")) for sid, s in sessions.items()]
             items.sort(key=lambda x: x["started"], reverse=True)
             self._json({"sessions": items})
-        elif path == "/api/log":
-            q = urllib.parse.parse_qs(pr.query)
-            sid = (q.get("sid", [""])[0] or "").strip()
-            with _lock:
-                s = sessions.get(sid)
-            if not s:
-                self._json({"error": "session not found"}, 404); return
-            text, truncated, size = s["hub"].plain_log()
-            self._json({"sid": sid, "text": text, "truncated": truncated, "bytes": size,
-                        "updated": time.time()})
         elif path == "/api/history":
             q = urllib.parse.parse_qs(pr.query)
             self._json({"history": load_history(int(q.get("limit", ["60"])[0] or 60))})
@@ -1231,16 +1257,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json({"error": "missing session_id"}, 400); return
             if not d or not os.path.isdir(d):
                 d = d or os.path.expanduser("~")
+            backend = (data.get("backend") or "codex").strip()
+            if backend not in BACKENDS:
+                backend = "codex"
+            # codex: 'codex resume <id>'  ;  claude: 'claude --resume <id>'
+            cli_args = ["--resume", sid_arg] if backend == "claude" else ["resume", sid_arg]
             try:
-                sid, _ = launch(d, backend="codex", cli_args=["resume", sid_arg],
+                sid, _ = launch(d, backend=backend, cli_args=cli_args,
                                 title=data.get("title") or "恢复会话", mode="resume", session_id=sid_arg)
             except Exception as e:
                 self._json({"error": str(e)}, 500); return
-            self._json({"ok": True, "sid": sid, "dir": d, "term_path": "/t/%s/" % sid})
+            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "term_path": "/t/%s/" % sid})
         elif pr.path == "/api/stop":
             self._json({"ok": kill_session((data.get("sid") or "").strip())})
         elif pr.path == "/api/stop_all":
             kill_all(); self._json({"ok": True})
+        elif pr.path == "/api/_exit":
+            # 完全重启:杀掉全部会话后退出 manager;web 层的 ensure_manager 会用新代码重新拉起。
+            def _die():
+                time.sleep(0.25)   # 让响应先发回
+                kill_all()
+                os._exit(0)
+            threading.Thread(target=_die, daemon=True).start()
+            self._json({"ok": True, "restarting": True})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -1253,7 +1292,7 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 if __name__ == "__main__":
     ip = lan_ip()
     if RUN_MODE == "manager":
-        print("Codex-Web manager: http://%s:%d" % (MANAGER_HOST, MANAGER_PORT))
+        print("Agent Cockpit manager: http://%s:%d" % (MANAGER_HOST, MANAGER_PORT))
         try:
             try:
                 _server[0] = ThreadingServer((MANAGER_HOST, MANAGER_PORT), Handler)
@@ -1266,7 +1305,7 @@ if __name__ == "__main__":
     else:
         ensure_manager()
         print("=" * 56)
-        print(" Codex-Web  (Web/Manager split: 可单独重启网页)")
+        print(" Agent Cockpit  (Web/Manager split: 可单独重启网页)")
         print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, PICKER_PORT))
         print(" Manager(本机): http://%s:%d" % (MANAGER_HOST, MANAGER_PORT))
         print(" 账号: %s  密码: ***" % CRED.split(":", 1)[0])

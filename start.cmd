@@ -1,9 +1,12 @@
 @echo off
 setlocal
-REM Codex-Web launcher (web only; manager keeps Codex sessions alive)
-title Codex Web
+REM Agent Cockpit launcher with auto-restart supervisor loop.
+REM app.py os._exits on in-app restart; this loop relaunches it ~2s later.
+title Agent Cockpit
 cd /d "%~dp0"
+:run
 python "%~dp0app.py"
 echo.
-echo Codex Web exited. Press any key to close...
-pause >nul
+echo [supervisor] Agent Cockpit exited (code %errorlevel%), relaunch in 2s. Close this window to stop.
+ping -n 3 127.0.0.1 >nul
+goto run

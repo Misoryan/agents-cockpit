@@ -1,18 +1,18 @@
-# Codex Web
+# Agent Cockpit
 
-> 在手机或任意浏览器上远程驱动本机 **Codex CLI** 的轻量 Web 控制台。挑目录即开 codex、多会话切换、**多端实时共享同一个 codex**(电脑跑、手机看 + 输入)、历史按目录恢复。
+> 在手机或任意浏览器上远程驱动本机 **Codex / Claude Code CLI** 的轻量 Web 控制台。挑目录即开 codex 或 claude、多会话切换、**多端实时共享同一个会话**(电脑跑、手机看 + 输入)、历史按目录恢复。
 
 纯 Python 标准库(无第三方依赖)+ [ttyd](https://github.com/tsl0922/ttyd)。Windows 为主,也兼容装了 ttyd 的 Linux/macOS。
 
 ## ✨ 功能
 
-- 📂 **新建会话**:本机目录浏览 / 从“用过 codex 的目录”快速选择,一键启动。
-- ⚡ **多会话**:同时开多个 codex(每个目录一个),终端内 **≡ 侧边栏** / 「运行中」列表顺畅切换。
-- 🌐 **多端实时共享**:电脑和手机(或多个浏览器)连**同一个会话** = 同一个 codex,实时同看输出、都能输入,后加入的还能看到历史(app.py 做 websocket 集线器)。
-- 🕑 **历史**:按目录分组折叠,一键 `codex resume` 在原目录恢复某段对话。
+- 📂 **新建会话**:本机目录浏览 / 从“用过 codex / claude 的目录”快速选择,一键启动。
+- ⚡ **多会话**:同时开多个 codex / claude(每个目录一个),终端内 **≡ 侧边栏** / 「运行中」列表顺畅切换。
+- 🌐 **多端实时共享**:电脑和手机(或多个浏览器)连**同一个会话** = 同一个 CLI,实时同看输出、都能输入,后加入的还能看到历史(app.py 做 websocket 集线器)。
+- 🕑 **历史**:按目录分组折叠,一键 `codex resume` / `claude --resume` 在原目录恢复某段对话。
 - ⌨️ **手机快捷键栏**:Tab / Shift+Tab / Esc / Ctrl+C / 方向键 / 滚动 等(直接注入终端,等价真实按键)。
 - 🔒 **单次登录 + 仅本机暴露**:终端内嵌在同一页面(反向代理),ttyd 只绑 `127.0.0.1`,对外只开一个带口令的端口。
-- 🟠 **codex --yolo**:跳过审批、无沙箱自动执行(可关)。
+- 🟠 **自动批准**:`codex --yolo` / `claude --dangerously-skip-permissions` 跳过审批、无沙箱自动执行(可关)。
 
 ## 🔧 工作原理
 
@@ -33,14 +33,14 @@
 ## 📦 依赖
 
 - **Python 3.8+**(仅标准库,无需 pip 安装)
-- **Codex CLI** 已装好并能跑(`codex --version`),且 `~/.codex/config.toml` 里配好了你的 API / 模型。
+- **Codex CLI** 和/或 **Claude Code CLI** 已装好并能跑(`codex --version` / `claude --version`),且配好了对应的 API / 模型(`~/.codex/config.toml` 或 `~/.claude`)。
 - **ttyd**:Windows 下从 [releases](https://github.com/tsl0922/ttyd/releases) 下载 `ttyd.win32.exe`,放到本目录(或加入 PATH)。
 
 ## 🚀 安装与运行
 
 ```bash
-git clone https://github.com/Misoryan/codex-web.git
-cd codex-web
+git clone https://github.com/Misoryan/agents-cockpit.git
+cd agents-cockpit
 ```
 
 1. 把 `ttyd.win32.exe` 重命名为 **`ttyd.exe`** 放进本目录(或设环境变量 `TTYD` 指向它)。

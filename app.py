@@ -1,0 +1,678 @@
+# -*- coding: utf-8 -*-
+"""
+Codex-Web: phone-friendly launcher for codex with SHARED, multi-device terminals.
+
+  console + embedded terminals : http://<lan-ip>:7682   (basic-auth)
+
+Shared-session model:
+  - Each session = ONE persistent ttyd+codex (localhost, --yolo).
+  - app.py keeps ONE upstream websocket to that ttyd (keeps codex alive) and
+    multiplexes many browsers (PC + phone) onto it: broadcasts codex output to
+    all clients, forwards any client's input to codex, and replays buffered
+    output to clients joining mid-task. So PC and phone see the SAME codex live
+    and both can type — and can switch between multiple such sessions smoothly.
+
+Stdlib only. Reuses E:\\tools\\ttyd\\ttyd.exe and the cr_-configured codex.exe.
+"""
+import http.server
+import socketserver
+import json
+import os
+import subprocess
+import threading
+import urllib.parse
+import base64
+import sys
+import atexit
+import time
+import socket
+import select
+import http.client
+import hashlib
+from datetime import datetime
+
+# ---- config (all overridable via env) ----
+HOST = "0.0.0.0"
+HERE = os.path.dirname(os.path.abspath(__file__))
+PICKER_PORT = int(os.environ.get("CODEX_WEB_PORT", "7682"))
+PORT_BASE = int(os.environ.get("CODEX_PORT_BASE", str(PICKER_PORT + 1)))
+PORT_SKIP = {PICKER_PORT}
+INDEX = os.path.join(HERE, "index.html")
+AUTH_FILE = os.environ.get("AUTH_FILE") or os.path.join(HERE, "auth.txt")
+BIND_IFACE = os.environ.get("CODEX_BIND", "127.0.0.1")  # ttyd loopback iface (Windows: 127.0.0.1)
+CREATE_NO_WINDOW = 0x08000000
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+BUF_CAP = 262144  # max replay buffer per session (~256KB)
+# codex --yolo: skip all approvals + no sandbox. Set CODEX_YOLO=0 to disable.
+YOLO_FLAG = [] if os.environ.get("CODEX_YOLO", "1") in ("0", "", "false", "no") else ["--yolo"]
+
+CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
+HISTORY_JSONL = os.path.join(CODEX_HOME, "history.jsonl")
+
+
+def _find_codex_under(root):
+    want = "codex.exe" if os.name == "nt" else "codex"
+    if not os.path.isdir(root):
+        return None
+    for dp, _d, fs in os.walk(root):
+        if dp.endswith(os.sep + "bin") and want in fs:
+            return os.path.join(dp, want)
+    return None
+
+
+def resolve_codex_bin():
+    p = os.environ.get("CODEX_BIN")
+    if p and os.path.isfile(p):
+        return p
+    # locate the codex launcher on PATH, derive the npm global prefix from it
+    try:
+        cmd = "where codex" if os.name == "nt" else "command -v codex"
+        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
+        for line in out.splitlines():
+            shim = line.strip()
+            if not shim:
+                continue
+            prefix = os.path.dirname(os.path.abspath(shim))
+            for nm in (os.path.join(prefix, "node_modules"), os.path.join(os.path.dirname(prefix), "node_modules")):
+                found = _find_codex_under(os.path.join(nm, "@openai"))
+                if found:
+                    return found
+    except Exception:
+        pass
+    # fallback: npm global root
+    try:
+        out = subprocess.check_output("npm root -g", shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace").strip()
+        if out:
+            found = _find_codex_under(os.path.join(out, "@openai"))
+            if found:
+                return found
+    except Exception:
+        pass
+    return None
+
+
+def resolve_ttyd():
+    p = os.environ.get("TTYD")
+    if p and os.path.isfile(p):
+        return p
+    for c in (os.path.join(HERE, "ttyd.exe"), os.path.join(HERE, "ttyd")):
+        if os.path.isfile(c):
+            return c
+    from shutil import which
+    return which("ttyd")
+
+
+CODEX_BIN = resolve_codex_bin()
+TTYD = resolve_ttyd()
+
+if not CODEX_BIN:
+    print("ERROR: 未找到 codex 二进制。请用 npm 安装 @openai/codex,或设置 CODEX_BIN 环境变量。")
+    sys.exit(1)
+if not TTYD or not os.path.isfile(TTYD):
+    print("ERROR: 未找到 ttyd。请把 ttyd(.exe) 放在本目录,或设置 TTYD 环境变量。")
+    sys.exit(1)
+
+with open(AUTH_FILE, "r", encoding="utf-8") as f:
+    CRED = f.read().strip()
+if ":" not in CRED:
+    print("ERROR: bad .auth (need user:pass)"); sys.exit(1)
+EXPECTED_AUTH = "Basic " + base64.b64encode(CRED.encode()).decode()
+
+sessions = {}      # sid -> {port, proc, dir, title, started, mode, session_id, hub}
+_lock = threading.Lock()
+_sid = [0]
+
+
+# ---------- websocket frame helpers (RFC 6455, minimal) ----------
+def _recv_exact(sock, n):
+    data = bytearray()
+    while len(data) < n:
+        c = sock.recv(n - len(data))
+        if not c:
+            raise OSError("socket closed")
+        data += c
+    return bytes(data)
+
+
+def ws_recv(sock):
+    """Read one ws message; transparently answers ping. Returns (opcode, payload) or (None,None)."""
+    while True:
+        hdr = _recv_exact(sock, 2)
+        b1, b2 = hdr[0], hdr[1]
+        op = b1 & 0x0f
+        masked = b2 & 0x80
+        ln = b2 & 0x7f
+        if ln == 126:
+            ln = int.from_bytes(_recv_exact(sock, 2), "big")
+        elif ln == 127:
+            ln = int.from_bytes(_recv_exact(sock, 8), "big")
+        mask = _recv_exact(sock, 4) if masked else b""
+        payload = _recv_exact(sock, ln) if ln else b""
+        if masked:
+            payload = bytes(payload[i] ^ mask[i % 4] for i in range(len(payload)))
+        if op == 0x9:  # ping -> pong
+            ws_send(sock, payload, 0xA); continue
+        if op == 0xA:  # pong
+            continue
+        return op, payload
+
+
+def ws_send(sock, payload, opcode=0x2, mask=False):
+    out = bytearray([0x80 | opcode])
+    ln = len(payload)
+    mflag = 0x80 if mask else 0x00
+    if ln < 126:
+        out.append(mflag | ln)
+    elif ln < 65536:
+        out.append(mflag | 126); out += ln.to_bytes(2, "big")
+    else:
+        out.append(mflag | 127); out += ln.to_bytes(8, "big")
+    if mask:
+        m = os.urandom(4); out += m
+        payload = bytes(payload[i] ^ m[i % 4] for i in range(len(payload)))
+    out += payload
+    sock.sendall(bytes(out))
+
+
+def ws_accept_key(key):
+    return base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+
+
+# ---------- hub: one persistent codex, many browser clients ----------
+class Hub:
+    def __init__(self, ttyd_port):
+        self.ttyd_port = ttyd_port
+        self.clients = set()       # browser raw sockets
+        self.frames = []           # buffered output payloads (ttyd "0"+data), for replay
+        self.frames_size = 0
+        self.upstream = None       # raw socket to ttyd
+        self.clock = threading.Lock()
+        self._connect_upstream()
+
+    def _connect_upstream(self):
+        s = socket.create_connection(("127.0.0.1", self.ttyd_port), 10)
+        key = base64.b64encode(os.urandom(16)).decode()
+        req = ("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
+               "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n"
+               "Sec-WebSocket-Protocol: tty\r\n\r\n" % (self.ttyd_port, key))
+        s.sendall(req.encode())
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            c = s.recv(4096)
+            if not c:
+                raise OSError("ttyd no 101")
+            buf += c
+        self.upstream = s
+        # init frame ttyd expects: {AuthToken, columns, rows}
+        init = json.dumps({"AuthToken": "", "columns": 100, "rows": 30}).encode()
+        ws_send(s, init, 0x1, mask=True)
+        threading.Thread(target=self._reader, daemon=True).start()
+
+    def _store(self, payload):
+        self.frames.append(payload)
+        self.frames_size += len(payload)
+        while self.frames_size > BUF_CAP and len(self.frames) > 1:
+            old = self.frames.pop(0)
+            self.frames_size -= len(old)
+
+    def _broadcast(self, payload, opcode):
+        dead = []
+        for c in self.clients:
+            try:
+                ws_send(c, payload, opcode)
+            except OSError:
+                dead.append(c)
+        for c in dead:
+            self.clients.discard(c)
+
+    def _reader(self):
+        s = self.upstream
+        while True:
+            try:
+                op, payload = ws_recv(s)
+            except OSError:
+                break
+            if op is None or op == 0x8:
+                break
+            if op in (0x1, 0x2):
+                with self.clock:
+                    self._store(payload)
+                    self._broadcast(payload, op)
+        # upstream gone
+        try:
+            for c in list(self.clients):
+                c.close()
+        except OSError:
+            pass
+        self.clients.clear()
+
+    def send_upstream(self, payload, opcode):
+        if self.upstream:
+            try:
+                ws_send(self.upstream, payload, opcode, mask=True)
+            except OSError:
+                pass
+
+    def add_client(self, sock):
+        # replay buffered frames so late joiners see history
+        with self.clock:
+            snapshot = list(self.frames)
+        for fr in snapshot:
+            try:
+                ws_send(sock, fr, 0x2)
+            except OSError:
+                return
+        with self.clock:
+            self.clients.add(sock)
+        try:
+            first = True
+            while True:
+                op, payload = ws_recv(sock)
+                if op is None or op == 0x8:
+                    break
+                if op not in (0x1, 0x2):
+                    continue
+                if first:
+                    first = False
+                    # ttyd client sends an init JSON first; use its cols/rows to size codex
+                    if payload[:1] == b"{":
+                        try:
+                            o = json.loads(payload.decode("utf-8", "replace"))
+                            cols = int(o.get("columns") or o.get("cols") or 100)
+                            rows = int(o.get("rows") or 30)
+                            self.send_upstream(("1" + json.dumps({"columns": cols, "rows": rows})).encode(), 0x1)
+                        except Exception:
+                            pass
+                        continue
+                self.send_upstream(payload, op)
+        except OSError:
+            pass
+        finally:
+            with self.clock:
+                self.clients.discard(sock)
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def close(self):
+        try:
+            if self.upstream:
+                self.upstream.close()
+        except OSError:
+            pass
+        for c in list(self.clients):
+            try:
+                c.close()
+            except OSError:
+                pass
+        self.clients.clear()
+
+
+# ---------- session lifecycle ----------
+def lan_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close()
+        return ip
+    except OSError:
+        return "127.0.0.1"
+
+
+def wait_port(port, timeout=5.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            s = socket.create_connection(("127.0.0.1", port), 0.5); s.close()
+            return True
+        except OSError:
+            time.sleep(0.15)
+    return False
+
+
+def alloc_port():
+    with _lock:
+        used = {s["port"] for s in sessions.values()}
+    for off in range(0, 300):
+        port = PORT_BASE + off
+        if port in PORT_SKIP or port in used:
+            continue
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(("0.0.0.0", port)); s.close()
+            return port
+        except OSError:
+            continue
+    raise RuntimeError("no free port")
+
+
+def prune_dead():
+    with _lock:
+        dead = [sid for sid, s in sessions.items() if s["proc"].poll() is not None]
+        for sid in dead:
+            s = sessions.pop(sid, None)
+            if s and s.get("hub"):
+                try: s["hub"].close()
+                except OSError: pass
+
+
+def kill_session(sid):
+    with _lock:
+        s = sessions.pop(sid, None)
+    if not s:
+        return False
+    if s.get("hub"):
+        try: s["hub"].close()
+        except OSError: pass
+    try: s["proc"].terminate()
+    except OSError: pass
+    try: s["proc"].wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try: s["proc"].kill()
+        except OSError: pass
+    return True
+
+
+def kill_all():
+    with _lock:
+        sids = list(sessions.keys())
+    for sid in sids:
+        kill_session(sid)
+
+
+def launch(cwd, codex_args=None, title="", mode="new", session_id=None):
+    prune_dead()
+    port = alloc_port()
+    # ttyd: localhost-only, writable. Persistent (hub keeps codex alive).
+    cmd = [TTYD, "-p", str(port), "-W", "-w", cwd, "-i", BIND_IFACE, CODEX_BIN] + YOLO_FLAG + (codex_args or [])
+    proc = subprocess.Popen(cmd, creationflags=CREATE_NO_WINDOW,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    wait_port(port)
+    hub = Hub(port)
+    with _lock:
+        _sid[0] += 1
+        sid = "s%d" % _sid[0]
+        sessions[sid] = {
+            "port": port, "proc": proc, "dir": cwd,
+            "title": title or os.path.basename(cwd.rstrip("\\/")) or cwd,
+            "started": time.time(), "mode": mode, "session_id": session_id, "hub": hub,
+        }
+    return sid, port
+
+
+atexit.register(kill_all)
+
+
+# ---------- history ----------
+def iso_to_epoch(s):
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0
+
+
+def load_history(limit=60):
+    titles = {}
+    try:
+        with open(HISTORY_JSONL, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except ValueError:
+                    continue
+                sid = o.get("session_id")
+                if sid:
+                    titles[sid] = {"ts": o.get("ts"), "title": (o.get("text") or "").strip()}
+    except OSError:
+        pass
+    out = []
+    if not os.path.isdir(SESSIONS_DIR):
+        return out
+    for dp, _dirs, fs in os.walk(SESSIONS_DIR):
+        for fn in fs:
+            if not fn.endswith(".jsonl"):
+                continue
+            try:
+                with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
+                    meta = json.loads(f.readline())
+            except (OSError, ValueError):
+                continue
+            if meta.get("type") != "session_meta":
+                continue
+            p = meta.get("payload", {})
+            sid = p.get("session_id")
+            if not sid:
+                continue
+            t = titles.get(sid, {})
+            out.append({
+                "session_id": sid, "cwd": p.get("cwd", ""),
+                "ts": t.get("ts") or iso_to_epoch(p.get("timestamp", "")),
+                "title": t.get("title") or "(无标题)", "originator": p.get("originator", ""),
+            })
+    out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
+    return out[:limit]
+
+
+def recent_dirs(limit=30):
+    by = {}
+    for h in load_history(500):
+        c = h.get("cwd") or "(未知目录)"
+        e = by.get(c)
+        if e is None:
+            e = {"cwd": c, "count": 0, "last_ts": 0}; by[c] = e
+        e["count"] += 1
+        if (h.get("ts") or 0) > e["last_ts"]:
+            e["last_ts"] = h.get("ts") or 0
+    return sorted(by.values(), key=lambda x: x["last_ts"], reverse=True)[:limit]
+
+
+# ---------- folder browse ----------
+def parent_of(path):
+    if not path:
+        return ""
+    par = os.path.dirname(path)
+    return "" if par == path else par
+
+
+def browse(path):
+    if not path:
+        drives = []
+        for i in range(26):
+            letter = chr(ord("A") + i)
+            d = letter + ":\\"
+            if os.path.isdir(d):
+                drives.append({"name": letter + ":", "path": d})
+        return {"path": "", "parent": "", "entries": drives}
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        return {"error": "not a directory", "path": path}
+    entries = []
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_dir():
+                        entries.append({"name": e.name, "path": e.path})
+                except OSError:
+                    pass
+    except OSError as ex:
+        return {"error": str(ex), "path": path}
+    entries.sort(key=lambda x: x["name"].lower())
+    return {"path": path, "parent": parent_of(path), "entries": entries}
+
+
+def session_obj(sid, s, host):
+    return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
+            "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid}
+
+
+def fetch_ttyd_html(port):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        return resp.read()
+    finally:
+        conn.close()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "codex-web/4.0"
+
+    def log_message(self, *a):
+        pass
+
+    def _auth(self):
+        if self.headers.get("Authorization", "") == EXPECTED_AUTH:
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="codex-web"')
+        self.send_header("Content-Length", "12"); self.end_headers()
+        self.wfile.write(b"auth required")
+        return False
+
+    def _json(self, obj, code=200):
+        b = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b))); self.end_headers()
+        self.wfile.write(b)
+
+    def _serve_terminal(self, sid, rest):
+        with _lock:
+            s = sessions.get(sid)
+            hub = s["hub"] if s else None
+            port = s["port"] if s else None
+        if not s:
+            body = ("<h3>该会话不存在或已停止。</h3><p>回到 <a href='/'>控制台</a>。</p>").encode("utf-8")
+            self.send_response(404); self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        if rest == "ws":
+            self._ws_handshake(hub)
+        else:
+            try:
+                html = fetch_ttyd_html(port)
+            except OSError:
+                self.send_response(502); self.send_header("Content-Length", "0"); self.end_headers(); return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html))); self.end_headers(); self.wfile.write(html)
+
+    def _ws_handshake(self, hub):
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self.send_response(400); self.send_header("Content-Length", "0"); self.end_headers(); return
+        self.close_connection = True
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket"); self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", ws_accept_key(key))
+        if "tty" in (self.headers.get("Sec-WebSocket-Protocol") or ""):
+            self.send_header("Sec-WebSocket-Protocol", "tty")
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        hub.add_client(self.connection)
+
+    def do_GET(self):
+        if not self._auth():
+            return
+        pr = urllib.parse.urlparse(self.path)
+        path = pr.path
+        if path.startswith("/t/"):
+            parts = path.split("/")
+            if len(parts) >= 3 and parts[1] == "t":
+                sid = parts[2]
+                rest = "/".join(parts[3:])
+                return self._serve_terminal(sid, rest)
+            self._json({"error": "bad terminal path"}, 404); return
+        if path in ("/", "/index.html"):
+            try:
+                data = open(INDEX, "rb").read()
+            except OSError as e:
+                self._json({"error": str(e)}, 500); return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+        elif path == "/api/browse":
+            q = urllib.parse.parse_qs(pr.query); self._json(browse(q.get("path", [""])[0]))
+        elif path == "/api/sessions":
+            prune_dead()
+            with _lock:
+                items = [session_obj(sid, s, self.headers.get("Host", "")) for sid, s in sessions.items()]
+            items.sort(key=lambda x: x["started"], reverse=True)
+            self._json({"sessions": items})
+        elif path == "/api/history":
+            q = urllib.parse.parse_qs(pr.query)
+            self._json({"history": load_history(int(q.get("limit", ["60"])[0] or 60))})
+        elif path == "/api/recent_dirs":
+            q = urllib.parse.parse_qs(pr.query)
+            self._json({"dirs": recent_dirs(int(q.get("limit", ["30"])[0] or 30))})
+        else:
+            self._json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        if not self._auth():
+            return
+        pr = urllib.parse.urlparse(self.path)
+        n = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(n) if n else b"{}"
+        try:
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except ValueError:
+            data = {}
+        if pr.path == "/api/launch":
+            d = (data.get("dir") or "").strip().strip('"')
+            if not d or not os.path.isdir(d):
+                self._json({"error": "invalid directory: %r" % d}, 400); return
+            try:
+                sid, _ = launch(d, title=data.get("title") or "")
+            except Exception as e:
+                self._json({"error": str(e)}, 500); return
+            self._json({"ok": True, "sid": sid, "dir": d, "term_path": "/t/%s/" % sid})
+        elif pr.path == "/api/resume":
+            sid_arg = (data.get("session_id") or "").strip()
+            d = (data.get("dir") or "").strip().strip('"')
+            if not sid_arg:
+                self._json({"error": "missing session_id"}, 400); return
+            if not d or not os.path.isdir(d):
+                d = d or os.path.expanduser("~")
+            try:
+                sid, _ = launch(d, codex_args=["resume", sid_arg],
+                                title=data.get("title") or "恢复会话", mode="resume", session_id=sid_arg)
+            except Exception as e:
+                self._json({"error": str(e)}, 500); return
+            self._json({"ok": True, "sid": sid, "dir": d, "term_path": "/t/%s/" % sid})
+        elif pr.path == "/api/stop":
+            self._json({"ok": kill_session((data.get("sid") or "").strip())})
+        elif pr.path == "/api/stop_all":
+            kill_all(); self._json({"ok": True})
+        else:
+            self._json({"error": "not found"}, 404)
+
+
+class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+if __name__ == "__main__":
+    ip = lan_ip()
+    print("=" * 56)
+    print(" Codex-Web  (共享会话: 多端同看同输 + 多会话切换)")
+    print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, PICKER_PORT))
+    print(" 账号: %s  密码: ***" % CRED.split(":", 1)[0])
+    print(" codex: %s" % CODEX_BIN)
+    print(" Ctrl+C 退出（会自动停止所有 codex 终端）")
+    print("=" * 56)
+    try:
+        ThreadingServer((HOST, PICKER_PORT), Handler).serve_forever()
+    except KeyboardInterrupt:
+        kill_all(); print("bye")

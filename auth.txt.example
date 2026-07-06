@@ -1,0 +1,4 @@
+# 复制本文件为 auth.txt,改成你自己的「用户名:密码」(登录控制台用)。
+# auth.txt 已在 .gitignore 中,不会被上传。
+# 建议用强口令,因为登录后可在你的电脑上执行命令。
+codex:change-me-to-a-strong-password

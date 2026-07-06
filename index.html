@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1f2026">
+<title>Codex Web</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:#15161a;color:#e6e6e6;-webkit-tap-highlight-color:transparent;padding-bottom:40px}
+header{position:sticky;top:0;background:#1f2026;border-bottom:1px solid #2e2f37;z-index:3}
+.bar{display:flex;gap:0}
+.tab{flex:1;padding:13px 6px;text-align:center;font-size:14px;font-weight:600;color:#8b91a0;border:0;border-bottom:2px solid transparent;cursor:pointer;background:none}
+.tab.active{color:#7ab7ff;border-bottom-color:#2a5bd7}
+.seg{display:flex;margin:8px 10px;background:#15161a;border:1px solid #2e2f37;border-radius:9px;overflow:hidden}
+.seg button{flex:1;padding:9px;font-size:13px;border:0;background:none;color:#9aa0aa;cursor:pointer;font-weight:600}
+.seg button.active{background:#2a5bd7;color:#fff}
+.subbar{padding:8px 12px;font-size:12px;color:#9aa0aa;background:#1a1b21;border-bottom:1px solid #23242c}
+.subbar b{color:#7ab7ff;word-break:break-all}
+main{padding:8px 10px}
+.page{display:none}.page.active{display:block}
+.view{display:none}.view.active{display:block}
+.item{display:flex;align-items:center;padding:13px 12px;border-bottom:1px solid #23242c;cursor:pointer;font-size:15px}
+.item:active{background:#23242c}
+.item.parent{color:#9aa0aa}
+.ic{margin-right:10px;font-size:17px}
+.dirrow{padding:12px;background:#1c1d23;border:1px solid #2e2f37;border-radius:10px;margin:8px 0;cursor:pointer}
+.dirrow:active{background:#23242c}
+.dirrow .nm{font-size:14px;font-weight:600;word-break:break-all}
+.dirrow .mt{font-size:11px;color:#8b91a0;margin-top:4px;word-break:break-all}
+.hdr{display:flex;align-items:center;padding:11px 8px;background:#1a1b21;border:1px solid #2e2f37;border-radius:8px;margin:8px 0;cursor:pointer;font-size:13px;font-weight:600}
+.hdr .chev{margin-right:8px;color:#7ab7ff}
+.hdr .cnt{margin-left:auto;color:#8b91a0;font-weight:400;font-size:11px}
+.grp{display:none;margin:0 0 8px}.grp.open{display:block}
+.sess{padding:10px 10px 10px 26px;border-left:2px solid #2e2f37;margin:4px 0 4px 8px}
+.sess .t{font-size:13px;line-height:1.4;word-break:break-word}
+.sess .m{font-size:11px;color:#8b91a0;margin-top:3px}
+button{padding:10px 12px;font-size:13px;border:0;border-radius:8px;background:#2a5bd7;color:#fff;font-weight:600;cursor:pointer}
+button.ghost{background:#2e2f37;color:#d6d6d6}
+button.danger{background:#3a2230;color:#ff8b8b}
+button.big{width:100%;padding:15px;font-size:15px;border-radius:11px}
+button:disabled{opacity:.45}
+.err{color:#ff8b8b;font-size:13px;padding:8px 4px}
+.empty{color:#7f8691;font-size:13px;padding:20px;text-align:center}
+.tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:5px;background:#2e2f37;color:#9aa0aa;margin-right:5px}
+.tag.resume{background:#2a3a2e;color:#7ad7a0}
+.tag.yolo{background:#3a2e22;color:#ffb877}
+.search{width:100%;padding:10px;margin:8px 0;background:#1c1d23;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font-size:14px}
+.fabrow{position:sticky;bottom:0;background:linear-gradient(0deg,#15161a 70%,transparent);padding:10px 0}
+
+#overlay{position:fixed;inset:0;background:#000;z-index:50;display:none;flex-direction:column}
+#overlay.show{display:flex}
+#overlay .oh{display:flex;align-items:center;gap:6px;padding:8px 8px;background:#1f2026;border-bottom:1px solid #2e2f37;height:44px;flex:0 0 auto}
+#overlay .oh .ttl{flex:1;font-size:13px;font-weight:600;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#overlay .oh button{padding:8px 11px}
+#stage{position:relative;flex:1 1 auto;background:#000;min-height:0;overflow:hidden}
+#stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:none;touch-action:none}
+#stage iframe.show{display:block}
+#keybar{flex:0 0 auto;display:flex;gap:5px;padding:7px 6px calc(7px + env(safe-area-inset-bottom));background:#1a1b21;border-top:1px solid #2e2f37;overflow-x:auto;-webkit-overflow-scrolling:touch}
+#keybar button{flex:0 0 auto;min-width:40px;padding:11px 9px;font-size:14px;background:#2e2f37;color:#e6e6e6}
+#keybar .sep{flex:0 0 1px;align-self:center;height:26px;background:#33343d;margin:0 2px}
+#keybar .scrollbtn{background:#26303a;color:#9fd0ff}
+#keybar .kbbtn{background:#2a5bd7;color:#fff}
+
+/* sessions drawer */
+#shade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:none}
+#shade.open{display:block}
+#drawer{position:fixed;top:0;left:0;bottom:0;width:78%;max-width:320px;background:#1a1b21;border-right:1px solid #2e2f37;z-index:61;transform:translateX(-100%);transition:transform .18s;overflow-y:auto;padding:10px}
+#drawer.open{transform:translateX(0)}
+#drawer h4{margin:6px 4px 10px;font-size:13px;color:#8b91a0;font-weight:600}
+#drawer .drow{padding:11px;background:#1c1d23;border:1px solid #2e2f37;border-radius:9px;margin:7px 0;cursor:pointer}
+#drawer .drow.cur{border-color:#2a5bd7}
+#drawer .drow .nm{font-size:13px;font-weight:600;word-break:break-all}
+#drawer .drow .mt{font-size:11px;color:#8b91a0;margin-top:3px;word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <button class="tab active" data-tab="new">➕ 新建</button>
+    <button class="tab" data-tab="run">⚡ 运行中<span id="runcnt"></span></button>
+    <button class="tab" data-tab="his">🕑 历史</button>
+  </div>
+</header>
+
+<div class="page active" id="p-new">
+  <div class="seg">
+    <button id="seg-quick" class="active">⚡ 快速选择</button>
+    <button id="seg-browse">📂 浏览目录</button>
+  </div>
+  <div class="view active" id="v-quick">
+    <div style="font-size:11px;color:#8b91a0;margin:4px 2px 2px">最近用过 codex 的目录,点一下直接启动</div>
+    <main><div id="quicklist"></div></main>
+  </div>
+  <div class="view" id="v-browse">
+    <div class="subbar" id="crumbs">加载中…</div>
+    <main><div id="list"></div></main>
+    <div class="fabrow"><main><button class="big" id="open" disabled>▶ 在此目录启动 Codex <span class="tag yolo">yolo</span></button></main></div>
+  </div>
+</div>
+
+<div class="page" id="p-run">
+  <main>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 2px 8px">
+      <span style="font-size:12px;color:#8b91a0">点「打开」在内嵌终端里切换;返回不杀进程</span>
+      <button class="ghost" id="stopall" style="padding:7px 10px">全部停止</button>
+    </div>
+    <div id="runlist"></div>
+  </main>
+</div>
+
+<div class="page" id="p-his">
+  <main>
+    <input class="search" id="hisearch" placeholder="🔍 搜索历史会话(标题/目录)…">
+    <div style="font-size:11px;color:#8b91a0;margin:2px 2px 6px">按目录分组,点目录展开其下的会话</div>
+    <div id="hilist"></div>
+  </main>
+</div>
+
+<div id="overlay">
+  <div class="oh">
+    <button class="ghost" id="sessbtn" title="切换会话">≡</button>
+    <button class="ghost" id="back">‹ 返回</button>
+    <div class="ttl" id="ottl">codex</div>
+    <button class="danger" id="ostop">停止</button>
+  </div>
+  <div id="stage"></div>
+  <div id="keybar"></div>
+</div>
+
+<div id="shade"></div>
+<div id="drawer"><h4>已打开的会话</h4><div id="drawerlist"></div></div>
+
+<script>
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+function api(p, opts){ return fetch(p, opts).then(function(r){ return r.json(); }); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+function fmtTime(ts){
+  if (!ts) return "";
+  var d = new Date(ts * 1000); function p(x){ return x < 10 ? "0" + x : x; }
+  return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function basename(p){ var m = String(p||"").split(/[\\/]/); var b = m[m.length-1]; return b || p; }
+function dirparent(p){ var s = String(p||"").replace(/[\\/]+$/,""); var i = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/")); return i > 1 ? s.slice(0, i) : p; }
+
+/* ---- 内嵌终端 ---- */
+var iframes = {}, currentSid = null;
+function termIframe(sid, path){
+  if (iframes[sid]) return iframes[sid];
+  var f = document.createElement("iframe");
+  f.src = path; f.setAttribute("allow", "clipboard-read; clipboard-write");
+  f.dataset.sid = sid;
+  $("stage").appendChild(f);
+  iframes[sid] = f;
+  return f;
+}
+function showTerminal(sid, path, title){
+  currentSid = sid;
+  $("ottl").textContent = title || sid;
+  Object.keys(iframes).forEach(function(k){ iframes[k].classList.toggle("show", k === sid); });
+  termIframe(sid, path).classList.add("show");
+  $("overlay").classList.add("show");
+  closeDrawer();
+  setTimeout(function(){ try { iframes[sid].contentWindow.focus(); } catch(e){} }, 50);
+}
+function hideTerminal(){ $("overlay").classList.remove("show"); currentSid = null; }
+function dropIframe(sid){
+  if (iframes[sid]){ iframes[sid].remove(); delete iframes[sid]; }
+  if (currentSid === sid){ hideTerminal(); }
+}
+function curTerm(){ try { var f = iframes[currentSid]; return f && f.contentWindow && f.contentWindow.term; } catch(e){ return null; } }
+function sendKey(seq){
+  var t = curTerm(); if (!t) return;
+  try {
+    var core = t._core;
+    if (core && core.coreService && core.coreService.triggerDataEvent) { core.coreService.triggerDataEvent(seq, true); return; }
+  } catch(e){}
+  try { if (t.paste) t.paste(seq); } catch(_){}
+}
+function scrollTerm(action){
+  var t = curTerm(); if (!t) return;
+  try {
+    if (action === "bottom") { t.scrollToBottom && t.scrollToBottom(); return; }
+    if (action === "top") { t.scrollToTop && t.scrollToTop(); return; }
+    if (action === "pageUp") { t.scrollPages ? t.scrollPages(-1) : t.scrollLines(-24); return; }
+    if (action === "pageDown") { t.scrollPages ? t.scrollPages(1) : t.scrollLines(24); return; }
+    if (action === "up") { t.scrollLines && t.scrollLines(-12); return; }
+    if (action === "down") { t.scrollLines && t.scrollLines(12); return; }
+  } catch(e){}
+}
+function focusTerm(){ try { var t = curTerm(); t && t.focus && t.focus(); } catch(e){} }
+
+/* 快捷键 + 滚动 栏 */
+var KEYS = [
+  ["Tab","\t"], ["⇧Tab","\x1b[Z"], ["Esc","\x1b"], ["⌃C","\x03"], ["⌃D","\x04"], ["⌃L","\x0c"],
+  ["⌃Z","\x1a"], ["↑","\x1b[A"], ["↓","\x1b[B"], ["←","\x1b[D"], ["→","\x1b[C"], ["/","/"], [":",":"], ["⌫","\x7f"]
+];
+var SCROLLS = [["↥","up"],["⇞","pageUp"],["⇟","pageDown"],["↧","down"],["⤓","bottom"]];
+(function(){
+  var kb = $("keybar");
+  KEYS.forEach(function(k){ var b=document.createElement("button"); b.textContent=k[0];
+    b.addEventListener("click", function(){ sendKey(k[1]); focusTerm(); }); kb.appendChild(b); });
+  var sep=document.createElement("div"); sep.className="sep"; kb.appendChild(sep);
+  SCROLLS.forEach(function(k){ var b=document.createElement("button"); b.className="scrollbtn"; b.textContent=k[0];
+    b.addEventListener("click", function(){ scrollTerm(k[1]); focusTerm(); }); kb.appendChild(b); });
+  var kb2=document.createElement("button"); kb2.className="kbbtn"; kb2.textContent="⌨";
+  kb2.addEventListener("click", focusTerm); kb.appendChild(kb2);
+})();
+
+$("back").addEventListener("click", hideTerminal);
+$("ostop").addEventListener("click", function(){
+  if (!currentSid) return; var sid = currentSid;
+  if (!confirm("停止这个 codex 会话？")) return;
+  api("/api/stop", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({sid: sid})})
+    .then(function(){ dropIframe(sid); refreshRun(); });
+});
+
+/* ---- 会话侧边栏 ---- */
+function openDrawer(){ refreshDrawer(); $("drawer").classList.add("open"); $("shade").classList.add("open"); }
+function closeDrawer(){ $("drawer").classList.remove("open"); $("shade").classList.remove("open"); }
+function refreshDrawer(){
+  api("/api/sessions").then(function(r){
+    var list=$("drawerlist"); list.innerHTML="";
+    var ss=r.sessions||[];
+    if(!ss.length){ var e=document.createElement("div"); e.className="empty"; e.textContent="没有打开的会话"; list.appendChild(e); return; }
+    ss.forEach(function(s){
+      var row=document.createElement("div"); row.className="drow"+(s.sid===currentSid?" cur":"");
+      row.innerHTML='<div class="nm">'+esc(s.title||basename(s.dir))+(s.mode==="resume"?' <span class="tag resume">恢复</span>':'')+'<span class="tag yolo">yolo</span></div>'+
+        '<div class="mt">📁 '+esc(s.dir)+'</div>';
+      row.addEventListener("click", function(){ showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); });
+      list.appendChild(row);
+    });
+  });
+}
+$("sessbtn").addEventListener("click", function(){ $("drawer").classList.contains("open") ? closeDrawer() : openDrawer(); });
+$("shade").addEventListener("click", closeDrawer);
+
+/* ---- 顶部 tabs ---- */
+document.querySelectorAll(".tab").forEach(function(t){
+  t.addEventListener("click", function(){
+    document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); });
+    document.querySelectorAll(".page").forEach(function(x){ x.classList.remove("active"); });
+    t.classList.add("active");
+    $("p-" + t.dataset.tab).classList.add("active");
+    if (t.dataset.tab === "run") refreshRun();
+    if (t.dataset.tab === "his") refreshHis();
+    if (t.dataset.tab === "new") refreshQuick();
+  });
+});
+
+/* ---- 新建 ---- */
+function setSeg(which){
+  $("seg-quick").classList.toggle("active", which === "quick");
+  $("seg-browse").classList.toggle("active", which === "browse");
+  $("v-quick").classList.toggle("active", which === "quick");
+  $("v-browse").classList.toggle("active", which === "browse");
+  if (which === "quick") refreshQuick();
+}
+$("seg-quick").addEventListener("click", function(){ setSeg("quick"); });
+$("seg-browse").addEventListener("click", function(){ setSeg("browse"); });
+function launchDir(dir, title){
+  api("/api/launch", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({dir: dir})})
+    .then(function(r){ if (r.error){ alert("启动失败：" + r.error); return; }
+      showTerminal(r.sid, r.term_path, title || basename(r.dir)); refreshRun(); });
+}
+function refreshQuick(){
+  api("/api/recent_dirs").then(function(r){
+    var list = $("quicklist"); list.innerHTML = "";
+    var ds = r.dirs || [];
+    if (!ds.length){ var e = document.createElement("div"); e.className="empty"; e.textContent="还没有用过 codex 的目录。去「浏览目录」选一个吧。"; list.appendChild(e); return; }
+    ds.forEach(function(d){
+      var row = document.createElement("div"); row.className = "dirrow";
+      row.innerHTML = '<div class="nm">📁 ' + esc(basename(d.cwd)) + '</div>' +
+        '<div class="mt">' + esc(d.cwd) + '<br>' + d.count + ' 段会话 · 最近 ' + fmtTime(d.last_ts) + '</div>';
+      row.addEventListener("click", function(){ launchDir(d.cwd, basename(d.cwd)); });
+      list.appendChild(row);
+    });
+  });
+}
+var cur = "";
+function makeItem(name, path, extra){
+  var a = document.createElement("div"); a.className = "item " + (extra || "");
+  var ic = document.createElement("span"); ic.className = "ic"; ic.textContent = "📁";
+  var t = document.createElement("span"); t.textContent = name;
+  a.appendChild(ic); a.appendChild(t);
+  a.addEventListener("click", function(){ go(path); });
+  return a;
+}
+function render(b){
+  cur = b.path || "";
+  $("crumbs").innerHTML = cur ? "当前目录：<b>" + esc(cur) + "</b>" : "<b>我的电脑</b> · 选一个盘进入";
+  $("open").disabled = !cur;
+  var list = $("list"); list.innerHTML = "";
+  if (b.error){ var e = document.createElement("div"); e.className = "err"; e.textContent = b.error; list.appendChild(e); }
+  if (b.parent !== undefined && (b.parent || cur)) list.appendChild(makeItem("…  上级目录", b.parent, "parent"));
+  (b.entries || []).forEach(function(en){ list.appendChild(makeItem(en.name, en.path, "")); });
+  if (!b.error && !(b.entries && b.entries.length)){
+    var n = document.createElement("div"); n.className = "empty"; n.textContent = "（没有子文件夹）"; list.appendChild(n);
+  }
+  window.scrollTo(0, 0);
+}
+function go(path){ api("/api/browse?path=" + encodeURIComponent(path)).then(render); }
+$("open").addEventListener("click", function(){ if (cur) launchDir(cur, basename(cur)); });
+
+/* ---- 运行中 ---- */
+function refreshRun(){
+  api("/api/sessions").then(function(r){
+    var list = $("runlist"); list.innerHTML = "";
+    var ss = r.sessions || [];
+    $("runcnt").textContent = ss.length ? "(" + ss.length + ")" : "";
+    Object.keys(iframes).forEach(function(sid){ if (!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
+    if (!ss.length){ var e = document.createElement("div"); e.className = "empty"; e.textContent = "没有运行中的 codex。去「新建」启动一个吧。"; list.appendChild(e); return; }
+    ss.forEach(function(s){
+      var row = document.createElement("div"); row.className = "dirrow";
+      row.innerHTML = '<div class="nm">' + esc(s.title || basename(s.dir)) +
+        (s.mode === "resume" ? ' <span class="tag resume">恢复</span>' : "") + ' <span class="tag yolo">yolo</span></div>' +
+        '<div class="m">📁 ' + esc(s.dir) + "<br>启动 " + fmtTime(s.started) + '</div>';
+      row.addEventListener("click", function(){ showTerminal(s.sid, s.term_path, s.title || basename(s.dir)); });
+      var stop = document.createElement("button"); stop.className="danger"; stop.textContent="停止"; stop.style.marginTop="8px";
+      stop.addEventListener("click", function(ev){ ev.stopPropagation();
+        api("/api/stop", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({sid: s.sid})})
+          .then(function(){ dropIframe(s.sid); refreshRun(); });
+      });
+      row.appendChild(stop); list.appendChild(row);
+    });
+  });
+}
+$("stopall").addEventListener("click", function(){
+  api("/api/stop_all", {method:"POST"}).then(function(){ Object.keys(iframes).forEach(dropIframe); refreshRun(); });
+});
+
+/* ---- 历史 ---- */
+var hisAll = [], expanded = {};
+function refreshHis(){ api("/api/history?limit=200").then(function(r){ hisAll = r.history || []; renderHis($("hisearch").value); }); }
+function renderHis(q){
+  q = (q || "").toLowerCase();
+  var list = $("hilist"); list.innerHTML = "";
+  var groups = {};
+  hisAll.forEach(function(h){
+    if (q && (h.title||"").toLowerCase().indexOf(q) < 0 && (h.cwd||"").toLowerCase().indexOf(q) < 0) return;
+    var k = h.cwd || "(未知目录)";
+    (groups[k] = groups[k] || []).push(h);
+  });
+  var keys = Object.keys(groups);
+  if (!keys.length){ var e = document.createElement("div"); e.className="empty"; e.textContent="没有匹配的历史会话"; list.appendChild(e); return; }
+  keys.sort(function(a,b){ return (groups[b][0].ts||0) - (groups[a][0].ts||0); });
+  keys.forEach(function(k){
+    var sess = groups[k];
+    var open = !!expanded[k];
+    var hdr = document.createElement("div"); hdr.className = "hdr";
+    hdr.innerHTML = '<span class="chev">' + (open ? "▼" : "▶") + "</span>📁 " + esc(basename(k)) +
+      ' <span style="color:#7f8691;font-weight:400;font-size:11px">· ' + esc(dirparent(k)) + '</span>' +
+      '<span class="cnt">' + sess.length + ' 段</span>';
+    hdr.addEventListener("click", function(){ expanded[k] = !expanded[k]; renderHis($("hisearch").value); });
+    list.appendChild(hdr);
+    var grp = document.createElement("div"); grp.className = "grp" + (open ? " open" : "");
+    sess.forEach(function(h){
+      var s = document.createElement("div"); s.className = "sess";
+      s.innerHTML = '<div class="t">' + esc(h.title || "(无标题)") + '</div>' +
+        '<div class="m">' + fmtTime(h.ts) + (h.originator ? ' · ' + esc(h.originator) : '') + '</div>';
+      var b = document.createElement("button"); b.textContent="恢复并继续"; b.style.marginTop="7px";
+      b.addEventListener("click", function(){
+        b.disabled = true; b.textContent = "恢复中…";
+        api("/api/resume", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({session_id: h.session_id, dir: h.cwd, title: h.title})})
+          .then(function(r){ b.disabled = false; b.textContent = "恢复并继续";
+            if (r.error){ alert("恢复失败：" + r.error); return; }
+            showTerminal(r.sid, r.term_path, h.title || "恢复会话"); refreshRun();
+          });
+      });
+      s.appendChild(b); grp.appendChild(s);
+    });
+    list.appendChild(grp);
+  });
+}
+$("hisearch").addEventListener("input", function(){ renderHis($("hisearch").value); });
+
+setInterval(function(){ if ($("p-run").classList.contains("active")) refreshRun(); }, 5000);
+go("");
+refreshQuick();
+</script>
+</body>
+</html>

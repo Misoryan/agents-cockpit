@@ -4,6 +4,6 @@
 cd "$(dirname "$0")"
 while true; do
   python3 app.py
-  echo "[supervisor] Agent Cockpit exited (code $?), relaunch in 2s. Ctrl+C 或关闭本终端停止。"
+  echo "[supervisor] Agents Cockpit exited (code $?), relaunch in 2s. Ctrl+C 或关闭本终端停止。"
   sleep 2
 done

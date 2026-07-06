@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agent Cockpit — web process (the "后端接入层" facing the browser).
+Agents Cockpit — web process (the "后端接入层" facing the browser).
 
 Serves index.html, enforces basic-auth, and reverse-proxies every /api/* and /t/*
 to the manager over plain TCP (HTTP + raw websocket bytes). The web process is
@@ -253,7 +253,7 @@ def run():
     threading.Thread(target=_manager_watchdog, daemon=True).start()
     ip = common.lan_ip()
     print("=" * 56)
-    print(" Agent Cockpit  (三层拆分: 前端 / web / manager 各自可独立重启)")
+    print(" Agents Cockpit  (三层拆分: 前端 / web / manager 各自可独立重启)")
     print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, common.PICKER_PORT))
     print(" Manager(本机): http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     print(" 账号: %s  密码: ***" % common.CRED.split(":", 1)[0])

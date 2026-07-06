@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agent Cockpit — shared infrastructure (used by both web and manager processes).
+Agents Cockpit — shared infrastructure (used by both web and manager processes).
 
 Constants/paths, env, binary discovery, auth, websocket frame helpers, history
 loaders, CC-Switch read-only integration, folder browse, the session registry +
@@ -20,6 +20,7 @@ import base64
 import sys
 import time
 import socket
+import configparser
 import http.client
 import hashlib
 import re
@@ -27,45 +28,104 @@ import shlex
 import sqlite3
 from datetime import datetime
 
-# ---- config (all overridable via env; CODEX_* kept on purpose) ----
-HOST = "0.0.0.0"
+# ---- config: read everything from config.ini (no env vars) ----
 HERE = os.path.dirname(os.path.abspath(__file__))
-PICKER_PORT = int(os.environ.get("CODEX_WEB_PORT", "7682"))
-PORT_BASE = int(os.environ.get("CODEX_PORT_BASE", str(PICKER_PORT + 1)))
+CONFIG_FILE = os.path.join(HERE, "config.ini")
+
+_CONFIG_DEFAULTS = """
+[server]
+host = 0.0.0.0
+port = 7682
+port_base = 0
+bind = 127.0.0.1
+[manager]
+port = 0
+heartbeat = 2
+heartbeat_grace = 3
+[approval]
+auto_approve = 1
+codex_no_alt_screen = 1
+[binaries]
+codex =
+claude =
+ttyd =
+[paths]
+auth_file = auth.txt
+codex_home =
+claude_home =
+[ccswitch]
+db =
+usage_ttl = 15
+balance_ttl = 300
+[limits]
+buf_cap = 262144
+claude_scan_cap = 6000
+"""
+
+
+def _load_config():
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read_string(_CONFIG_DEFAULTS)
+    if os.path.isfile(CONFIG_FILE):
+        try:
+            cp.read(CONFIG_FILE, encoding="utf-8")
+        except configparser.Error as e:
+            print("WARNING: config.ini 解析失败,改用默认值: %s" % e)
+    return cp
+
+
+_CFG = _load_config()
+
+
+def _cfg_get(section, key, fallback=""):
+    try:
+        return _CFG.get(section, key)
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        return fallback
+
+
+HOST = (_CFG.get("server", "host") or "0.0.0.0").strip()
+PICKER_PORT = _CFG.getint("server", "port") or 7682
+_pb = _CFG.getint("server", "port_base")
+PORT_BASE = _pb if _pb > 0 else PICKER_PORT + 1
 PORT_SKIP = {PICKER_PORT}
 INDEX = os.path.join(HERE, "index.html")
-AUTH_FILE = os.environ.get("AUTH_FILE") or os.path.join(HERE, "auth.txt")
-BIND_IFACE = os.environ.get("CODEX_BIND", "127.0.0.1")  # ttyd loopback iface (Windows: 127.0.0.1)
+BIND_IFACE = (_CFG.get("server", "bind") or "127.0.0.1").strip()  # ttyd loopback iface (Windows: 127.0.0.1)
 CREATE_NO_WINDOW = 0x08000000
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-BUF_CAP = 262144  # max replay buffer per session (~256KB)
-# auto-approve: codex --yolo / claude --dangerously-skip-permissions. CODEX_YOLO=0 to disable.
-AUTO_APPROVE = os.environ.get("CODEX_YOLO", "1") not in ("0", "", "false", "no")
-CODEX_NO_ALT_SCREEN = os.environ.get("CODEX_NO_ALT_SCREEN", "1") not in ("0", "", "false", "no")
+BUF_CAP = _CFG.getint("limits", "buf_cap") or 262144  # max replay buffer per session (~256KB)
+AUTO_APPROVE = _CFG.getboolean("approval", "auto_approve")        # codex --yolo / claude --dangerously-skip-permissions
+CODEX_NO_ALT_SCREEN = _CFG.getboolean("approval", "codex_no_alt_screen")
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
 MANAGER_HOST = "127.0.0.1"
-MANAGER_PORT = int(os.environ.get("CODEX_MANAGER_PORT", str(PICKER_PORT + 1000)))
+_mp = _CFG.getint("manager", "port")
+MANAGER_PORT = _mp if _mp > 0 else PICKER_PORT + 1000
 
-# ---- persisted-state dirs (Phase B: registry + scrollback) ----
+# ---- persisted-state dirs (registry + scrollback for soft-restart reattach) ----
 STATE_DIR = os.path.join(HERE, ".agent-cockpit")
 REGISTRY_PATH = os.path.join(STATE_DIR, "sessions.json")
 SCROLLBACK_DIR = os.path.join(STATE_DIR, "scrollback")
 REG_LOCK = threading.Lock()                       # only guards disk writes; never nest under manager._lock
-MANAGER_HEARTBEAT_INTERVAL = float(os.environ.get("CODEX_HEARTBEAT", "2"))
-MANAGER_HEARTBEAT_GRACE = int(os.environ.get("CODEX_HEARTBEAT_GRACE", "3"))
+MANAGER_HEARTBEAT_INTERVAL = _CFG.getfloat("manager", "heartbeat") or 2.0
+MANAGER_HEARTBEAT_GRACE = _CFG.getint("manager", "heartbeat_grace") or 3
 
 # ---- CC Switch integration (optional, read-only) ----
-CCSWITCH_DB = os.environ.get("CCSWITCH_DB") or os.path.join(os.path.expanduser("~"), ".cc-switch", "cc-switch.db")
-CCSWITCH_USAGE_TTL = int(os.environ.get("CCSWITCH_USAGE_TTL", "15"))        # db read cache (s)
-CCSWITCH_BALANCE_TTL = int(os.environ.get("CCSWITCH_BALANCE_TTL", "300"))   # quota cache (s)
+CCSWITCH_DB = (_cfg_get("ccswitch", "db") or os.path.join(os.path.expanduser("~"), ".cc-switch", "cc-switch.db")).strip()
+CCSWITCH_USAGE_TTL = _CFG.getint("ccswitch", "usage_ttl") or 15        # db read cache (s)
+CCSWITCH_BALANCE_TTL = _CFG.getint("ccswitch", "balance_ttl") or 300   # quota cache (s)
 
-CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+AUTH_FILE = (_cfg_get("paths", "auth_file") or os.path.join(HERE, "auth.txt")).strip()
+if not os.path.isabs(AUTH_FILE):
+    AUTH_FILE = os.path.join(HERE, AUTH_FILE)
+
+CODEX_HOME = (_cfg_get("paths", "codex_home") or os.path.join(os.path.expanduser("~"), ".codex")).strip()
 SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
 HISTORY_JSONL = os.path.join(CODEX_HOME, "history.jsonl")
-CLAUDE_HOME = os.environ.get("CLAUDE_HOME") or os.path.join(os.path.expanduser("~"), ".claude")
+CLAUDE_HOME = (_cfg_get("paths", "claude_home") or os.path.join(os.path.expanduser("~"), ".claude")).strip()
 CLAUDE_PROJECTS_DIR = os.path.join(CLAUDE_HOME, "projects")
 # 扫描单个 claude 会话文件的最大行数(标题/ai-title 通常在前若干行;超大转录用此封顶)
-CLAUDE_SCAN_CAP = 6000
+CLAUDE_SCAN_CAP = _CFG.getint("limits", "claude_scan_cap") or 6000
+
 
 
 # ---------- binary discovery ----------
@@ -79,10 +139,9 @@ def _find_codex_under(root):
     return None
 
 
-def resolve_codex_bin():
-    p = os.environ.get("CODEX_BIN")
-    if p and os.path.isfile(p):
-        return p
+def resolve_codex_bin(override=None):
+    if override and os.path.isfile(override):
+        return override
     try:
         cmd = "where codex" if os.name == "nt" else "command -v codex"
         out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
@@ -108,10 +167,9 @@ def resolve_codex_bin():
     return None
 
 
-def resolve_ttyd():
-    p = os.environ.get("TTYD")
-    if p and os.path.isfile(p):
-        return p
+def resolve_ttyd(override=None):
+    if override and os.path.isfile(override):
+        return override
     for c in (os.path.join(HERE, "ttyd.exe"), os.path.join(HERE, "ttyd")):
         if os.path.isfile(c):
             return c
@@ -119,10 +177,9 @@ def resolve_ttyd():
     return which("ttyd")
 
 
-def resolve_claude_bin():
-    p = os.environ.get("CLAUDE_BIN")
-    if p and os.path.isfile(p):
-        return p
+def resolve_claude_bin(override=None):
+    if override and os.path.isfile(override):
+        return override
     try:
         cmd = "where claude" if os.name == "nt" else "command -v claude"
         out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
@@ -135,9 +192,9 @@ def resolve_claude_bin():
     return None
 
 
-CODEX_BIN = resolve_codex_bin()
-CLAUDE_BIN = resolve_claude_bin()
-TTYD = resolve_ttyd()
+CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
+CLAUDE_BIN = resolve_claude_bin(_cfg_get("binaries", "claude").strip() or None)
+TTYD = resolve_ttyd(_cfg_get("binaries", "ttyd").strip() or None)
 
 BACKENDS = {
     "codex": {"bin": CODEX_BIN, "yolo": ["--yolo"], "label": "Codex"},
@@ -230,8 +287,9 @@ def _manager_path():
 
 
 def _manager_argv():
-    args = [a for a in sys.argv[1:] if a != "--manager"]
-    return [sys.executable, os.path.abspath(_manager_path()), "--manager"] + args
+    # config is file-based, so the manager subprocess just needs the mode flag;
+    # both processes read the same config.ini from disk.
+    return [sys.executable, os.path.abspath(_manager_path()), "--manager"]
 
 
 def manager_available():

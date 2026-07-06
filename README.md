@@ -1,4 +1,4 @@
-# Agent Cockpit
+# Agents Cockpit
 
 > 在手机或任意浏览器上远程驱动本机 **Codex / Claude Code CLI** 的轻量 Web 控制台。挑目录即开 codex 或 claude、多会话切换、**多端实时共享同一个会话**(电脑跑、手机看 + 输入)、历史按目录恢复。
 
@@ -43,9 +43,10 @@ git clone https://github.com/Misoryan/agents-cockpit.git
 cd agents-cockpit
 ```
 
-1. 把 `ttyd.win32.exe` 重命名为 **`ttyd.exe`** 放进本目录(或设环境变量 `TTYD` 指向它)。
+1. 把 `ttyd.win32.exe` 重命名为 **`ttyd.exe`** 放进本目录(也可在 `config.ini` 里用 `[binaries] ttyd =` 指定路径)。
 2. 复制 **`auth.txt.example`** 为 **`auth.txt`**,改成你自己的 `用户名:密码`(登录控制台用)。
-3. 运行:
+3. (可选)复制 **`config.example`** 为 **`config.ini`** 按需改端口/路径等;不改也能跑(全部默认值)。
+4. 运行:
    - Windows:双击 `start.cmd`
    - 任意平台:`python app.py`(Linux/macOS 可用 `./start.sh`)
 
@@ -58,17 +59,23 @@ cd agents-cockpit
 
 手机和电脑连**同一个局域网**,浏览器打开该地址,输入 `auth.txt` 里的口令即可。
 
-## ⚙️ 配置(环境变量)
+## ⚙️ 配置(config.ini)
 
-| 变量 | 默认值 | 说明 |
+所有配置都从一个文件读:复制 `config.example` 为 **`config.ini`** 按需修改,重启生效。没有 `config.ini` 也能跑(全部走默认值)。常用项:
+
+| 配置项 | 默认 | 说明 |
 |---|---|---|
-| `CODEX_WEB_PORT` | `7682` | 控制台端口 |
-| `CODEX_BIND` | `127.0.0.1` | ttyd 绑定网卡(Linux 可设 `lo`) |
-| `TTYD` | 本目录 `ttyd.exe` | ttyd 可执行文件路径 |
-| `CODEX_BIN` | 自动探测 | codex 原生二进制路径 |
-| `CODEX_HOME` | `~/.codex` | codex 配置目录 |
-| `AUTH_FILE` | 本目录 `auth.txt` | 口令文件(格式 `用户名:密码`) |
-| `CODEX_YOLO` | `1` | `1`=codex `--yolo` 自动执行无审批;`0`=关闭(逐项审批) |
+| `[server] port` | `7682` | 控制台端口(浏览器打开的那个) |
+| `[server] bind` | `127.0.0.1` | ttyd 绑定网卡(Linux 可设 `lo`) |
+| `[server] host` | `0.0.0.0` | 对外监听地址 |
+| `[manager] port` | `8682` | manager 进程端口(本机,web 与它通信) |
+| `[binaries] ttyd` | 自动探测 | ttyd 可执行文件路径(留空=本目录 `ttyd.exe` 或 PATH) |
+| `[binaries] codex` / `claude` | 自动探测 | CLI 路径(留空=自动探测) |
+| `[paths] codex_home` / `claude_home` | `~/.codex` / `~/.claude` | CLI 配置目录 |
+| `[paths] auth_file` | `auth.txt` | 口令文件(格式 `用户名:密码`) |
+| `[approval] auto_approve` | `1` | `1`=codex `--yolo` / claude `--dangerously-skip-permissions`;`0`=逐项审批 |
+
+完整字段见 `config.example`(每项都有注释)。`config.ini` 已在 `.gitignore` 中,不会被上传。
 
 ## 🌍 外网访问
 
@@ -77,7 +84,7 @@ cd agents-cockpit
 ## ⚠️ 安全须知
 
 - 终端能让你在 PC 上执行命令、改文件,务必设**强口令**,并仅在自己可信的网络使用。
-- `--yolo` 下 codex 会不经确认就执行命令;不放心可设 `CODEX_YOLO=0` 关掉。
+- `--yolo` 下 codex 会不经确认就执行命令;不放心可在 `config.ini` 里设 `[approval] auto_approve = 0` 关掉。
 - 口令文件 `auth.txt` 已在 `.gitignore` 中,**不会**上传;请勿把自己的真实口令提交进仓库。
 
 ## 🙏 致谢

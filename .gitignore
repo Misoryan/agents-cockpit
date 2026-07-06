@@ -3,9 +3,9 @@ auth.txt
 .auth
 *.key
 
-# frp 内网穿透配置(含 token,切勿上传)
-frpc.txt
-frpc.*
+# 本机配置(从 config.example 复制而来,勿上传)
+config.ini
+
 
 # 二进制(需自行下载,不入库)
 ttyd

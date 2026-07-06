@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agent Cockpit entry point.
+Agents Cockpit entry point.
 
 Single launcher kept for compatibility with start.cmd (`python app.py`). It just
 picks web vs manager mode from argv and delegates:

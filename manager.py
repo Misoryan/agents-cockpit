@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agent Cockpit — manager process (the "codex/claude 端" supervisor).
+Agents Cockpit — manager process (the "codex/claude 端" supervisor).
 
 Owns every ttyd+codex/claude child process and the in-memory session table.
 This is the layer that survives a web-only restart, and (Phase B) can now be
@@ -369,7 +369,7 @@ class ManagerHandler(BaseHandler):
 
 
 def run():
-    print("Agent Cockpit manager: http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
+    print("Agents Cockpit manager: http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     reattach_sessions()
     atexit.register(kill_all)
     try:

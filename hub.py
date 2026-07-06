@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Agent Cockpit — terminal hub.
+Agents Cockpit — terminal hub.
 
 One persistent upstream websocket to a per-session ttyd (which owns the
 codex/claude PTY), multiplexing many browser clients onto it: broadcasts CLI

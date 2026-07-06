@@ -30,6 +30,8 @@ import select
 import http.client
 import hashlib
 import re
+import shlex
+import signal
 from datetime import datetime
 
 # ---- config (all overridable via env) ----
@@ -39,13 +41,19 @@ PICKER_PORT = int(os.environ.get("CODEX_WEB_PORT", "7682"))
 PORT_BASE = int(os.environ.get("CODEX_PORT_BASE", str(PICKER_PORT + 1)))
 PORT_SKIP = {PICKER_PORT}
 INDEX = os.path.join(HERE, "index.html")
+SW_FILE = os.path.join(HERE, "sw.js")
 AUTH_FILE = os.environ.get("AUTH_FILE") or os.path.join(HERE, "auth.txt")
 BIND_IFACE = os.environ.get("CODEX_BIND", "127.0.0.1")  # ttyd loopback iface (Windows: 127.0.0.1)
 CREATE_NO_WINDOW = 0x08000000
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 BUF_CAP = 262144  # max replay buffer per session (~256KB)
-# codex --yolo: skip all approvals + no sandbox. Set CODEX_YOLO=0 to disable.
-YOLO_FLAG = [] if os.environ.get("CODEX_YOLO", "1") in ("0", "", "false", "no") else ["--yolo"]
+# auto-approve: codex --yolo / claude --dangerously-skip-permissions. CODEX_YOLO=0 to disable.
+AUTO_APPROVE = os.environ.get("CODEX_YOLO", "1") not in ("0", "", "false", "no")
+CODEX_NO_ALT_SCREEN = os.environ.get("CODEX_NO_ALT_SCREEN", "1") not in ("0", "", "false", "no")
+LOG_TEXT_CAP = int(os.environ.get("CODEX_LOG_TEXT_CAP", str(BUF_CAP)))
+RUN_MODE = "manager" if "--manager" in sys.argv else "web"
+MANAGER_HOST = "127.0.0.1"
+MANAGER_PORT = int(os.environ.get("CODEX_MANAGER_PORT", str(PICKER_PORT + 1000)))
 
 CODEX_HOME = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
 SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
@@ -104,11 +112,33 @@ def resolve_ttyd():
     return which("ttyd")
 
 
+def resolve_claude_bin():
+    p = os.environ.get("CLAUDE_BIN")
+    if p and os.path.isfile(p):
+        return p
+    try:
+        cmd = "where claude" if os.name == "nt" else "command -v claude"
+        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
+        for line in out.splitlines():
+            shim = line.strip()
+            if shim and os.path.isfile(shim):
+                return shim
+    except Exception:
+        pass
+    return None
+
+
 CODEX_BIN = resolve_codex_bin()
+CLAUDE_BIN = resolve_claude_bin()
 TTYD = resolve_ttyd()
 
-if not CODEX_BIN:
-    print("ERROR: 未找到 codex 二进制。请用 npm 安装 @openai/codex,或设置 CODEX_BIN 环境变量。")
+BACKENDS = {
+    "codex": {"bin": CODEX_BIN, "yolo": ["--yolo"], "label": "Codex"},
+    "claude": {"bin": CLAUDE_BIN, "yolo": ["--dangerously-skip-permissions"], "label": "Claude Code"},
+}
+
+if not (CODEX_BIN or CLAUDE_BIN):
+    print("ERROR: 未找到 codex 或 claude。请至少安装一个 CLI。")
     sys.exit(1)
 if not TTYD or not os.path.isfile(TTYD):
     print("ERROR: 未找到 ttyd。请把 ttyd(.exe) 放在本目录,或设置 TTYD 环境变量。")
@@ -123,6 +153,71 @@ EXPECTED_AUTH = "Basic " + base64.b64encode(CRED.encode()).decode()
 sessions = {}      # sid -> {port, proc, dir, title, started, mode, session_id, hub}
 _lock = threading.Lock()
 _sid = [0]
+_server = [None]
+
+
+def _is_local_client(addr):
+    host = addr[0] if addr else ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+def _manager_path():
+    return sys.argv[0] if sys.argv and sys.argv[0] else __file__
+
+
+def _manager_argv():
+    args = [a for a in sys.argv[1:] if a != "--manager"]
+    return [sys.executable, os.path.abspath(_manager_path()), "--manager"] + args
+
+
+def manager_available():
+    try:
+        conn = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=0.8)
+        conn.request("GET", "/api/backends")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        if not (200 <= resp.status < 500):
+            return False
+        # Old managers may answer /api/backends but not support the log API.
+        conn = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=0.8)
+        conn.request("GET", "/api/log?sid=__healthcheck__")
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8", "replace")
+        conn.close()
+        return resp.status == 404 and "session not found" in data
+    except OSError:
+        return False
+
+
+def ensure_manager():
+    if RUN_MODE == "manager" or manager_available():
+        return True
+    subprocess.Popen(_manager_argv(), cwd=HERE, creationflags=CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        if manager_available():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def restart_web_soon():
+    def _restart():
+        time.sleep(0.35)
+        srv = _server[0]
+        if srv:
+            try:
+                srv.shutdown()
+            except Exception:
+                pass
+            try:
+                srv.server_close()
+            except Exception:
+                pass
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=_restart, daemon=True).start()
 
 
 # ---------- websocket frame helpers (RFC 6455, minimal) ----------
@@ -182,6 +277,36 @@ def ws_accept_key(key):
 
 # ---------- hub: one persistent codex, many browser clients ----------
 _CONFIRM_RE = re.compile(rb"(?i)(\bapprove\b|\ballow\b|\bconfirm\b|\[y/?n\]|\(yes/no\)|\(y/n\)|\byes/no\b)")
+_ANSI_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _strip_backspaces(text):
+    out = []
+    for ch in text:
+        if ch == "\b":
+            if out:
+                out.pop()
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _payload_to_plain_text(payload):
+    if not payload:
+        return ""
+    # ttyd prefixes stdout frames with "0"; other prefixes are control/input frames.
+    if payload[:1] == b"0":
+        data = payload[1:]
+    elif payload[:1] in (b"1", b"2", b"3", b"4", b"5"):
+        return ""
+    else:
+        data = payload
+    text = data.decode("utf-8", "replace")
+    text = _ANSI_RE.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _strip_backspaces(text)
+    return _CTRL_RE.sub("", text)
 
 
 class Hub:
@@ -190,6 +315,7 @@ class Hub:
         self.clients = set()       # browser raw sockets
         self.frames = []           # buffered output payloads (ttyd "0"+data), for replay
         self.frames_size = 0
+        self.frames_dropped = False
         self.upstream = None       # raw socket to ttyd
         self.clock = threading.Lock()
         self.started = time.time()
@@ -262,6 +388,18 @@ class Hub:
         while self.frames_size > BUF_CAP and len(self.frames) > 1:
             old = self.frames.pop(0)
             self.frames_size -= len(old)
+            self.frames_dropped = True
+
+    def plain_log(self):
+        with self.clock:
+            snapshot = list(self.frames)
+            truncated = self.frames_dropped
+            size = self.frames_size
+        text = "".join(_payload_to_plain_text(fr) for fr in snapshot)
+        if len(text) > LOG_TEXT_CAP:
+            text = text[-LOG_TEXT_CAP:]
+            truncated = True
+        return text, truncated, size
 
     def _broadcast(self, payload, opcode):
         dead = []
@@ -442,11 +580,20 @@ def kill_all():
         kill_session(sid)
 
 
-def launch(cwd, codex_args=None, title="", mode="new", session_id=None):
+def launch(cwd, backend="codex", cli_args=None, title="", mode="new", session_id=None, auto_approve=None, extra_args=None):
     prune_dead()
+    bconf = BACKENDS.get(backend) or BACKENDS["codex"]
+    bin_path = bconf["bin"]
+    if not bin_path or not os.path.isfile(bin_path):
+        raise RuntimeError("%s 未找到(请用 npm 装 @openai/codex 或安装 claude,或设 CODEX_BIN/CLAUDE_BIN)" % bconf["label"])
+    if auto_approve is None:
+        auto_approve = AUTO_APPROVE
+    yolo = list(bconf["yolo"]) if auto_approve else []
+    display_args = ["--no-alt-screen"] if backend == "codex" and CODEX_NO_ALT_SCREEN else []
+    extra = shlex.split(extra_args) if extra_args else []
     port = alloc_port()
-    # ttyd: localhost-only, writable. Persistent (hub keeps codex alive).
-    cmd = [TTYD, "-p", str(port), "-W", "-w", cwd, "-i", BIND_IFACE, CODEX_BIN] + YOLO_FLAG + (codex_args or [])
+    # ttyd: localhost-only, writable. Persistent (hub keeps the CLI alive).
+    cmd = [TTYD, "-p", str(port), "-W", "-w", cwd, "-i", BIND_IFACE, bin_path] + yolo + display_args + extra + (cli_args or [])
     proc = subprocess.Popen(cmd, creationflags=CREATE_NO_WINDOW,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     wait_port(port)
@@ -455,7 +602,7 @@ def launch(cwd, codex_args=None, title="", mode="new", session_id=None):
         _sid[0] += 1
         sid = "s%d" % _sid[0]
         sessions[sid] = {
-            "port": port, "proc": proc, "dir": cwd,
+            "port": port, "proc": proc, "dir": cwd, "backend": backend,
             "title": title or os.path.basename(cwd.rstrip("\\/")) or cwd,
             "started": time.time(), "mode": mode, "session_id": session_id, "hub": hub,
         }
@@ -570,6 +717,7 @@ def session_obj(sid, s, host):
     hub = s["hub"]; now = time.time()
     return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
             "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,
+            "backend": s.get("backend", "codex"),
             "state": hub.state(now), "last_input_ts": hub.last_input_ts,
             "last_output_ts": hub.last_output_ts, "cols": hub.cols, "rows": hub.rows}
 
@@ -592,6 +740,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def _auth(self):
+        if RUN_MODE == "manager" and _is_local_client(self.client_address):
+            return True
         if self.headers.get("Authorization", "") == EXPECTED_AUTH:
             return True
         self.send_response(401)
@@ -645,11 +795,140 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pass
         hub.add_client(self.connection)
 
+    def _serve_index(self):
+        try:
+            data = open(INDEX, "rb").read()
+        except OSError as e:
+            self._json({"error": str(e)}, 500); return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def _serve_sw(self):
+        try:
+            data = open(SW_FILE, "rb").read()
+        except OSError:
+            self._json({"error": "service worker not found"}, 404); return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Service-Worker-Allowed", "/")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def _proxy_manager_http(self, method, body=None):
+        if not ensure_manager():
+            self._json({"error": "manager not available"}, 503); return
+        headers = {}
+        ctype = self.headers.get("Content-Type")
+        if ctype:
+            headers["Content-Type"] = ctype
+        try:
+            conn = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=60)
+            conn.request(method, self.path, body=body, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read()
+            self.send_response(resp.status)
+            for k, v in resp.getheaders():
+                lk = k.lower()
+                if lk in ("connection", "transfer-encoding", "keep-alive", "proxy-authenticate",
+                          "proxy-authorization", "te", "trailers", "upgrade", "content-length"):
+                    continue
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except OSError as e:
+            self._json({"error": "manager proxy failed: %s" % e}, 502)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _proxy_manager_ws(self):
+        if not ensure_manager():
+            self.send_response(503); self.send_header("Content-Length", "0"); self.end_headers(); return
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self.send_response(400); self.send_header("Content-Length", "0"); self.end_headers(); return
+        try:
+            upstream = socket.create_connection((MANAGER_HOST, MANAGER_PORT), 10)
+            req = [
+                "GET %s HTTP/1.1" % self.path,
+                "Host: %s:%d" % (MANAGER_HOST, MANAGER_PORT),
+                "Upgrade: websocket",
+                "Connection: Upgrade",
+                "Sec-WebSocket-Key: %s" % key,
+                "Sec-WebSocket-Version: %s" % (self.headers.get("Sec-WebSocket-Version") or "13"),
+            ]
+            proto = self.headers.get("Sec-WebSocket-Protocol")
+            if proto:
+                req.append("Sec-WebSocket-Protocol: %s" % proto)
+            upstream.sendall(("\r\n".join(req) + "\r\n\r\n").encode())
+            resp = b""
+            while b"\r\n\r\n" not in resp:
+                chunk = upstream.recv(4096)
+                if not chunk:
+                    raise OSError("manager websocket handshake failed")
+                resp += chunk
+            if b" 101 " not in resp.split(b"\r\n", 1)[0]:
+                self.connection.sendall(resp)
+                upstream.close()
+                return
+            self.close_connection = True
+            self.connection.sendall(resp)
+
+            def pipe(src, dst):
+                try:
+                    while True:
+                        data = src.recv(65536)
+                        if not data:
+                            break
+                        dst.sendall(data)
+                except OSError:
+                    pass
+                finally:
+                    try: dst.shutdown(socket.SHUT_RDWR)
+                    except OSError: pass
+                    try: dst.close()
+                    except OSError: pass
+
+            t = threading.Thread(target=pipe, args=(upstream, self.connection), daemon=True)
+            t.start()
+            pipe(self.connection, upstream)
+        except OSError:
+            try:
+                self.send_response(502); self.send_header("Content-Length", "0"); self.end_headers()
+            except OSError:
+                pass
+
+    def _web_get(self, path):
+        if path in ("/", "/index.html"):
+            self._serve_index(); return
+        if path == "/sw.js":
+            self._serve_sw(); return
+        if path.startswith("/t/") and path.endswith("/ws"):
+            self._proxy_manager_ws(); return
+        if path.startswith("/t/") or path.startswith("/api/"):
+            self._proxy_manager_http("GET"); return
+        self._json({"error": "not found"}, 404)
+
+    def _web_post(self, path, raw):
+        if path == "/api/restart_web":
+            self._json({"ok": True, "message": "web restarting"})
+            restart_web_soon()
+            return
+        if path.startswith("/api/"):
+            self._proxy_manager_http("POST", raw); return
+        self._json({"error": "not found"}, 404)
+
     def do_GET(self):
         if not self._auth():
             return
         pr = urllib.parse.urlparse(self.path)
         path = pr.path
+        if RUN_MODE != "manager":
+            self._web_get(path); return
         if path.startswith("/t/"):
             parts = path.split("/")
             if len(parts) >= 3 and parts[1] == "t":
@@ -665,6 +944,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+        elif path == "/sw.js":
+            try:
+                data = open(SW_FILE, "rb").read()
+            except OSError:
+                self._json({"error": "service worker not found"}, 404); return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Service-Worker-Allowed", "/")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
         elif path == "/api/browse":
             q = urllib.parse.parse_qs(pr.query); self._json(browse(q.get("path", [""])[0]))
         elif path == "/api/sessions":
@@ -673,12 +962,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 items = [session_obj(sid, s, self.headers.get("Host", "")) for sid, s in sessions.items()]
             items.sort(key=lambda x: x["started"], reverse=True)
             self._json({"sessions": items})
+        elif path == "/api/log":
+            q = urllib.parse.parse_qs(pr.query)
+            sid = (q.get("sid", [""])[0] or "").strip()
+            with _lock:
+                s = sessions.get(sid)
+            if not s:
+                self._json({"error": "session not found"}, 404); return
+            text, truncated, size = s["hub"].plain_log()
+            self._json({"sid": sid, "text": text, "truncated": truncated, "bytes": size,
+                        "updated": time.time()})
         elif path == "/api/history":
             q = urllib.parse.parse_qs(pr.query)
             self._json({"history": load_history(int(q.get("limit", ["60"])[0] or 60))})
         elif path == "/api/recent_dirs":
             q = urllib.parse.parse_qs(pr.query)
             self._json({"dirs": recent_dirs(int(q.get("limit", ["30"])[0] or 30))})
+        elif path == "/api/backends":
+            self._json({"backends": [k for k, v in BACKENDS.items() if v["bin"] and os.path.isfile(v["bin"])],
+                        "labels": {k: v["label"] for k, v in BACKENDS.items()}})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -692,15 +994,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
             data = {}
+        if RUN_MODE != "manager":
+            self._web_post(pr.path, raw); return
         if pr.path == "/api/launch":
             d = (data.get("dir") or "").strip().strip('"')
             if not d or not os.path.isdir(d):
                 self._json({"error": "invalid directory: %r" % d}, 400); return
+            backend = (data.get("backend") or "codex").strip()
+            if backend not in BACKENDS:
+                backend = "codex"
+            yo = data.get("yolo")
+            auto_approve = AUTO_APPROVE if yo is None else bool(yo)
+            extra = (data.get("args") or "").strip()
             try:
-                sid, _ = launch(d, title=data.get("title") or "")
+                sid, _ = launch(d, backend=backend, title=data.get("title") or "",
+                                auto_approve=auto_approve, extra_args=extra)
             except Exception as e:
                 self._json({"error": str(e)}, 500); return
-            self._json({"ok": True, "sid": sid, "dir": d, "term_path": "/t/%s/" % sid})
+            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "term_path": "/t/%s/" % sid})
         elif pr.path == "/api/resume":
             sid_arg = (data.get("session_id") or "").strip()
             d = (data.get("dir") or "").strip().strip('"')
@@ -709,7 +1020,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not d or not os.path.isdir(d):
                 d = d or os.path.expanduser("~")
             try:
-                sid, _ = launch(d, codex_args=["resume", sid_arg],
+                sid, _ = launch(d, backend="codex", cli_args=["resume", sid_arg],
                                 title=data.get("title") or "恢复会话", mode="resume", session_id=sid_arg)
             except Exception as e:
                 self._json({"error": str(e)}, 500); return
@@ -724,19 +1035,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = False
 
 
 if __name__ == "__main__":
     ip = lan_ip()
-    print("=" * 56)
-    print(" Codex-Web  (共享会话: 多端同看同输 + 多会话切换)")
-    print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, PICKER_PORT))
-    print(" 账号: %s  密码: ***" % CRED.split(":", 1)[0])
-    print(" codex: %s" % CODEX_BIN)
-    print(" Ctrl+C 退出（会自动停止所有 codex 终端）")
-    print("=" * 56)
-    try:
-        ThreadingServer((HOST, PICKER_PORT), Handler).serve_forever()
-    except KeyboardInterrupt:
-        kill_all(); print("bye")
+    if RUN_MODE == "manager":
+        print("Codex-Web manager: http://%s:%d" % (MANAGER_HOST, MANAGER_PORT))
+        try:
+            try:
+                _server[0] = ThreadingServer((MANAGER_HOST, MANAGER_PORT), Handler)
+            except OSError as e:
+                print("ERROR: manager 端口 %d 已被占用：%s" % (MANAGER_PORT, e))
+                sys.exit(1)
+            _server[0].serve_forever()
+        except KeyboardInterrupt:
+            kill_all(); print("manager bye")
+    else:
+        ensure_manager()
+        print("=" * 56)
+        print(" Codex-Web  (Web/Manager split: 可单独重启网页)")
+        print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, PICKER_PORT))
+        print(" Manager(本机): http://%s:%d" % (MANAGER_HOST, MANAGER_PORT))
+        print(" 账号: %s  密码: ***" % CRED.split(":", 1)[0])
+        print(" codex : %s" % (CODEX_BIN or "(未找到)"))
+        print(" claude: %s" % (CLAUDE_BIN or "(未找到)"))
+        print(" Ctrl+C 只退出 Web；运行中的 Codex 由 manager 保持")
+        print("=" * 56)
+        try:
+            try:
+                _server[0] = ThreadingServer((HOST, PICKER_PORT), Handler)
+            except OSError as e:
+                print("ERROR: 控制台端口 %d 已被旧 Web 占用：%s" % (PICKER_PORT, e))
+                print("请关闭旧的 start.cmd/Python 窗口后再启动，或结束占用该端口的旧 Web 进程。")
+                sys.exit(1)
+            _server[0].serve_forever()
+        except KeyboardInterrupt:
+            print("web bye")

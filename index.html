@@ -50,9 +50,16 @@ button:disabled{opacity:.45}
 .tag.run{background:#2a3a2e;color:#7ad7a0}
 .tag.confirm{background:#3a2e22;color:#ffb877;animation:pulse 1.4s infinite}
 .tag.idle{background:#33343d;color:#9aa0aa}
+.tag.be-codex{background:#3a2e22;color:#ffb877}
+.tag.be-claude{background:#2e223a;color:#c89bff}
 .time{color:#7fd0ff;font-variant-numeric:tabular-nums}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .search{width:100%;padding:10px;margin:8px 0;background:#1c1d23;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font-size:14px}
+.notifybar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#17191f;border-bottom:1px solid #23242c;color:#8b91a0;font-size:11px}
+.notifybar.hide{display:none}
+.notifybar span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notifybar b{color:#7ab7ff;font-weight:600}
+.notifybar button{flex:0 0 auto;padding:6px 9px;border-radius:7px;background:#2e2f37;color:#d6d6d6;font-size:11px}
 .fabrow{position:sticky;bottom:0;background:linear-gradient(0deg,#15161a 70%,transparent);padding:10px 0}
 
 #overlay{position:fixed;inset:0;background:#000;z-index:50;display:none;flex-direction:column}
@@ -60,9 +67,17 @@ button:disabled{opacity:.45}
 #overlay .oh{display:flex;align-items:center;gap:6px;padding:8px 8px;background:#1f2026;border-bottom:1px solid #2e2f37;height:44px;flex:0 0 auto}
 #overlay .oh .ttl{flex:1;font-size:13px;font-weight:600;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #overlay .oh button{padding:8px 11px}
+#overlay .oh button.modebtn{padding:7px 9px;background:#252833;color:#a9b0bd}
+#overlay .oh button.modebtn.active{background:#2a5bd7;color:#fff}
 #stage{position:relative;flex:1 1 auto;background:#000;min-height:0;overflow:hidden}
-#stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:none;touch-action:none}
+#stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:none;touch-action:auto}
 #stage iframe.show{display:block}
+#logpane{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;background:#08090c;color:#d9e1ee;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;padding:0 12px 14px;white-space:pre-wrap;word-break:break-word;-webkit-overflow-scrolling:touch}
+#overlay.logmode #stage{display:none}
+#overlay.logmode #keybar{display:none}
+#overlay.logmode #logpane{display:block}
+#logmeta{position:sticky;top:0;z-index:1;margin:0 -12px 8px;padding:8px 12px;background:linear-gradient(180deg,#10131a 70%,rgba(16,19,26,.86));border-bottom:1px solid #222735;color:#8b94a6;font:11px/1.4 system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+#logtext{margin:0;padding:0 0 28px;font:inherit;white-space:pre-wrap;word-break:break-word}
 #keybar{flex:0 0 auto;display:flex;gap:5px;padding:7px 6px calc(7px + env(safe-area-inset-bottom));background:#1a1b21;border-top:1px solid #2e2f37;overflow-x:auto;-webkit-overflow-scrolling:touch}
 #keybar button{flex:0 0 auto;min-width:40px;padding:11px 9px;font-size:14px;background:#2e2f37;color:#e6e6e6}
 #keybar .sep{flex:0 0 1px;align-self:center;height:26px;background:#33343d;margin:0 2px}
@@ -79,6 +94,35 @@ button:disabled{opacity:.45}
 #drawer .drow.cur{border-color:#2a5bd7}
 #drawer .drow .nm{font-size:13px;font-weight:600;word-break:break-all}
 #drawer .drow .mt{font-size:11px;color:#8b91a0;margin-top:3px;word-break:break-all}
+#noticearea{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:80;display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100vw - 20px));pointer-events:none}
+.notice{pointer-events:auto;background:linear-gradient(135deg,#202631,#14161d);border:1px solid #374253;box-shadow:0 14px 40px rgba(0,0,0,.38);border-radius:13px;padding:11px 12px;color:#e8edf6;animation:noticeIn .18s ease-out}
+.notice.confirm{border-color:#7a5528}
+.notice.idle{border-color:#394656}
+.notice .nt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
+.notice .nb{margin-top:5px;font-size:12px;line-height:1.35;color:#aeb8c8;word-break:break-word}
+.notice .na{display:flex;gap:7px;margin-top:9px}
+.notice .na button{padding:7px 10px;font-size:12px}
+.notice .na button.ghost{background:#303641}
+@keyframes noticeIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.modal{position:fixed;inset:0;z-index:75;display:none;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal .card{width:100%;max-width:460px;max-height:90vh;overflow-y:auto;background:#1a1b21;border:1px solid #2e2f37;border-radius:14px;padding:14px;animation:modalIn .18s ease-out}
+@keyframes modalIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.modal .mtitle{font-size:15px;font-weight:700;margin:2px 2px 10px}
+.modal .mdir{font-size:12px;color:#8b91a0;background:#15161a;border:1px solid #2e2f37;border-radius:8px;padding:8px 10px;margin:0 0 12px;word-break:break-all}
+.modal .mfield{margin:0 0 12px}
+.modal .mfield>label{display:block;font-size:12px;color:#9aa0aa;margin:0 2px 6px;font-weight:600}
+.modal .mopts{display:flex;gap:8px}
+.modal .mopts button{flex:1;padding:11px;font-size:13px;background:#2e2f37;color:#d6d6d6;border:0;border-radius:8px;cursor:pointer;font-weight:600}
+.modal .mopts button.active{background:#2a5bd7;color:#fff}
+.modal .mtoggle{display:flex;align-items:center;gap:10px;background:#15161a;border:1px solid #2e2f37;border-radius:8px;padding:11px 12px;cursor:pointer;font-size:13px;color:#d6d6d6}
+.modal .mtoggle.active{border-color:#7a5528;background:#221a14}
+.modal .mtoggle .sw{flex:0 0 auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;background:#33343d;color:#9aa0aa}
+.modal .mtoggle.active .sw{background:#7a5528;color:#ffb877}
+.modal .margs{width:100%;padding:10px;background:#15161a;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font:13px ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical;min-height:44px}
+.modal .mhint{font-size:11px;color:#7f8691;margin:5px 2px 0}
+.modal .macts{display:flex;gap:8px;margin-top:4px}
+.modal .macts button{flex:1;padding:13px;font-size:14px}
 </style>
 </head>
 <body>
@@ -89,6 +133,11 @@ button:disabled{opacity:.45}
     <button class="tab" data-tab="his">🕑 历史</button>
   </div>
 </header>
+<div class="notifybar" id="notifybar">
+  <span id="notifystatus">站内提醒已开启；浏览器通知未开启</span>
+  <button id="notifybtn" type="button">开启浏览器通知</button>
+  <button id="restartweb" type="button" title="只重启网页服务，不停止运行中的会话">重启网站</button>
+</div>
 
 <div class="page active" id="p-new">
   <div class="seg">
@@ -96,13 +145,13 @@ button:disabled{opacity:.45}
     <button id="seg-browse">📂 浏览目录</button>
   </div>
   <div class="view active" id="v-quick">
-    <div style="font-size:11px;color:#8b91a0;margin:4px 2px 2px">最近用过 codex 的目录,点一下直接启动</div>
+    <div style="font-size:11px;color:#8b91a0;margin:4px 2px 2px">最近用过的目录,点一下选择模型并启动</div>
     <main><div id="quicklist"></div></main>
   </div>
   <div class="view" id="v-browse">
     <div class="subbar" id="crumbs">加载中…</div>
     <main><div id="list"></div></main>
-    <div class="fabrow"><main><button class="big" id="open" disabled>▶ 在此目录启动 Codex <span class="tag yolo">yolo</span></button></main></div>
+    <div class="fabrow"><main><button class="big" id="open" disabled>▶ 在此目录启动</button></main></div>
   </div>
 </div>
 
@@ -128,15 +177,43 @@ button:disabled{opacity:.45}
   <div class="oh">
     <button class="ghost" id="sessbtn" title="切换会话">≡</button>
     <button class="ghost" id="back">‹ 返回</button>
-    <div class="ttl" id="ottl">codex</div>
+    <div class="ttl" id="ottl">会话</div>
+    <button class="modebtn active" id="termview">终端</button>
+    <button class="modebtn" id="logview">日志</button>
     <button class="danger" id="ostop">停止</button>
   </div>
   <div id="stage"></div>
+  <div id="logpane"><div id="logmeta">日志加载中…</div><pre id="logtext"></pre></div>
   <div id="keybar"></div>
 </div>
 
 <div id="shade"></div>
 <div id="drawer"><h4>已打开的会话</h4><div id="drawerlist"></div></div>
+<div id="noticearea" aria-live="polite"></div>
+
+<div class="modal" id="launchmodal">
+  <div class="card">
+    <div class="mtitle">启动新会话</div>
+    <div class="mdir" id="lm-dir">📁 </div>
+    <div class="mfield">
+      <label>模型</label>
+      <div class="mopts" id="lm-backend"></div>
+    </div>
+    <div class="mfield">
+      <label>自动批准</label>
+      <div class="mtoggle" id="lm-yolo"><span style="flex:1">允许自动执行（--yolo / --dangerously-skip-permissions）</span><span class="sw" id="lm-yolo-sw">开</span></div>
+    </div>
+    <div class="mfield">
+      <label>自定义参数（可选）</label>
+      <textarea class="margs" id="lm-args" placeholder="例如 --model gpt-5，留空则不追加"></textarea>
+      <div class="mhint">参数会按空格分词后追加到启动命令末尾。</div>
+    </div>
+    <div class="macts">
+      <button class="ghost" id="lm-cancel">取消</button>
+      <button id="lm-start">▶ 启动</button>
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -153,32 +230,246 @@ function basename(p){ var m = String(p||"").split(/[\\/]/); var b = m[m.length-1
 function dirparent(p){ var s = String(p||"").replace(/[\\/]+$/,""); var i = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/")); return i > 1 ? s.slice(0, i) : p; }
 function stateTag(st){ return st==="running"?'<span class="tag run">运行中</span>':st==="confirm"?'<span class="tag confirm">需确认</span>':'<span class="tag idle">空闲</span>'; }
 function elapsedStr(ts){ if(!ts) return "—"; var s=Math.max(0,Math.floor(Date.now()/1000-ts)); var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return (h?h+":":"")+(m<10?"0":"")+m+":"+("0"+ss).slice(-2); }
+function restartWebOnly(){
+  var btn = $("restartweb");
+  if (!confirm("仅重启网站服务？运行中的会话会继续保留。")) return;
+  btn.disabled = true; btn.textContent = "重启中…";
+  api("/api/restart_web", {method:"POST"}).catch(function(){});
+  setTimeout(function(){ location.reload(); }, 1600);
+}
 
 /* ---- 内嵌终端 ---- */
 var iframes = {}, currentSid = null;
 var runSessions = [];
+var overlayView = "term";
+var logTimer = null;
+var availBackends = ["codex", "claude"];
+var lmDir = "", lmTitle = "", lmBackend = "codex", lmYolo = true, lmArgs = "";
+try { lmBackend = localStorage.getItem("codexWebBackend") || "codex"; } catch(e){}
+try { lmYolo = localStorage.getItem("codexWebYolo") !== "0"; } catch(e){}
+try { lmArgs = localStorage.getItem("codexWebArgs") || ""; } catch(e){}
+var sessionWatch = {};
+var noticeTimers = {};
+var swReg = null;
+var browserNotifyEnabled = false;
+var pendingOpenSid = "";
+try { pendingOpenSid = new URLSearchParams(location.search).get("open") || ""; } catch(e){}
+function backendLabel(b){ return b === "claude" ? "Claude" : "Codex"; }
+function backendTag(b){ return b === "claude" ? '<span class="tag be-claude">Claude</span>' : '<span class="tag be-codex">Codex</span>'; }
+api("/api/backends").then(function(r){
+  availBackends = (r.backends && r.backends.length) ? r.backends : ["codex"];
+});
+function updateNotifyBar(){
+  var status = $("notifystatus"), btn = $("notifybtn");
+  if (!("Notification" in window)){
+    status.innerHTML = "<b>站内提醒</b>已开启；当前浏览器不支持系统通知";
+    btn.style.display = "none";
+    browserNotifyEnabled = false;
+    return;
+  }
+  if (!window.isSecureContext){
+    status.innerHTML = "<b>站内提醒</b>已开启；浏览器通知需 HTTPS 或 localhost";
+    btn.style.display = "none";
+    browserNotifyEnabled = false;
+    return;
+  }
+  if (Notification.permission === "denied"){
+    status.innerHTML = "<b>站内提醒</b>已开启；浏览器通知已被浏览器拦截";
+    btn.style.display = "none";
+    browserNotifyEnabled = false;
+    return;
+  }
+  browserNotifyEnabled = Notification.permission === "granted" && localStorage.getItem("codexWebBrowserNotify") !== "0";
+  status.innerHTML = browserNotifyEnabled ? "<b>站内+浏览器提醒</b>已开启" : "<b>站内提醒</b>已开启；浏览器通知未开启";
+  btn.style.display = "";
+  btn.textContent = browserNotifyEnabled ? "关闭浏览器通知" : "开启浏览器通知";
+}
+function initServiceWorker(){
+  if ("serviceWorker" in navigator){
+    navigator.serviceWorker.addEventListener("message", function(ev){
+      if (ev.data && ev.data.type === "open-session") openSessionBySid(ev.data.sid);
+    });
+    if (window.isSecureContext){
+      navigator.serviceWorker.register("/sw.js").then(function(reg){ swReg = reg; }).catch(function(){});
+      navigator.serviceWorker.ready.then(function(reg){ swReg = reg; }).catch(function(){});
+    }
+  }
+}
+function requestBrowserNotify(){
+  if (!("Notification" in window) || !window.isSecureContext){
+    alert("当前地址不能使用浏览器系统通知；站内弹窗仍会提醒。Chrome/Kiwi 通常需要 HTTPS 或 localhost。");
+    return;
+  }
+  if (Notification.permission === "granted"){
+    browserNotifyEnabled = !browserNotifyEnabled;
+    localStorage.setItem("codexWebBrowserNotify", browserNotifyEnabled ? "1" : "0");
+    updateNotifyBar();
+    return;
+  }
+  Notification.requestPermission().then(function(p){
+    if (p === "granted") localStorage.setItem("codexWebBrowserNotify", "1");
+    updateNotifyBar();
+  });
+}
+function openSessionBySid(sid, skipFetch){
+  if (!sid) return false;
+  var i, s;
+  for (i = 0; i < runSessions.length; i += 1){
+    if (runSessions[i].sid === sid){ s = runSessions[i]; break; }
+  }
+  if (s){
+    showTerminal(s.sid, s.term_path, s.title || basename(s.dir));
+    return true;
+  }
+  if (!skipFetch) {
+    api("/api/sessions").then(function(r){
+      rememberSessions(r.sessions || [], true);
+      openSessionBySid(sid, true);
+    });
+  }
+  return false;
+}
+function removeNotice(key){
+  var el = document.querySelector('[data-notice-key="' + key + '"]');
+  if (el) el.remove();
+  if (noticeTimers[key]) clearTimeout(noticeTimers[key]);
+  delete noticeTimers[key];
+}
+function showSiteNotice(kind, s, title, body){
+  var key = s.sid + "-" + kind;
+  removeNotice(key);
+  var area = $("noticearea");
+  var box = document.createElement("div");
+  box.className = "notice " + kind;
+  box.setAttribute("data-notice-key", key);
+  box.innerHTML = '<div class="nt">' + (kind === "confirm" ? "⚠️ " : "✅ ") + esc(title) + '</div>' +
+    '<div class="nb">' + esc(body) + '</div>';
+  var acts = document.createElement("div"); acts.className = "na";
+  var open = document.createElement("button"); open.textContent = "打开";
+  var close = document.createElement("button"); close.className = "ghost"; close.textContent = "关闭";
+  open.addEventListener("click", function(ev){ ev.stopPropagation(); removeNotice(key); openSessionBySid(s.sid); });
+  close.addEventListener("click", function(ev){ ev.stopPropagation(); removeNotice(key); });
+  box.addEventListener("click", function(){ removeNotice(key); openSessionBySid(s.sid); });
+  acts.appendChild(open); acts.appendChild(close); box.appendChild(acts);
+  area.appendChild(box);
+  while (area.children.length > 4) removeNotice(area.children[0].getAttribute("data-notice-key"));
+  noticeTimers[key] = setTimeout(function(){ removeNotice(key); }, kind === "confirm" ? 60000 : 22000);
+}
+function showBrowserNotice(kind, s, title, body){
+  if (!browserNotifyEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
+  var url = location.origin + location.pathname + "?open=" + encodeURIComponent(s.sid);
+  var opts = {body: body, tag: "codex-web-" + s.sid + "-" + kind, renotify: true, data: {sid: s.sid, url: url}};
+  if (swReg && swReg.showNotification){
+    swReg.showNotification(title, opts).catch(function(){});
+    return;
+  }
+  try {
+    var n = new Notification(title, opts);
+    n.onclick = function(){ window.focus(); openSessionBySid(s.sid); n.close(); };
+  } catch(e){}
+}
+function emitAiNotice(kind, s){
+  var name = backendLabel(s.backend || "codex") + " · " + (s.title || basename(s.dir));
+  var title = kind === "confirm" ? name + " 需要确认" : name + " 已空闲";
+  var body = (s.dir || "") + (kind === "confirm" ? " · 点击跳转处理确认" : " · 点击跳转查看结果");
+  showSiteNotice(kind, s, title, body);
+  showBrowserNotice(kind, s, title, body);
+}
+function rememberSessions(ss, skipPendingOpen){
+  runSessions = ss;
+  $("runcnt").textContent = ss.length ? "(" + ss.length + ")" : "";
+  Object.keys(iframes).forEach(function(sid){ if (!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
+  ss.forEach(function(s){
+    var prev = sessionWatch[s.sid];
+    if (prev){
+      if (s.state === "confirm" && prev.state !== "confirm") emitAiNotice("confirm", s);
+      else if (s.state === "idle" && prev.state && prev.state !== "idle") emitAiNotice("idle", s);
+    }
+    sessionWatch[s.sid] = {state: s.state, last_output_ts: s.last_output_ts || 0, last_input_ts: s.last_input_ts || 0};
+  });
+  Object.keys(sessionWatch).forEach(function(sid){
+    if (!ss.some(function(s){return s.sid===sid;})) delete sessionWatch[sid];
+  });
+  if (!skipPendingOpen && pendingOpenSid){
+    var sid = pendingOpenSid;
+    openSessionBySid(sid, true);
+    pendingOpenSid = "";
+    try { history.replaceState(null, "", location.pathname); } catch(e){}
+  }
+}
+function pollSessionSignals(){
+  api("/api/sessions").then(function(r){ rememberSessions(r.sessions || []); });
+}
+$("notifybtn").addEventListener("click", requestBrowserNotify);
+$("restartweb").addEventListener("click", restartWebOnly);
+initServiceWorker();
+updateNotifyBar();
 function termIframe(sid, path){
   if (iframes[sid]) return iframes[sid];
   var f = document.createElement("iframe");
   f.src = path; f.setAttribute("allow", "clipboard-read; clipboard-write");
   f.dataset.sid = sid;
+  installNativeScroll(f);
   $("stage").appendChild(f);
   iframes[sid] = f;
   return f;
 }
 function showTerminal(sid, path, title){
+  var keepView = $("overlay").classList.contains("show") ? overlayView : "term";
   currentSid = sid;
   $("ottl").textContent = title || sid;
   Object.keys(iframes).forEach(function(k){ iframes[k].classList.toggle("show", k === sid); });
   termIframe(sid, path).classList.add("show");
   $("overlay").classList.add("show");
+  setOverlayView(keepView);
   closeDrawer();
-  setTimeout(function(){ try { iframes[sid].contentWindow.focus(); } catch(e){} }, 50);
+  setTimeout(function(){ if (overlayView === "term") { try { iframes[sid].contentWindow.focus(); } catch(e){} } }, 50);
 }
-function hideTerminal(){ $("overlay").classList.remove("show"); currentSid = null; }
+function hideTerminal(){ stopLogTimer(); $("overlay").classList.remove("show"); currentSid = null; setOverlayView("term"); }
 function dropIframe(sid){
   if (iframes[sid]){ iframes[sid].remove(); delete iframes[sid]; }
   if (currentSid === sid){ hideTerminal(); }
+}
+function setOverlayView(view){
+  overlayView = view === "log" ? "log" : "term";
+  $("overlay").classList.toggle("logmode", overlayView === "log");
+  $("termview").classList.toggle("active", overlayView === "term");
+  $("logview").classList.toggle("active", overlayView === "log");
+  if (overlayView === "log") {
+    refreshLog(true);
+    startLogTimer();
+  } else {
+    stopLogTimer();
+    focusTerm();
+  }
+}
+function startLogTimer(){
+  stopLogTimer();
+  logTimer = setInterval(function(){ refreshLog(false); }, 1500);
+}
+function stopLogTimer(){
+  if (logTimer) clearInterval(logTimer);
+  logTimer = null;
+}
+function refreshLog(forceBottom){
+  if (!currentSid || overlayView !== "log") return;
+  var sid = currentSid, pane = $("logpane");
+  var nearBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 80;
+  api("/api/log?sid=" + encodeURIComponent(sid)).then(function(r){
+    if (sid !== currentSid || overlayView !== "log") return;
+    if (r.error){
+      $("logmeta").textContent = "日志不可用：" + r.error;
+      $("logtext").textContent = "";
+      return;
+    }
+    var text = r.text || "";
+    $("logtext").textContent = text || "（暂无输出）";
+    var kb = Math.round((r.bytes || 0) / 1024);
+    $("logmeta").textContent = (r.truncated ? "仅显示最近日志 · " : "") + kb + " KB · 更新 " + new Date().toLocaleTimeString();
+    if (forceBottom || nearBottom) pane.scrollTop = pane.scrollHeight;
+  }).catch(function(e){
+    $("logmeta").textContent = "日志刷新失败：" + e;
+  });
 }
 function curTerm(){ try { var f = iframes[currentSid]; return f && f.contentWindow && f.contentWindow.term; } catch(e){ return null; } }
 function sendKey(seq){
@@ -190,20 +481,78 @@ function sendKey(seq){
   try { if (t.paste) t.paste(seq); } catch(_){}
 }
 function scrollTerm(action){
-  // codex 是全屏 TUI(备用屏),xterm 的 scrollback 滚不动;这里直接向 codex 发滚动键
-  if (action === "bottom") {
-    var t = curTerm(); try { t && t.scrollToBottom && t.scrollToBottom(); } catch(e){}
-    focusTerm(); return;
-  }
-  var seq = null;
-  if (action === "up") seq = "\x1b[1;2A";          // Shift+↑
-  else if (action === "down") seq = "\x1b[1;2B";   // Shift+↓
-  else if (action === "pageUp") seq = "\x1b[5~";   // PageUp
-  else if (action === "pageDown") seq = "\x1b[6~"; // PageDown
-  if (seq) sendKey(seq);
+  // 滚动只移动 xterm 视口,不要给 Codex 发送 Shift+方向键(会触发 reasoning 档位快捷键)。
+  scrollViewport(curTerm(), action);
   focusTerm();
 }
 function focusTerm(){ try { var t = curTerm(); t && t.focus && t.focus(); } catch(e){} }
+function scrollViewport(t, action){
+  if (!t) return false;
+  try {
+    if (action === "bottom") { t.scrollToBottom && t.scrollToBottom(); return true; }
+    if (action === "top") { t.scrollToTop && t.scrollToTop(); return true; }
+    if (action === "pageUp") { scrollPages(t, -1); return true; }
+    if (action === "pageDown") { scrollPages(t, 1); return true; }
+    if (action === "up") { t.scrollLines && t.scrollLines(-5); return true; }
+    if (action === "down") { t.scrollLines && t.scrollLines(5); return true; }
+  } catch(e){}
+  return false;
+}
+function scrollPages(t, pages){
+  if (t.scrollPages) t.scrollPages(pages);
+  else if (t.scrollLines) t.scrollLines(pages * Math.max(8, (t.rows || 30) - 2));
+}
+function installNativeScroll(frame){
+  var tries = 0, timer = null;
+  function setup(){
+    try {
+      var w = frame.contentWindow, d = w && w.document, t = w && w.term;
+      if (!w || !d || !t) return false;
+      if (w.__codexWebNativeScroll) return true;
+      w.__codexWebNativeScroll = true;
+      var wheelAcc = 0, touchAcc = 0, lastY = null;
+      d.addEventListener("wheel", function(ev){
+        var term = w.term; if (!term || !term.scrollLines) return;
+        var rows = term.rows || 30, lines;
+        if (ev.deltaMode === 1) lines = ev.deltaY;
+        else if (ev.deltaMode === 2) lines = ev.deltaY * rows;
+        else {
+          wheelAcc += ev.deltaY / 38;
+          lines = wheelAcc < 0 ? Math.ceil(wheelAcc) : Math.floor(wheelAcc);
+          wheelAcc -= lines;
+        }
+        if (lines) {
+          ev.preventDefault(); ev.stopPropagation();
+          term.scrollLines(lines);
+        }
+      }, {passive:false, capture:true});
+      d.addEventListener("touchstart", function(ev){
+        lastY = ev.touches && ev.touches.length === 1 ? ev.touches[0].clientY : null;
+      }, {passive:true, capture:true});
+      d.addEventListener("touchmove", function(ev){
+        var term = w.term; if (!term || !term.scrollLines || lastY == null || !ev.touches || ev.touches.length !== 1) return;
+        var y = ev.touches[0].clientY;
+        touchAcc += (lastY - y) / 26;
+        lastY = y;
+        var lines = touchAcc < 0 ? Math.ceil(touchAcc) : Math.floor(touchAcc);
+        touchAcc -= lines;
+        if (lines) {
+          ev.preventDefault(); ev.stopPropagation();
+          term.scrollLines(lines);
+        }
+      }, {passive:false, capture:true});
+      d.addEventListener("touchend", function(){ lastY = null; touchAcc = 0; }, {passive:true, capture:true});
+      d.addEventListener("touchcancel", function(){ lastY = null; touchAcc = 0; }, {passive:true, capture:true});
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+  frame.addEventListener("load", function(){ setTimeout(setup, 150); });
+  timer = setInterval(function(){
+    if (setup() || ++tries > 30) clearInterval(timer);
+  }, 250);
+}
 
 /* 快捷键 + 滚动 栏 */
 var KEYS = [
@@ -223,9 +572,14 @@ var SCROLLS = [["↥","up"],["⇞","pageUp"],["⇟","pageDown"],["↧","down"],[
 })();
 
 $("back").addEventListener("click", hideTerminal);
+$("termview").addEventListener("click", function(){ setOverlayView("term"); });
+$("logview").addEventListener("click", function(){ setOverlayView("log"); });
 $("ostop").addEventListener("click", function(){
   if (!currentSid) return; var sid = currentSid;
-  if (!confirm("停止这个 codex 会话？")) return;
+  var cur = null;
+  for (var i = 0; i < runSessions.length; i += 1){ if (runSessions[i].sid === sid) cur = runSessions[i]; }
+  var name = cur ? backendLabel(cur.backend || "codex") : "会话";
+  if (!confirm("停止这个 " + name + " 会话？")) return;
   api("/api/stop", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({sid: sid})})
     .then(function(){ dropIframe(sid); refreshRun(); });
 });
@@ -240,7 +594,7 @@ function refreshDrawer(){
     if(!ss.length){ var e=document.createElement("div"); e.className="empty"; e.textContent="没有打开的会话"; list.appendChild(e); return; }
     ss.forEach(function(s){
       var row=document.createElement("div"); row.className="drow"+(s.sid===currentSid?" cur":"");
-      row.innerHTML='<div class="nm">'+stateTag(s.state)+" "+esc(s.title||basename(s.dir))+(s.mode==="resume"?' <span class="tag resume">恢复</span>':'')+'<span class="tag yolo">yolo</span></div>'+
+      row.innerHTML='<div class="nm">'+stateTag(s.state)+backendTag(s.backend||"codex")+" "+esc(s.title||basename(s.dir))+(s.mode==="resume"?' <span class="tag resume">恢复</span>':'')+'<span class="tag yolo">yolo</span></div>'+
         '<div class="mt">📁 '+esc(s.dir)+' · 任务 '+elapsedStr(s.last_input_ts)+'</div>';
       row.addEventListener("click", function(){ showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); });
       list.appendChild(row);
@@ -273,21 +627,64 @@ function setSeg(which){
 }
 $("seg-quick").addEventListener("click", function(){ setSeg("quick"); });
 $("seg-browse").addEventListener("click", function(){ setSeg("browse"); });
-function launchDir(dir, title){
-  api("/api/launch", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({dir: dir})})
+function launchDir(dir, title, backend, yolo, args){
+  backend = backend || "codex";
+  api("/api/launch", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({dir: dir, backend: backend, yolo: !!yolo, args: args || ""})})
     .then(function(r){ if (r.error){ alert("启动失败：" + r.error); return; }
-      showTerminal(r.sid, r.term_path, title || basename(r.dir)); refreshRun(); });
+      showTerminal(r.sid, r.term_path, (title || basename(r.dir)) + " · " + backendLabel(backend)); refreshRun(); });
 }
+
+/* ---- 启动弹窗:选模型 / yolo / 自定义参数 ---- */
+function openLaunch(dir, title){
+  lmDir = dir; lmTitle = title || basename(dir);
+  $("lm-dir").textContent = "📁 " + dir;
+  if (availBackends.indexOf(lmBackend) < 0) lmBackend = availBackends[0] || "codex";
+  renderLmBackend();
+  setLmYolo(lmYolo, false);
+  $("lm-args").value = lmArgs;
+  $("launchmodal").classList.add("open");
+}
+function closeLaunch(){ $("launchmodal").classList.remove("open"); }
+function renderLmBackend(){
+  var box = $("lm-backend"); box.innerHTML = "";
+  availBackends.forEach(function(b){
+    var btn = document.createElement("button");
+    btn.textContent = b === "claude" ? "🟣 Claude" : "🟠 Codex";
+    if (b === lmBackend) btn.classList.add("active");
+    btn.addEventListener("click", function(){
+      lmBackend = b;
+      try { localStorage.setItem("codexWebBackend", b); } catch(e){}
+      renderLmBackend();
+    });
+    box.appendChild(btn);
+  });
+}
+function setLmYolo(v, persist){
+  lmYolo = !!v;
+  if (persist !== false){ try { localStorage.setItem("codexWebYolo", lmYolo ? "1" : "0"); } catch(e){} }
+  $("lm-yolo").classList.toggle("active", lmYolo);
+  $("lm-yolo-sw").textContent = lmYolo ? "开" : "关";
+}
+$("lm-yolo").addEventListener("click", function(){ setLmYolo(!lmYolo); });
+$("lm-cancel").addEventListener("click", closeLaunch);
+$("launchmodal").addEventListener("click", function(e){ if (e.target === $("launchmodal")) closeLaunch(); });
+$("lm-start").addEventListener("click", function(){
+  lmArgs = ($("lm-args").value || "").trim();
+  try { localStorage.setItem("codexWebArgs", lmArgs); } catch(e){}
+  var dir = lmDir, title = lmTitle, backend = lmBackend, yolo = lmYolo, args = lmArgs;
+  closeLaunch();
+  launchDir(dir, title, backend, yolo, args);
+});
 function refreshQuick(){
   api("/api/recent_dirs").then(function(r){
     var list = $("quicklist"); list.innerHTML = "";
     var ds = r.dirs || [];
-    if (!ds.length){ var e = document.createElement("div"); e.className="empty"; e.textContent="还没有用过 codex 的目录。去「浏览目录」选一个吧。"; list.appendChild(e); return; }
+    if (!ds.length){ var e = document.createElement("div"); e.className="empty"; e.textContent="还没有用过的目录。去「浏览目录」选一个吧。"; list.appendChild(e); return; }
     ds.forEach(function(d){
       var row = document.createElement("div"); row.className = "dirrow";
       row.innerHTML = '<div class="nm">📁 ' + esc(basename(d.cwd)) + '</div>' +
         '<div class="mt">' + esc(d.cwd) + '<br>' + d.count + ' 段会话 · 最近 ' + fmtTime(d.last_ts) + '</div>';
-      row.addEventListener("click", function(){ launchDir(d.cwd, basename(d.cwd)); });
+      row.addEventListener("click", function(){ openLaunch(d.cwd, basename(d.cwd)); });
       list.appendChild(row);
     });
   });
@@ -315,20 +712,18 @@ function render(b){
   window.scrollTo(0, 0);
 }
 function go(path){ api("/api/browse?path=" + encodeURIComponent(path)).then(render); }
-$("open").addEventListener("click", function(){ if (cur) launchDir(cur, basename(cur)); });
+$("open").addEventListener("click", function(){ if (cur) openLaunch(cur, basename(cur)); });
 
 /* ---- 运行中 ---- */
 function refreshRun(){
   api("/api/sessions").then(function(r){
     var list = $("runlist"); list.innerHTML = "";
     var ss = r.sessions || [];
-    runSessions = ss;
-    $("runcnt").textContent = ss.length ? "(" + ss.length + ")" : "";
-    Object.keys(iframes).forEach(function(sid){ if (!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
-    if (!ss.length){ var e = document.createElement("div"); e.className = "empty"; e.textContent = "没有运行中的 codex。去「新建」启动一个吧。"; list.appendChild(e); return; }
+    rememberSessions(ss);
+    if (!ss.length){ var e = document.createElement("div"); e.className = "empty"; e.textContent = "没有运行中的会话。去「新建」启动一个吧。"; list.appendChild(e); return; }
     ss.forEach(function(s){
       var row = document.createElement("div"); row.className = "dirrow";
-      row.innerHTML = '<div class="nm">' + stateTag(s.state) + " " + esc(s.title || basename(s.dir)) +
+      row.innerHTML = '<div class="nm">' + stateTag(s.state) + backendTag(s.backend || "codex") + " " + esc(s.title || basename(s.dir)) +
         (s.mode === "resume" ? ' <span class="tag resume">恢复</span>' : "") + ' <span class="tag yolo">yolo</span></div>' +
         '<div class="m">📁 ' + esc(s.dir) + '<br>⏱ 任务 <span class="time" id="time-' + s.sid + '">' + elapsedStr(s.last_input_ts) + '</span>' +
         (s.cols ? ' · ' + s.cols + '×' + s.rows : '') + ' · 启动 ' + fmtTime(s.started) + '</div>';
@@ -392,9 +787,11 @@ function renderHis(q){
 $("hisearch").addEventListener("input", function(){ renderHis($("hisearch").value); });
 
 setInterval(function(){ if ($("p-run").classList.contains("active")) refreshRun(); }, 4000);
+setInterval(pollSessionSignals, 4000);
 setInterval(function(){ runSessions.forEach(function(s){ var el = $("time-" + s.sid); if (el) el.textContent = elapsedStr(s.last_input_ts); }); }, 1000);
 go("");
 refreshQuick();
+pollSessionSignals();
 </script>
 </body>
 </html>

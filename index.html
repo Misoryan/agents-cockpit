@@ -47,6 +47,11 @@ button:disabled{opacity:.45}
 .tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:5px;background:#2e2f37;color:#9aa0aa;margin-right:5px}
 .tag.resume{background:#2a3a2e;color:#7ad7a0}
 .tag.yolo{background:#3a2e22;color:#ffb877}
+.tag.run{background:#2a3a2e;color:#7ad7a0}
+.tag.confirm{background:#3a2e22;color:#ffb877;animation:pulse 1.4s infinite}
+.tag.idle{background:#33343d;color:#9aa0aa}
+.time{color:#7fd0ff;font-variant-numeric:tabular-nums}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .search{width:100%;padding:10px;margin:8px 0;background:#1c1d23;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font-size:14px}
 .fabrow{position:sticky;bottom:0;background:linear-gradient(0deg,#15161a 70%,transparent);padding:10px 0}
 
@@ -146,9 +151,12 @@ function fmtTime(ts){
 }
 function basename(p){ var m = String(p||"").split(/[\\/]/); var b = m[m.length-1]; return b || p; }
 function dirparent(p){ var s = String(p||"").replace(/[\\/]+$/,""); var i = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/")); return i > 1 ? s.slice(0, i) : p; }
+function stateTag(st){ return st==="running"?'<span class="tag run">运行中</span>':st==="confirm"?'<span class="tag confirm">需确认</span>':'<span class="tag idle">空闲</span>'; }
+function elapsedStr(ts){ if(!ts) return "—"; var s=Math.max(0,Math.floor(Date.now()/1000-ts)); var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60; return (h?h+":":"")+(m<10?"0":"")+m+":"+("0"+ss).slice(-2); }
 
 /* ---- 内嵌终端 ---- */
 var iframes = {}, currentSid = null;
+var runSessions = [];
 function termIframe(sid, path){
   if (iframes[sid]) return iframes[sid];
   var f = document.createElement("iframe");
@@ -182,15 +190,18 @@ function sendKey(seq){
   try { if (t.paste) t.paste(seq); } catch(_){}
 }
 function scrollTerm(action){
-  var t = curTerm(); if (!t) return;
-  try {
-    if (action === "bottom") { t.scrollToBottom && t.scrollToBottom(); return; }
-    if (action === "top") { t.scrollToTop && t.scrollToTop(); return; }
-    if (action === "pageUp") { t.scrollPages ? t.scrollPages(-1) : t.scrollLines(-24); return; }
-    if (action === "pageDown") { t.scrollPages ? t.scrollPages(1) : t.scrollLines(24); return; }
-    if (action === "up") { t.scrollLines && t.scrollLines(-12); return; }
-    if (action === "down") { t.scrollLines && t.scrollLines(12); return; }
-  } catch(e){}
+  // codex 是全屏 TUI(备用屏),xterm 的 scrollback 滚不动;这里直接向 codex 发滚动键
+  if (action === "bottom") {
+    var t = curTerm(); try { t && t.scrollToBottom && t.scrollToBottom(); } catch(e){}
+    focusTerm(); return;
+  }
+  var seq = null;
+  if (action === "up") seq = "\x1b[1;2A";          // Shift+↑
+  else if (action === "down") seq = "\x1b[1;2B";   // Shift+↓
+  else if (action === "pageUp") seq = "\x1b[5~";   // PageUp
+  else if (action === "pageDown") seq = "\x1b[6~"; // PageDown
+  if (seq) sendKey(seq);
+  focusTerm();
 }
 function focusTerm(){ try { var t = curTerm(); t && t.focus && t.focus(); } catch(e){} }
 
@@ -229,8 +240,8 @@ function refreshDrawer(){
     if(!ss.length){ var e=document.createElement("div"); e.className="empty"; e.textContent="没有打开的会话"; list.appendChild(e); return; }
     ss.forEach(function(s){
       var row=document.createElement("div"); row.className="drow"+(s.sid===currentSid?" cur":"");
-      row.innerHTML='<div class="nm">'+esc(s.title||basename(s.dir))+(s.mode==="resume"?' <span class="tag resume">恢复</span>':'')+'<span class="tag yolo">yolo</span></div>'+
-        '<div class="mt">📁 '+esc(s.dir)+'</div>';
+      row.innerHTML='<div class="nm">'+stateTag(s.state)+" "+esc(s.title||basename(s.dir))+(s.mode==="resume"?' <span class="tag resume">恢复</span>':'')+'<span class="tag yolo">yolo</span></div>'+
+        '<div class="mt">📁 '+esc(s.dir)+' · 任务 '+elapsedStr(s.last_input_ts)+'</div>';
       row.addEventListener("click", function(){ showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); });
       list.appendChild(row);
     });
@@ -311,14 +322,16 @@ function refreshRun(){
   api("/api/sessions").then(function(r){
     var list = $("runlist"); list.innerHTML = "";
     var ss = r.sessions || [];
+    runSessions = ss;
     $("runcnt").textContent = ss.length ? "(" + ss.length + ")" : "";
     Object.keys(iframes).forEach(function(sid){ if (!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
     if (!ss.length){ var e = document.createElement("div"); e.className = "empty"; e.textContent = "没有运行中的 codex。去「新建」启动一个吧。"; list.appendChild(e); return; }
     ss.forEach(function(s){
       var row = document.createElement("div"); row.className = "dirrow";
-      row.innerHTML = '<div class="nm">' + esc(s.title || basename(s.dir)) +
+      row.innerHTML = '<div class="nm">' + stateTag(s.state) + " " + esc(s.title || basename(s.dir)) +
         (s.mode === "resume" ? ' <span class="tag resume">恢复</span>' : "") + ' <span class="tag yolo">yolo</span></div>' +
-        '<div class="m">📁 ' + esc(s.dir) + "<br>启动 " + fmtTime(s.started) + '</div>';
+        '<div class="m">📁 ' + esc(s.dir) + '<br>⏱ 任务 <span class="time" id="time-' + s.sid + '">' + elapsedStr(s.last_input_ts) + '</span>' +
+        (s.cols ? ' · ' + s.cols + '×' + s.rows : '') + ' · 启动 ' + fmtTime(s.started) + '</div>';
       row.addEventListener("click", function(){ showTerminal(s.sid, s.term_path, s.title || basename(s.dir)); });
       var stop = document.createElement("button"); stop.className="danger"; stop.textContent="停止"; stop.style.marginTop="8px";
       stop.addEventListener("click", function(ev){ ev.stopPropagation();
@@ -378,7 +391,8 @@ function renderHis(q){
 }
 $("hisearch").addEventListener("input", function(){ renderHis($("hisearch").value); });
 
-setInterval(function(){ if ($("p-run").classList.contains("active")) refreshRun(); }, 5000);
+setInterval(function(){ if ($("p-run").classList.contains("active")) refreshRun(); }, 4000);
+setInterval(function(){ runSessions.forEach(function(s){ var el = $("time-" + s.sid); if (el) el.textContent = elapsedStr(s.last_input_ts); }); }, 1000);
 go("");
 refreshQuick();
 </script>

@@ -292,9 +292,10 @@ body.sb-collapsed #sidebar{display:none}
       <label>服务</label>
       <div class="macts">
         <button class="ghost" id="set-restartweb">重启网站</button>
+        <button class="ghost" id="set-softrestart">重启后端层</button>
         <button class="danger" id="set-fullrestart">完全重启</button>
       </div>
-      <div class="mhint">重启网站不影响运行中的会话；完全重启会杀掉所有会话以加载新代码。</div>
+      <div class="mhint">重启网站/后端层不影响运行中的会话；完全重启会杀掉所有会话以加载新代码。后端层=manager,改了 app/common/manager/hub 逻辑后用它生效。</div>
     </div>
     <div class="macts"><button class="ghost" id="set-close">关闭</button></div>
   </div>
@@ -361,6 +362,20 @@ function fullRestart(){
   document.body.appendChild(o);
   postJSON("/api/restart").catch(function(){});
   var n=0; var iv=setInterval(function(){ n++; api("/api/backends").then(function(){ clearInterval(iv); location.reload(); }).catch(function(){}); if(n>40){ clearInterval(iv); var t=$("rstoast"); if(t) t.innerHTML='<div style="font-size:15px">重启超时,请手动刷新页面</div>'; } }, 1000);
+}
+function restartManagerOnly(){
+  if(!confirm("仅重启后端层(manager)？运行中的会话会保留并在重启后重连(含滚动历史),约 4-8 秒。")) return;
+  var o=document.createElement("div"); o.id="rstoast";
+  o.style.cssText="position:fixed;inset:0;background:rgba(15,16,20,.85);color:#e6e8ee;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;gap:12px;font-size:15px";
+  o.innerHTML='<div style="font-size:28px">♻️</div><div>正在重启后端层…</div><div style="font-size:12px;color:#9aa0aa">会话保留,几秒后自动重连</div>';
+  document.body.appendChild(o);
+  postJSON("/api/restart_manager").catch(function(){});
+  var n=0; var iv=setInterval(function(){ n++;
+    api("/api/backends").then(function(){
+      api("/api/sessions").then(function(){ clearInterval(iv); location.reload(); }).catch(function(){});
+    }).catch(function(){});
+    if(n>40){ clearInterval(iv); var t=$("rstoast"); if(t) t.innerHTML='<div style="font-size:15px">重启超时,请手动刷新页面</div>'; }
+  }, 1000);
 }
 
 /* ---- backends ---- */
@@ -799,6 +814,7 @@ $("usageback").addEventListener("click", function(){ setMainView("landing"); });
 function openSettings(){ renderBackend("set-backend"); renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; $("settingsmodal").classList.add("open"); }
 function closeSettings(){ $("settingsmodal").classList.remove("open"); }
 $("set-restartweb").addEventListener("click", restartWebOnly);
+$("set-softrestart").addEventListener("click", restartManagerOnly);
 $("set-fullrestart").addEventListener("click", fullRestart);
 $("set-close").addEventListener("click", closeSettings);
 $("settingsmodal").addEventListener("click", function(e){ if(e.target===$("settingsmodal")) closeSettings(); });

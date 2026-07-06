@@ -24,6 +24,9 @@ __pycache__/
 .ttyd.html
 .term.html
 
+# 运行时会话状态(注册表 + scrollback,软重启重连用)
+.agent-cockpit/
+
 # 操作系统
 .DS_Store
 Thumbs.db

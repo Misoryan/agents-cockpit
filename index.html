@@ -311,6 +311,10 @@ body.sb-collapsed #sidebar{display:none}
       <label>默认自定义参数</label>
       <textarea class="margs" id="set-args" placeholder="例如 --model gpt-5"></textarea>
     </div>
+    <div class="mfield">
+      <label>本机访客标识 <span style="color:#888;font-weight:normal;font-size:11px">(区分内网穿透下不同访问者)</span></label>
+      <div style="font-family:monospace;font-size:12px;word-break:break-all;color:#888" id="set-visitor">—</div>
+    </div>
     <div class="msep"></div>
     <div class="mfield">
       <label>服务</label>
@@ -330,6 +334,49 @@ body.sb-collapsed #sidebar{display:none}
 var $ = function(id){ return document.getElementById(id); };
 function api(p, opts){ return fetch(p, opts).then(function(r){ return r.json(); }); }
 function postJSON(p, obj){ return fetch(p, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(obj||{})}).then(function(r){ return r.json(); }); }
+/* ---- cookie helper + 访客标识(内网穿透下区分不同访问者;随每个请求自动回传后端) ---- */
+function acGetCookie(name){
+  var n = name + "=", parts = (document.cookie || "").split(";");
+  for(var i=0;i<parts.length;i++){
+    var p = parts[i].trim();
+    if(p.indexOf(n) === 0){
+      try { return decodeURIComponent(p.substring(n.length)); } catch(e){ return p.substring(n.length); }
+    }
+  }
+  return "";
+}
+function acSetCookie(name, value, maxAgeDays){
+  var v = encodeURIComponent(String(value == null ? "" : value));
+  var sec = (location.protocol === "https:") ? " Secure;" : "";
+  var ma = "; Max-Age=" + Math.round((maxAgeDays || 3650) * 86400);
+  document.cookie = name + "=" + v + "; Path=/; SameSite=Lax;" + sec + ma;
+}
+function acPrefGetRaw(cookieName, lsKey){
+  var cv = acGetCookie(cookieName);
+  if(cv !== "") return {val: cv, src: "cookie"};
+  var lv = "";
+  try { lv = localStorage.getItem(lsKey) || ""; } catch(e){}
+  if(lv !== ""){ acSetCookie(cookieName, lv, 3650); return {val: lv, src: "migrated"}; }
+  return {val: "", src: "none"};
+}
+function acPrefSet(cookieName, value, lsKey){
+  acSetCookie(cookieName, value, 3650);
+  try { localStorage.setItem(lsKey, value); } catch(e){}
+}
+function acNewVisitorId(){
+  try {
+    var b = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(b);
+    var s = "v-";
+    for(var i=0;i<b.length;i++) s += (b[i] < 16 ? "0" : "") + b[i].toString(16);
+    return s;
+  } catch(e){
+    return "v-" + (Math.random().toString(16) + "00000000000000000000").slice(2, 18)
+                 + (Math.random().toString(16) + "00000000000000000000").slice(2, 18);
+  }
+}
+var AC_VISITOR = acGetCookie("ac_visitor");
+if(!AC_VISITOR){ AC_VISITOR = acNewVisitorId(); acSetCookie("ac_visitor", AC_VISITOR, 3650); }
 function esc(s){
   s = String(s == null ? "" : s);
   return s.replace(/[&<>"]/g, function(c){
@@ -590,9 +637,16 @@ function setMainView(view){
 /* ---- terminal ---- */
 var iframes={}, currentSid=null;
 var lmDir="", lmTitle="", lmBackend="codex", lmYolo=true, lmArgs="";
-try{ lmBackend=localStorage.getItem("acBackend")||"codex"; }catch(e){}
-try{ lmYolo=localStorage.getItem("acYolo")!=="0"; }catch(e){}
-try{ lmArgs=localStorage.getItem("acArgs")||""; }catch(e){}
+/* 设置读取:cookie 优先(localStorage 回退并自动迁入 cookie)—— 穿透下每个访问者各自独立 */
+(function(){
+  var b = acPrefGetRaw("acBackend", "acBackend");
+  lmBackend = b.val || "codex";
+  if(b.src === "none") acSetCookie("acBackend", lmBackend, 3650);
+  var y = acPrefGetRaw("acYolo", "acYolo");
+  lmYolo = (y.val === "") ? true : (y.val !== "0");
+  if(y.src === "none") acSetCookie("acYolo", lmYolo ? "1" : "0", 3650);
+  lmArgs = acPrefGetRaw("acArgs", "acArgs").val || "";
+})();
 
 function termIframe(sid, path){
   if(iframes[sid]) return iframes[sid];
@@ -715,13 +769,13 @@ function renderBackend(boxId){
   availBackends.forEach(function(b){
     var btn=document.createElement("button"); btn.textContent=b==="claude"?"🟣 Claude":"🟠 Codex";
     if(b===lmBackend) btn.classList.add("active");
-    btn.addEventListener("click", function(){ lmBackend=b; try{localStorage.setItem("acBackend",b);}catch(e){} renderBackend("lm-backend"); renderBackend("set-backend"); });
+    btn.addEventListener("click", function(){ lmBackend=b; acPrefSet("acBackend", b, "acBackend"); renderBackend("lm-backend"); renderBackend("set-backend"); });
     box.appendChild(btn);
   });
 }
 function renderYolo(boxId, swId){ var b=$(boxId); if(!b) return; b.classList.toggle("active", lmYolo); if($(swId)) $(swId).textContent=lmYolo?"开":"关"; }
-function setYolo(v, persist){ lmYolo=!!v; if(persist!==false){ try{localStorage.setItem("acYolo", lmYolo?"1":"0");}catch(e){} } renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw"); }
-function setArgs(v, persist){ lmArgs=(v||"").trim(); $("lm-args").value=lmArgs; var sa=$("set-args"); if(sa) sa.value=lmArgs; if(persist!==false){ try{localStorage.setItem("acArgs", lmArgs);}catch(e){} } }
+function setYolo(v, persist){ lmYolo=!!v; if(persist!==false){ acPrefSet("acYolo", lmYolo?"1":"0", "acYolo"); } renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw"); }
+function setArgs(v, persist){ lmArgs=(v||"").trim(); $("lm-args").value=lmArgs; var sa=$("set-args"); if(sa) sa.value=lmArgs; if(persist!==false){ acPrefSet("acArgs", lmArgs, "acArgs"); } }
 function updateLmStart(){ $("lm-start").disabled=!lmDir; }
 function openLaunchNew(){
   lmDir=""; lmTitle=""; $("lm-dir").textContent="📁 未选择目录 — 点「选择目录」"; updateLmStart();
@@ -844,7 +898,7 @@ $("usagebtn").addEventListener("click", function(){ closeSidebar(); setMainView(
 $("settingsbtn").addEventListener("click", function(){ openSettings(); });
 $("landing-usage").addEventListener("click", function(){ setMainView("usage"); });
 $("usageback").addEventListener("click", function(){ setMainView("landing"); });
-function openSettings(){ renderBackend("set-backend"); renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; $("settingsmodal").classList.add("open"); }
+function openSettings(){ renderBackend("set-backend"); renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; var sv=$("set-visitor"); if(sv) sv.textContent=AC_VISITOR; $("settingsmodal").classList.add("open"); }
 function closeSettings(){ $("settingsmodal").classList.remove("open"); }
 $("set-restartweb").addEventListener("click", restartWebOnly);
 $("set-softrestart").addEventListener("click", restartManagerOnly);

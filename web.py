@@ -189,8 +189,11 @@ class WebHandler(BaseHandler):
     def _login(self, raw):
         if not hasattr(common, "USERS"):
             self._json({"error": "会话登录未启用(common.py 待升级)"}, 503); return
+        # 限速按"访客"区分:优先用 ac_visitor cookie(内网穿透后每人唯一),
+        # 缺失时回退来源 IP —— 避免一个访问者登录失败连坐锁定所有公网同 IP 访问者。
         ip = (self.client_address or ("",))[0]
-        allowed, wait = common.check_lockout(ip)
+        lock_key = self._cookie("ac_visitor") or ("ip:" + ip)
+        allowed, wait = common.check_lockout(lock_key)
         if not allowed:
             self._json({"error": "登录失败次数过多,请 %d 秒后再试" % wait}, 429); return
         try:
@@ -200,7 +203,7 @@ class WebHandler(BaseHandler):
         u = (data.get("user") or "").strip()
         stored = common.USERS.get(u)
         if stored is not None and common.verify_password(data.get("password") or "", stored):
-            common.register_login_success(ip)
+            common.register_login_success(lock_key)
             _secure = common.COOKIE_SECURE and isinstance(self.connection, ssl.SSLSocket)
             tok = common.make_session_token(u)
             body = json.dumps({"ok": True, "user": u}, ensure_ascii=False).encode("utf-8")
@@ -210,7 +213,7 @@ class WebHandler(BaseHandler):
             self.send_header("Content-Length", str(len(body))); self.end_headers()
             self.wfile.write(body)
         else:
-            locked = common.register_login_fail(ip)
+            locked = common.register_login_fail(lock_key)
             self._json({"error": "用户名或密码错误" + (";连续失败过多,已临时锁定" if locked else "")}, 401)
 
     def _logout(self):

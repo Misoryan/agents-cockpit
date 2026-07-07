@@ -94,7 +94,7 @@ cd agents-cockpit
 | `[paths] auth_file` | `auth.txt` | 口令文件(格式 `用户名:密码`) |
 | `[approval] auto_approve` | `1` | `1`=codex `--yolo` / claude `--dangerously-skip-permissions`;`0`=逐项审批 |
 | `[security] session_ttl` | `86400` | 登录会话有效期(秒);过期需重新登录 |
-| `[security] max_fail` / `lockout_secs` | `5` / `300` | 同 IP 连续失败 N 次锁定 M 秒(防爆破) |
+| `[security] max_fail` / `lockout_secs` | `5` / `300` | 同一访客连续失败 N 次锁定 M 秒(防爆破;内网穿透下按访客 Cookie 区分,不被公网同 IP 连坐) |
 | `[security] cookie_secure` | `0` | 走 HTTPS 入口填 `1` 加固;纯 HTTP 直连填 `0` |
 
 完整字段见 `config.example`(每项都有注释)。`config.ini` 已在 `.gitignore` 中,不会被上传。
@@ -109,7 +109,7 @@ cd agents-cockpit
 
 - 打开控制台 → 未登录弹登录框 → `POST /api/login` 校验用户名/口令 → 成功后服务端下发一个 **HttpOnly + SameSite=Lax** 的 Cookie(`ac_session`),之后所有请求(含 WebSocket 终端)都凭它鉴权。口令只在登录那一次传输,不再每个请求明文重放。
 - 登录态是**带签名+过期**的 token(默认 1 天),过期需重新登录;签名密钥落盘在 `.agent-cockpit/session_secret`,web 重启不丢登录态。
-- 同一 IP 连续失败 5 次会临时锁定 5 分钟(防暴力破解;参数见 `[security]`)。
+- 同一访客连续失败 5 次会临时锁定 5 分钟(防暴力破解;参数见 `[security]`)。**内网穿透场景下,每个浏览器各持一个访客标识 Cookie(`ac_visitor`),登录限速按访客标识(而非穿透后的公网 IP)计数**——不会出现“一个访问者登录失败连坐锁定所有公网同 IP 访问者”。前端默认模型 / 自动批准 / 自定义参数等设置也改存 Cookie(读取时优先 Cookie、自动从旧 `localStorage` 迁移),每个访问者各自独立。访客标识可在「设置」页查看;它仅用于限速/区分,不是安全边界(不信任的网络可直接 `[security] max_fail = 0` 关闭限速)。
 - 凭证推荐存 **PBKDF2 哈希**而非明文:`python -c "import common; print(common.hash_password('口令'))"` 生成,把 `用户名:$pbkdf2$...` 写进 `auth.txt`。明文格式仍兼容。
 
 **端口映射 / 内网穿透(frp、ngrok、Cloudflare Tunnel 等)务必走 HTTPS 入口**:Basic 时代口令是明文重放的;会话化后口令虽只在登录时传一次,但仍只有 HTTPS 能保证它不被链路嗅探。注意 frp/ngrok 这类穿透公网段虽加密,**穿透服务商能解密看到应用层明文**——所以推荐优先用 Cloudflare Tunnel / Tailscale,或自建 frps + 自有域名证书。Cookie 的 `Secure` 标志在 HTTPS 入口下有效(浏览器侧是 HTTPS),可在 `[security] cookie_secure = 1` 开启加固。若想连穿透商都看不到明文,可设 `[server] use_https = 1`(自动生成自签证书,需 `pip install cryptography`)+ 穿透改用 **tcp** 隧道直通,实现端到端加密(代价:自签证书浏览器首次需手动信任)。

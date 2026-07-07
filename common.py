@@ -392,17 +392,19 @@ def session_cookie_header(name, value, max_age=SESSION_TTL, secure=COOKIE_SECURE
     return "; ".join(parts)
 
 
-# ---------- 登录失败限速(按 IP,内存) ----------
+# ---------- 登录失败限速(按 访客标识/IP,内存) ----------
+# key 由调用方决定:内网穿透下优先用 ac_visitor cookie(每访问者唯一),
+# 缺失时回退来源 IP。这样穿透后不同访问者各有各的失败计数,不会互相连坐锁定。
 _fail_lock = threading.Lock()
-_fail_state = {}   # ip -> {"fails": n, "locked_until": ts}
+_fail_state = {}   # key -> {"fails": n, "locked_until": ts}
 
 
-def check_lockout(ip):
+def check_lockout(key):
     """返回 (是否允许尝试, 还需等待秒数)。max_fail<=0 时关闭限速(走隧道时建议如此)。"""
     if MAX_FAIL <= 0:
         return True, 0
     with _fail_lock:
-        st = _fail_state.get(ip)
+        st = _fail_state.get(key)
         if st:
             remain = st.get("locked_until", 0) - time.time()
             if remain > 0:
@@ -410,12 +412,12 @@ def check_lockout(ip):
     return True, 0
 
 
-def register_login_fail(ip):
+def register_login_fail(key):
     """记录一次失败;达到 MAX_FAIL 则锁定 LOCKOUT_SECS 秒。返回是否触发了锁定。max_fail<=0 时为空操作。"""
     if MAX_FAIL <= 0:
         return False
     with _fail_lock:
-        st = _fail_state.setdefault(ip, {"fails": 0, "locked_until": 0})
+        st = _fail_state.setdefault(key, {"fails": 0, "locked_until": 0})
         st["fails"] += 1
         if st["fails"] >= MAX_FAIL:
             st["locked_until"] = time.time() + LOCKOUT_SECS
@@ -424,9 +426,9 @@ def register_login_fail(ip):
     return False
 
 
-def register_login_success(ip):
+def register_login_success(key):
     with _fail_lock:
-        _fail_state.pop(ip, None)
+        _fail_state.pop(key, None)
 
 
 # ---------- 应用层 HTTPS(自签证书;配合 tcp 隧道做端到端加密) ----------
@@ -1383,14 +1385,34 @@ TTY_INJECT_SCRIPT = """(function(){
   waitTerm(function(term){
     var PC = 0, PR = 0;
     btn.addEventListener('click', function(){
-      var c = term.cols || 0, r = term.rows || 0;
+      // 不能直接用 term.cols/rows:reassert 已把本地 xterm 对齐到共享 PTY
+      // 尺寸(可能是 PC 端首次 fit 的大尺寸),那样 POST 出去等于"不变" →
+      // adapt 判定尺寸未变而不改 PTY,按钮表现为"无效"。改为按本屏视口像素
+      // ÷ 当前单字符像素反推本屏 1:1 能放下的 cols/rows(offsetWidth 是 layout
+      // 尺寸,不受 CSS transform 影响,且恒与 term.cols 匹配)。
+      var e = termEl();
+      var c = 0, r = 0;
+      if (e && term.cols > 0 && term.rows > 0) {
+        var cw = (e.offsetWidth || e.scrollWidth || 0) / term.cols;
+        var ch = (e.offsetHeight || e.scrollHeight || 0) / term.rows;
+        var vw = document.documentElement.clientWidth || window.innerWidth || 0;
+        var vh = document.documentElement.clientHeight || window.innerHeight || 0;
+        if (cw > 2 && ch > 2 && vw > 0 && vh > 0) {
+          c = Math.max(20, Math.floor(vw / cw));
+          r = Math.max(8, Math.floor(vh / ch));
+        }
+      }
       if (!c || !r) { return; }
       fetch('/api/adapt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sid: SID, cols: c, rows: r })
       }).then(function(x){ return x.json(); }).then(function(d){
-        if (d && d.ok) { btn.classList.add('on'); PC = c; PR = r; applyFit(); }
+        if (d && d.ok) {
+          btn.classList.add('on'); PC = c; PR = r;
+          try { term.resize(c, r); } catch (_) {}   // 立即切到本屏尺寸,不等下次 tick
+          applyFit();
+        }
       }).catch(function(){});
     });
     function termEl(){ return term.element || document.querySelector('.xterm'); }

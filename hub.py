@@ -25,13 +25,63 @@ import base64
 import threading
 
 from common import ws_send, ws_recv, BUF_CAP, SCROLLBACK_DIR
+from common import RUN_GRACE_CODEX, RUN_GRACE_CLAUDE, PLAN_THRESHOLD
 
-_CONFIRM_RE = re.compile(rb"(?i)(\bapprove\b|\ballow\b|\bconfirm\b|\[y/?n\]|\(yes/no\)|\(y/n\)|\byes/no\b)")
+# ---- terminal output parsing (operate on decoded visible text, not raw bytes) ----
+# Strip ANSI CSI/OSC/charset escapes + bare CR/NUL so we see what the user sees.
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|\x1b[NMc=>]"
+    r"|\x1b[()*+][A-Za-z0-9]"
+    r"|[\r\x00]")
+# Normalize one visible line: drop spinner / progress glyphs / percentages / block bars,
+# so a TUI redraw that only changes a spinner frame yields an UNCHANGED line-set digest.
+_SPINNER_RE = re.compile(
+    r"[⠀-⣿]"                         # braille spinner block
+    r"|[⏵-⏿⌚-⌛]"            # ⏵⏶⏷⏸⏹⏺… / ⌚⌛
+    r"|[✅✔✓✗✖✕❌⚡✶✳✨⚑]"
+    r"|[▀-▟]"                         # block elements █ ▓ ▒ ░
+    r"|\d{1,3}\s*%")
+# Tool / command approval prompts. Constrained (approve must sit next to a [y/n]) so a
+# streamed diff that merely mentions "approve" / "yes/no" text does NOT trigger a false hit.
+_CONFIRM_RE = re.compile(
+    r"(?i)(\[y/?n\]|\(y/?n\)|\(yes/?no\)|\byes\s*/\s*no\b"
+    r"|apply\s+patch\b|run\s+command\b"
+    r"|do\s+you\s+want\s+to\s+(allow|run|proceed|execute)"
+    r"|yes,?\s+and\s+(?:do\s+not|don['’]?t)\s+ask\s+again"
+    r"|approve\b.{0,40}\[[yn]|proceed\?\s*\[)")
+# Claude plan-mode signals. Scored, never a single literal ("plan" alone is too common).
+_PLAN_WEAK = re.compile(r"(?i)\bplan\b|计划")
+_PLAN_STRONG = [
+    re.compile(r"(?i)plan[ _-]mode|计划模式"),
+    re.compile(r"(?i)exit[ _-]plan(?:[ _-]mode)?|退出计划"),
+    re.compile(r"(?i)shift\s*\+\s*tab"),
+    re.compile(r"(?i)would you like me to (?:proceed|start|continue)|是否(?:开始|继续)"),
+    re.compile(r"(?i)ready to (?:proceed|build|implement|start)|准备好(?:实现|开始)"),
+    re.compile(r"(?i)adjust (?:this|the) plan|调整(?:这个|此)?计划"),
+    re.compile(r"(?i)let(?:'s| us) (?:proceed|start|begin|implement)"),
+]
+
+
+def _plan_score(s):
+    sc = 1 if _PLAN_WEAK.search(s) else 0
+    for rx in _PLAN_STRONG:
+        if rx.search(s):
+            sc += 2
+    return sc
+
+
+def _frame_digest(vis):
+    """frozenset of normalized non-empty lines in one frame's visible text. Stable across
+    TUI repaints whose only change is a spinner frame; changes when real text grows."""
+    return frozenset(ln for ln in (_SPINNER_RE.sub("", x).strip() for x in vis.split("\n")) if ln)
 
 
 class Hub:
-    def __init__(self, ttyd_port):
+    def __init__(self, ttyd_port, backend="codex"):
         self.ttyd_port = ttyd_port
+        self.backend = backend       # codex / claude — drives RUN_GRACE & prompt shapes
         self.sid = None
         self.sb_path = None          # per-sid scrollback log (length-prefixed frames)
         self.sb_bytes = 0
@@ -43,8 +93,10 @@ class Hub:
         self.started = time.time()
         self.last_output_ts = time.time()
         self.last_input_ts = time.time()
-        self.awaiting_confirm = False
-        self.confirm_ts = 0.0
+        self.last_content_ts = time.time()   # last frame that carried NEW visible text
+        self._last_vis = ""                  # most recent non-empty frame's visible text
+        self._frame_digest = None            # normalized line-set of the last frame
+        self.ever_input = False              # has the user ever typed into this session?
         self.cols = 0
         self.rows = 0
         self.client_sizes = {}       # client_id -> (cols, rows)
@@ -64,10 +116,21 @@ class Hub:
         except OSError:
             self.sb_bytes = 0
 
+    def _send_pty_resize_locked(self):
+        """Push the current PTY size (self.cols/rows) upstream to ttyd/codex."""
+        if self.cols and self.rows:
+            self.send_upstream(
+                ("1" + json.dumps({"columns": self.cols, "rows": self.rows})).encode(), 0x1)
+
     def apply_resize(self, client_id, cols, rows):
-        # shrink-to-min: codex takes the SMALLEST size among connected clients,
-        # so every device's xterm grid is >= codex size -> no garble anywhere
-        # (bigger screens just show the smaller terminal with side margins).
+        # A client reports its own viewport size. We NO LONGER shrink-to-min.
+        # The PTY size is adopted ONCE (the first client's fit) and after that
+        # only changes via adapt() (the per-terminal "适配本屏" button). So a
+        # phone joining, leaving, or rotating never resizes the terminal out
+        # from under the PC — devices no longer perturb each other. Every device
+        # still gets a non-garbled view because the injected terminal page forces
+        # its local xterm to the PTY size and CSS-scales it to fit
+        # (see common._inject_terminal_controls).
         try:
             cols = int(cols); rows = int(rows)
         except (TypeError, ValueError):
@@ -76,27 +139,47 @@ class Hub:
             return
         with self.clock:
             self.client_sizes[client_id] = (cols, rows)
-            self._recompute_size_locked()
+            if not self.cols or not self.rows:          # first fit wins as the initial PTY size
+                self.cols, self.rows = cols, rows
+                self._send_pty_resize_locked()
 
     def drop_client_size(self, client_id):
+        # PTY size is sticky: a client disconnecting must NOT change it. That was
+        # exactly the "phone leaves -> PC snaps back" jump we are removing.
         with self.clock:
             self.client_sizes.pop(client_id, None)
-            self._recompute_size_locked()
 
-    def _recompute_size_locked(self):
-        sizes = [s for s in self.client_sizes.values() if s[0] and s[1]]
-        if not sizes:
-            return
-        cols = min(s[0] for s in sizes); rows = min(s[1] for s in sizes)
-        if cols and rows and (cols, rows) != (self.cols, self.rows):
-            self.cols, self.rows = cols, rows
-            self.send_upstream(("1" + json.dumps({"columns": cols, "rows": rows})).encode(), 0x1)
+    def adapt(self, cols, rows):
+        """Explicit "make THIS screen optimal": set the PTY to the given size.
+        Invoked from POST /api/adapt (the "适配本屏" button injected into the
+        ttyd page). Last writer wins; any device can reclaim by pressing again."""
+        try:
+            cols = int(cols); rows = int(rows)
+        except (TypeError, ValueError):
+            return False
+        if cols <= 0 or rows <= 0:
+            return False
+        with self.clock:
+            if (cols, rows) != (self.cols, self.rows):
+                self.cols, self.rows = cols, rows
+                self._send_pty_resize_locked()
+        return True
 
     def state(self, now):
-        if self.awaiting_confirm and (now - self.confirm_ts) < 600:
-            return "confirm"
-        if (now - self.last_output_ts) < 4:
+        # Snapshot under the lock (_reader writes these from another thread), decide outside.
+        with self.clock:
+            vis = self._last_vis
+            last_content = self.last_content_ts
+            ever_in = self.ever_input
+        grace = RUN_GRACE_CLAUDE if self.backend == "claude" else RUN_GRACE_CODEX
+        if (now - last_content) < grace:
             return "running"
+        if _CONFIRM_RE.search(vis):
+            return "confirm"
+        if _plan_score(vis) >= PLAN_THRESHOLD:
+            return "plan"
+        if not ever_in:
+            return "new"
         return "idle"
 
     def _connect_upstream(self):
@@ -161,11 +244,20 @@ class Hub:
             if op is None or op == 0x8:
                 break
             if op in (0x1, 0x2):
-                self.last_output_ts = time.time()
-                if _CONFIRM_RE.search(payload):
-                    self.awaiting_confirm = True
-                    self.confirm_ts = time.time()
+                now = time.time()
+                # ttyd output frame = leading "0" type byte + raw PTY bytes
+                raw = payload[1:] if payload[:1] == b"0" else payload
+                vis = _ANSI_RE.sub("", raw.decode("utf-8", "replace"))
+                fset = _frame_digest(vis)
                 with self.clock:
+                    self.last_output_ts = now
+                    if vis.strip():
+                        self._last_vis = vis
+                    # Only NEW visible content (line-set changed) refreshes "running".
+                    # Spinner / cursor repaints leave the digest unchanged -> stays idle.
+                    if fset and fset != self._frame_digest:
+                        self.last_content_ts = now
+                        self._frame_digest = fset
                     self._store(payload)
                     self._broadcast(payload, op)
         # upstream gone
@@ -223,7 +315,7 @@ class Hub:
                     continue
                 # input + others: forward and mark activity
                 self.last_input_ts = time.time()
-                self.awaiting_confirm = False
+                self.ever_input = True
                 self.send_upstream(payload, op)
         except OSError:
             pass

@@ -14,6 +14,19 @@ port_base = 0
 # ttyd 绑定的本机网卡(仅本机访问保持 127.0.0.1;Linux 想走 lo 就填 lo)
 bind = 127.0.0.1
 
+# 应用层 HTTPS(可选;配合 openfrp/frp 的 tcp 隧道做端到端加密,穿透商看不到明文)。
+# 1=启用,浏览器走 https://,首次启动自动生成自签证书(需 pip install cryptography),
+# 浏览器首次访问需手动「继续」(自签证书);有正式证书可填下面 cert_file/key_file 免警告。
+use_https = 0
+# 自签证书 CN/域名(留空默认 agents-cockpit)。想匹配隧道域名以减少警告就填该域名。
+cert_cn = agents-cockpit
+# 已有正式证书(如 Let's Encrypt)填这两个绝对路径;留空 = 自签证书。
+cert_file =
+key_file =
+# 局域网明文入口(仅 use_https=1 时生效)。开 HTTPS 后 http://<局域网IP>:port 会失效,
+# 这里再开一个明文 HTTP 端口方便本机/局域网访问(无证书警告)。0=不开。⚠️ 明文,仅限可信局域网。
+http_port = 0
+
 [manager]
 # manager 进程端口(web 与它通信,仅本机);0 = server.port + 1000
 port = 0
@@ -52,3 +65,43 @@ balance_ttl = 300
 buf_cap = 262144
 # 扫描单个 claude 会话文件的最大行数(取标题用)
 claude_scan_cap = 6000
+
+[detect]
+# 状态识别调参。codex 思考停顿较久、claude spinner 高频,故宽容期不同。
+# 实质输出(非 spinner 重绘)停止多少秒后,从「执行中」转为「空闲/需确认」。
+run_grace_codex = 8
+run_grace_claude = 4
+# 「完成」通知去抖:会话从执行中停下来多久后才算真正完成、发完成通知(防抖动误报)。
+idle_debounce = 8
+# Plan 模式得分阈值(命中强信号短语 +2、出现 plan/计划 +1;达阈值才算 Plan 待确认)。
+plan_threshold = 3
+
+[notify]
+# 外部推送(手机收到 codex/claude 的状态变化)。0 = 关闭(默认)。
+# 启用后,manager 每 4 秒检测一次各会话状态,在「需确认/Plan/完成」时推送。
+enabled = 0
+# Telegram Bot:在 @BotFather 建机器人拿到的 token,以及你的 chat_id(给 @userinfobot 发消息可查)。
+telegram_token =
+telegram_chat_id =
+# Bark(iOS):填完整推送地址 https://api.day.app/XXXX ,或只填 key(走官方 api.day.app)。
+bark_key =
+# Webhook:飞书 / Lark 机器人地址会自动识别(按 msg_type/content 格式发);其它地址发 {title, body, event}。
+# 飞书机器人若开了「自定义签名」校验,把签名密钥填到下面这行(非飞书时它放进 X-Notify-Secret 头)。
+webhook_url =
+webhook_secret =
+# 推送哪些事件(逗号分隔):confirm 需确认 / plan Plan待确认 / done 完成。
+events = confirm,done
+# 同一会话同一事件最小重复推送间隔(秒),防抖动刷屏。
+min_interval = 30
+
+[security]
+# 会话化登录:登录成功后用 HttpOnly Cookie 存登录态(口令不再每次明文传)。
+# 登录会话有效期(秒);默认 86400 = 1 天,过期需重新登录。
+session_ttl = 86400
+# 同一 IP 连续登录失败 N 次后,临时锁定该 IP(防暴力破解)。
+max_fail = 5
+# 锁定时长(秒)。
+lockout_secs = 300
+# Cookie 是否带 Secure。走 HTTPS 入口(frp/ngrok/Caddy/Cloudflare 等)填 1 更安全;
+# 纯 HTTP 直连(如本机调试 http://ip:port)必须填 0,否则登录后浏览器不回传 Cookie 又被踢回登录页。
+cookie_secure = 0

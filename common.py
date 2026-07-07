@@ -23,8 +23,10 @@ import socket
 import configparser
 import http.client
 import hashlib
+import hmac
 import re
 import shlex
+import secrets
 import sqlite3
 from datetime import datetime
 
@@ -38,6 +40,11 @@ host = 0.0.0.0
 port = 7682
 port_base = 0
 bind = 127.0.0.1
+use_https = 0
+cert_file =
+key_file =
+cert_cn = agents-cockpit
+http_port = 0
 [manager]
 port = 0
 heartbeat = 2
@@ -60,6 +67,25 @@ balance_ttl = 300
 [limits]
 buf_cap = 262144
 claude_scan_cap = 6000
+[detect]
+run_grace_codex = 8
+run_grace_claude = 4
+idle_debounce = 8
+plan_threshold = 3
+[notify]
+enabled = 0
+telegram_token =
+telegram_chat_id =
+bark_key =
+webhook_url =
+webhook_secret =
+events = confirm,done
+min_interval = 30
+[security]
+session_ttl = 86400
+max_fail = 5
+lockout_secs = 300
+cookie_secure = 0
 """
 
 
@@ -97,6 +123,9 @@ BUF_CAP = _CFG.getint("limits", "buf_cap") or 262144  # max replay buffer per se
 AUTO_APPROVE = _CFG.getboolean("approval", "auto_approve")        # codex --yolo / claude --dangerously-skip-permissions
 CODEX_NO_ALT_SCREEN = _CFG.getboolean("approval", "codex_no_alt_screen")
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
+# --stop / --help must work even with a broken/empty config (no bins, no auth.txt),
+# so we skip the startup sanity checks (which sys.exit) in those modes.
+_STOP_OR_HELP = ("--stop" in sys.argv) or ("--help" in sys.argv) or ("-h" in sys.argv) or ("--is-running" in sys.argv)
 MANAGER_HOST = "127.0.0.1"
 _mp = _CFG.getint("manager", "port")
 MANAGER_PORT = _mp if _mp > 0 else PICKER_PORT + 1000
@@ -105,7 +134,9 @@ MANAGER_PORT = _mp if _mp > 0 else PICKER_PORT + 1000
 STATE_DIR = os.path.join(HERE, ".agent-cockpit")
 REGISTRY_PATH = os.path.join(STATE_DIR, "sessions.json")
 SCROLLBACK_DIR = os.path.join(STATE_DIR, "scrollback")
+STOP_SENTINEL = "stop.sentinel"   # written by app.py --stop when the web layer is unreachable
 REG_LOCK = threading.Lock()                       # only guards disk writes; never nest under manager._lock
+STOPPING = False   # set True by web /api/_stop to freeze the watchdog + ensure_manager respawn
 MANAGER_HEARTBEAT_INTERVAL = _CFG.getfloat("manager", "heartbeat") or 2.0
 MANAGER_HEARTBEAT_GRACE = _CFG.getint("manager", "heartbeat_grace") or 3
 
@@ -118,6 +149,17 @@ AUTH_FILE = (_cfg_get("paths", "auth_file") or os.path.join(HERE, "auth.txt")).s
 if not os.path.isabs(AUTH_FILE):
     AUTH_FILE = os.path.join(HERE, AUTH_FILE)
 
+# ---- 应用层 HTTPS(可选;配合 tcp 隧道做端到端加密,穿透商看不到明文) ----
+USE_HTTPS = _CFG.getboolean("server", "use_https")
+_cf = (_cfg_get("server", "cert_file")).strip()
+_kf = (_cfg_get("server", "key_file")).strip()
+CERT_FILE = (os.path.join(HERE, _cf) if (_cf and not os.path.isabs(_cf))
+             else (_cf or os.path.join(STATE_DIR, "web_cert.pem")))
+KEY_FILE = (os.path.join(HERE, _kf) if (_kf and not os.path.isabs(_kf))
+            else (_kf or os.path.join(STATE_DIR, "web_key.pem")))
+CERT_CN = (_cfg_get("server", "cert_cn") or "agents-cockpit").strip() or "agents-cockpit"
+LAN_HTTP_PORT = _CFG.getint("server", "http_port")              # >0=额外开一个明文 HTTP 端口(局域网方便访问),0=关
+
 CODEX_HOME = (_cfg_get("paths", "codex_home") or os.path.join(os.path.expanduser("~"), ".codex")).strip()
 SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
 HISTORY_JSONL = os.path.join(CODEX_HOME, "history.jsonl")
@@ -125,6 +167,30 @@ CLAUDE_HOME = (_cfg_get("paths", "claude_home") or os.path.join(os.path.expandus
 CLAUDE_PROJECTS_DIR = os.path.join(CLAUDE_HOME, "projects")
 # 扫描单个 claude 会话文件的最大行数(标题/ai-title 通常在前若干行;超大转录用此封顶)
 CLAUDE_SCAN_CAP = _CFG.getint("limits", "claude_scan_cap") or 6000
+
+# ---- state detection tuning (hub.state) ----
+RUN_GRACE_CODEX = _CFG.getfloat("detect", "run_grace_codex") or 8.0   # codex 思考停顿宽容期(s)
+RUN_GRACE_CLAUDE = _CFG.getfloat("detect", "run_grace_claude") or 4.0 # claude spinner 高频,收紧
+IDLE_DEBOUNCE = _CFG.getfloat("detect", "idle_debounce") or 8.0       # 完成事件去抖:离开 active 后多久才算 idle
+PLAN_THRESHOLD = _CFG.getint("detect", "plan_threshold") or 3         # plan 得分阈值
+
+# ---- external push notify ----
+NOTIFY_ENABLED = _CFG.getboolean("notify", "enabled")
+NOTIFY_TG_TOKEN = (_cfg_get("notify", "telegram_token")).strip()
+NOTIFY_TG_CHAT = (_cfg_get("notify", "telegram_chat_id")).strip()
+NOTIFY_BARK_KEY = (_cfg_get("notify", "bark_key")).strip()
+NOTIFY_WEBHOOK_URL = (_cfg_get("notify", "webhook_url")).strip()
+NOTIFY_WEBHOOK_SECRET = (_cfg_get("notify", "webhook_secret")).strip()
+_ev = (_cfg_get("notify", "events")).strip() or "confirm,done"
+NOTIFY_EVENTS = {e.strip() for e in _ev.replace(";", ",").split(",") if e.strip()}
+NOTIFY_MIN_INTERVAL = _CFG.getfloat("notify", "min_interval") or 30.0
+NOTIFY_TIMEOUT = 6.0
+
+# ---- auth / session (会话化登录) ----
+SESSION_TTL = _CFG.getint("security", "session_ttl") or 86400   # 登录会话有效期(秒)
+MAX_FAIL = _CFG.getint("security", "max_fail")                  # 连续失败 N 次锁定;0 = 关闭限速(走隧道建议)
+LOCKOUT_SECS = _CFG.getint("security", "lockout_secs") or 300   # 锁定时长(秒)
+COOKIE_SECURE = _CFG.getboolean("security", "cookie_secure")    # 1=带 Secure(需走 HTTPS 入口)
 
 
 
@@ -192,27 +258,216 @@ def resolve_claude_bin(override=None):
     return None
 
 
-CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
-CLAUDE_BIN = resolve_claude_bin(_cfg_get("binaries", "claude").strip() or None)
-TTYD = resolve_ttyd(_cfg_get("binaries", "ttyd").strip() or None)
+if _STOP_OR_HELP:
+    # stop/help must not require a working install (bins are irrelevant there)
+    CODEX_BIN = CLAUDE_BIN = TTYD = None
+    BACKENDS = {}
+else:
+    CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
+    CLAUDE_BIN = resolve_claude_bin(_cfg_get("binaries", "claude").strip() or None)
+    TTYD = resolve_ttyd(_cfg_get("binaries", "ttyd").strip() or None)
+    BACKENDS = {
+        "codex": {"bin": CODEX_BIN, "yolo": ["--yolo"], "label": "Codex"},
+        "claude": {"bin": CLAUDE_BIN, "yolo": ["--dangerously-skip-permissions"], "label": "Claude Code"},
+    }
+    if not (CODEX_BIN or CLAUDE_BIN):
+        print("ERROR: 未找到 codex 或 claude。请至少安装一个 CLI。")
+        sys.exit(1)
+    if not TTYD or not os.path.isfile(TTYD):
+        print("ERROR: 未找到 ttyd。请把 ttyd(.exe) 放在本目录,或设置 TTYD 环境变量。")
+        sys.exit(1)
 
-BACKENDS = {
-    "codex": {"bin": CODEX_BIN, "yolo": ["--yolo"], "label": "Codex"},
-    "claude": {"bin": CLAUDE_BIN, "yolo": ["--dangerously-skip-permissions"], "label": "Claude Code"},
-}
-
-if not (CODEX_BIN or CLAUDE_BIN):
-    print("ERROR: 未找到 codex 或 claude。请至少安装一个 CLI。")
-    sys.exit(1)
-if not TTYD or not os.path.isfile(TTYD):
-    print("ERROR: 未找到 ttyd。请把 ttyd(.exe) 放在本目录,或设置 TTYD 环境变量。")
-    sys.exit(1)
-
-with open(AUTH_FILE, "r", encoding="utf-8") as f:
-    CRED = f.read().strip()
-if ":" not in CRED:
-    print("ERROR: bad .auth (need user:pass)"); sys.exit(1)
+# ---------- auth: users, password hashing, session tokens ----------
+# auth.txt 每行一个用户 "用户名:凭证"。凭证可以是:
+#   * 明文(兼容旧版,如 codex:password123)
+#   * 哈希 "$pbkdf2$<iters>$<salt_b64>$<hash_b64>"(推荐;用 hash_password() 生成)
+# 行首 # 视为注释,空行忽略;多行 = 多用户。
+USERS = {}
+_legacy_user = None
+try:
+    with open(AUTH_FILE, "r", encoding="utf-8") as _f:
+        for _raw in _f:
+            ln = _raw.strip()
+            if not ln or ln.startswith("#") or ":" not in ln:
+                continue
+            _u, _p = ln.split(":", 1)
+            USERS[_u.strip()] = _p
+            if _legacy_user is None:
+                _legacy_user = _u.strip()
+except OSError:
+    pass
+if not USERS and not _STOP_OR_HELP:
+    print("ERROR: %s 没有有效的 用户名:凭证 行" % AUTH_FILE); sys.exit(1)
+# 仅用于内部 web->manager 调用(manager 信任本机)与启动日志;对外登录走 USERS。
+CRED = ("%s:%s" % (_legacy_user, USERS.get(_legacy_user, ""))) if _legacy_user else ":"
 EXPECTED_AUTH = "Basic " + base64.b64encode(CRED.encode()).decode()
+
+
+def hash_password(password, iters=120000):
+    """生成 "$pbkdf2$iters$salt_b64$hash_b64" 哈希,写入 auth.txt 即可。命令行:
+       python -c "import common; print(common.hash_password('你的密码'))" """
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+    return "$pbkdf2$%d$%s$%s" % (iters, base64.b64encode(salt).decode(),
+                                 base64.b64encode(dk).decode())
+
+
+def verify_password(password, stored):
+    """校验密码;支持 $pbkdf2$ 哈希与明文(旧版)。常量时间比较。"""
+    if not stored or not password:
+        return False
+    if stored.startswith("$pbkdf2$"):
+        parts = stored.split("$")
+        if len(parts) != 5:
+            return False
+        try:
+            iters = int(parts[2])
+            salt = base64.b64decode(parts[3])
+            want = base64.b64decode(parts[4])
+        except Exception:
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+        return hmac.compare_digest(dk, want)
+    return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
+
+
+def _load_or_create_session_secret():
+    """会话签名密钥,持久化到 STATE_DIR,使已签发的 token 在 web 重启后仍有效。"""
+    path = os.path.join(STATE_DIR, "session_secret")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            sec = f.read().strip()
+        if sec:
+            return sec
+    except OSError:
+        pass
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        sec = secrets.token_hex(32)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(sec)
+        return sec
+    except OSError:
+        return ""   # 回退:用一次性临时密钥(token 不跨重启)
+
+
+_SESSION_SECRET = (_load_or_create_session_secret() or secrets.token_hex(32)).encode("utf-8")
+
+
+def make_session_token(user):
+    """签发无状态 HMAC token: base64(payload).sig,payload 含 user 与过期时间。"""
+    payload = {"u": user, "exp": int(time.time()) + SESSION_TTL}
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    pb = base64.urlsafe_b64encode(body).decode("ascii")
+    sig = hmac.new(_SESSION_SECRET, pb.encode("ascii"), hashlib.sha256).hexdigest()
+    return pb + "." + sig
+
+
+def verify_session_token(token):
+    """token 有效且未过期则返回用户名,否则 None。"""
+    if not token or "." not in token:
+        return None
+    pb, _, sig = token.partition(".")
+    expect = hmac.new(_SESSION_SECRET, pb.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expect):
+        return None
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(pb.encode("ascii")).decode("utf-8"))
+        exp = int(payload.get("exp", 0))
+    except Exception:
+        return None
+    if exp < time.time():
+        return None
+    u = payload.get("u")
+    return u if (isinstance(u, str) and u in USERS) else None
+
+
+def session_cookie_header(name, value, max_age=SESSION_TTL, secure=COOKIE_SECURE):
+    """构造 Set-Cookie 值: HttpOnly + SameSite=Lax(+可选 Secure)。
+    secure 默认取 COOKIE_SECURE;明文 HTTP(局域网)监听器应传 False,否则浏览器不回传 Cookie。"""
+    parts = ["%s=%s" % (name, value), "Path=/", "HttpOnly", "SameSite=Lax",
+             "Max-Age=%d" % max_age]
+    if secure:
+        parts.append("Secure")
+    return "; ".join(parts)
+
+
+# ---------- 登录失败限速(按 IP,内存) ----------
+_fail_lock = threading.Lock()
+_fail_state = {}   # ip -> {"fails": n, "locked_until": ts}
+
+
+def check_lockout(ip):
+    """返回 (是否允许尝试, 还需等待秒数)。max_fail<=0 时关闭限速(走隧道时建议如此)。"""
+    if MAX_FAIL <= 0:
+        return True, 0
+    with _fail_lock:
+        st = _fail_state.get(ip)
+        if st:
+            remain = st.get("locked_until", 0) - time.time()
+            if remain > 0:
+                return False, int(remain) + 1
+    return True, 0
+
+
+def register_login_fail(ip):
+    """记录一次失败;达到 MAX_FAIL 则锁定 LOCKOUT_SECS 秒。返回是否触发了锁定。max_fail<=0 时为空操作。"""
+    if MAX_FAIL <= 0:
+        return False
+    with _fail_lock:
+        st = _fail_state.setdefault(ip, {"fails": 0, "locked_until": 0})
+        st["fails"] += 1
+        if st["fails"] >= MAX_FAIL:
+            st["locked_until"] = time.time() + LOCKOUT_SECS
+            st["fails"] = 0
+            return True
+    return False
+
+
+def register_login_success(ip):
+    with _fail_lock:
+        _fail_state.pop(ip, None)
+
+
+# ---------- 应用层 HTTPS(自签证书;配合 tcp 隧道做端到端加密) ----------
+def ensure_self_signed_cert(cert_path, key_path, cn=None):
+    """确保自签证书存在;不存在则用 cryptography 生成(CN/SAN=cn,有效期 10 年)。
+    依赖可选库 cryptography(pip install cryptography);也可自己在 config.ini 用
+    [server] cert_file / key_file 指定已有证书(如 Let's Encrypt)。已存在则跳过。"""
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        return
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        import datetime as _dt
+    except ImportError:
+        raise RuntimeError("生成自签证书需要 cryptography 库: pip install cryptography"
+                           "(或在 config.ini 的 [server] cert_file/key_file 指定已有证书)")
+    cn = (cn or CERT_CN or "agents-cockpit").strip() or "agents-cockpit"
+    try:
+        os.makedirs(os.path.dirname(cert_path) or ".", exist_ok=True)
+    except OSError:
+        pass
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+    now = _dt.datetime.utcnow()
+    cert = (x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - _dt.timedelta(days=1))
+            .not_valid_after(now + _dt.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(cn)]), critical=False)
+            .sign(key, hashes.SHA256()))
+    with open(key_path, "wb") as f:
+        f.write(key.private_bytes(serialization.Encoding.PEM,
+                                  serialization.PrivateFormat.TraditionalOpenSSL,
+                                  serialization.NoEncryption()))
+    with open(cert_path, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+    print("已生成自签 HTTPS 证书(CN=%s): %s" % (cn, cert_path))
 
 
 # ---------- net helpers ----------
@@ -281,6 +536,113 @@ def _kill_pid(pid):
         pass
 
 
+def _pid_alive(pid):
+    """True if a process with this pid currently exists."""
+    if not pid:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            k.OpenProcess.restype = ctypes.c_void_p
+            k.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+            k.CloseHandle.argtypes = [ctypes.c_void_p]
+            h = k.OpenProcess(0x1000, 0, int(pid))   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return False
+            k.CloseHandle(h)
+            return True
+        except Exception:
+            return True   # unsure -> assume alive (a kill attempt is still safe)
+    try:
+        os.kill(pid, 0); return True
+    except OSError:
+        return False
+
+
+# ---------- Win32 Job Object: kill the whole tree when this process dies ----------
+# The web process binds itself into a Job Object flagged KILL_ON_JOB_CLOSE. Every
+# child it then spawns (manager -> ttyd -> codex/claude) inherits job membership,
+# so if the web process dies for ANY reason (crash, window close, TerminateProcess)
+# the kernel terminates the entire job and nothing is orphaned. Without this those
+# children are detached (CREATE_NO_WINDOW, no console) and survive a web death.
+_JOB_HANDLE = [None]   # keep the handle alive for our whole lifetime; never close it
+
+
+def bind_to_kill_on_close_job():
+    """Windows only. Returns True on success. Best-effort: on any failure (e.g.
+    already inside a non-nestable job on an old host) it prints a line and returns
+    False, leaving the sentinel / `app.py --stop` path as the cleanup fallback.
+    POSIX: no-op (the start.sh trap + SIGTERM handlers cover it)."""
+    if os.name != "nt":
+        return False
+    _JOB_HANDLE[0] = _create_kill_on_close_job()
+    return _JOB_HANDLE[0] is not None
+
+
+def _create_kill_on_close_job():
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k32.AssignProcessToJobObject.restype = wintypes.BOOL
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        k32.SetInformationJobObject.restype = wintypes.BOOL
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                ctypes.c_void_p, wintypes.DWORD]
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+
+        h = k32.CreateJobObjectW(None, None)
+        if not h:
+            print("[job] CreateJobObject 失败(err=%d),仅依赖 stop 命令清理" % ctypes.get_last_error())
+            return None
+
+        class _IO_COUNTERS(ctypes.Structure):
+            _fields_ = [("ReadOperationCount", ctypes.c_ulonglong),
+                        ("WriteOperationCount", ctypes.c_ulonglong),
+                        ("OtherOperationCount", ctypes.c_ulonglong),
+                        ("ReadTransferCount", ctypes.c_ulonglong),
+                        ("WriteTransferCount", ctypes.c_ulonglong),
+                        ("OtherTransferCount", ctypes.c_ulonglong)]
+
+        class _BASIC_LIMITS(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                        ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_void_p),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class _EXT_LIMITS(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", _BASIC_LIMITS),
+                        ("IoInfo", _IO_COUNTERS),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        info = _EXT_LIMITS()
+        info.BasicLimitInformation.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        JobObjectExtendedLimitInformation = 9
+        if not k32.SetInformationJobObject(h, JobObjectExtendedLimitInformation,
+                                           ctypes.byref(info), ctypes.sizeof(info)):
+            print("[job] SetInformationJobObject 失败(err=%d),仅依赖 stop 命令清理" % ctypes.get_last_error())
+            return None
+        if not k32.AssignProcessToJobObject(h, k32.GetCurrentProcess()):
+            print("[job] AssignProcessToJobObject 失败(err=%d) — 可能已在旧式 job 内;仅依赖 stop 命令清理"
+                  % ctypes.get_last_error())
+            return None
+        return h
+    except Exception as e:
+        print("[job] Job Object 建立失败(%s),仅依赖 stop 命令清理" % e)
+        return None
+
+
 # ---------- manager spawn / liveness (used by web) ----------
 def _manager_path():
     return sys.argv[0] if sys.argv and sys.argv[0] else __file__
@@ -305,6 +667,8 @@ def manager_available():
 
 
 def ensure_manager():
+    if STOPPING:
+        return False
     if RUN_MODE == "manager" or manager_available():
         return True
     subprocess.Popen(_manager_argv(), cwd=HERE, creationflags=CREATE_NO_WINDOW,
@@ -315,6 +679,74 @@ def ensure_manager():
             return True
         time.sleep(0.2)
     return False
+
+
+# ---------- full-stop helpers (used by `app.py --stop`) ----------
+def _http_post(port, path, auth=""):
+    """POST {} to 127.0.0.1:port/path with the given Basic auth. Returns True on
+    any HTTP response, False on connection refused (server down). Best-effort."""
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        c.request("POST", path, body=b"{}",
+                  headers={"Authorization": auth, "Content-Type": "application/json"})
+        c.getresponse().read(); c.close()
+        return True
+    except OSError:
+        return False
+
+
+def _write_stop_sentinel():
+    """Drop STATE_DIR/stop.sentinel. The supervisor loop (start.cmd/start.sh)
+    consumes it on the next iteration and stops relaunching. Only written when
+    the web layer is already unreachable (so exit code 42 can't carry the stop)."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(os.path.join(STATE_DIR, STOP_SENTINEL), "w") as f:
+            f.write("stop\n")
+    except OSError:
+        pass
+
+
+def perform_shutdown():
+    """Full teardown, run by `app.py --stop` in a separate process. Compensating
+    steps — each covers for the ones above it failing:
+      1. POST web /api/_stop  -> web freezes its watchdog, asks manager to _exit,
+                                 exits code 42 (supervisor stops relaunching).
+         (web unreachable)     -> write stop.sentinel so the supervisor still stops.
+      2. POST manager /api/_exit -> kill_all() + manager exit (manager trusts localhost).
+      3. kill_registry_sessions  -> taskkill any recorded ttyd tree still alive
+                                    (soft-exit orphans / manager already dead).
+    Returns a port-free report."""
+    web_ok = _http_post(PICKER_PORT, "/api/_stop", EXPECTED_AUTH)
+    if not web_ok:
+        _write_stop_sentinel()
+    _http_post(MANAGER_PORT, "/api/_exit", EXPECTED_AUTH)
+    kill_registry_sessions()
+    # web exits with code 42 asynchronously AFTER its own manager-roundtrip, so
+    # poll for both ports to actually free (up to ~6s) rather than a fixed sleep
+    # that can report a misleading "still busy" while shutdown is mid-flight.
+    deadline = time.time() + 6.0
+    while time.time() < deadline:
+        if not _port_alive(PICKER_PORT) and not _port_alive(MANAGER_PORT):
+            break
+        time.sleep(0.25)
+    # last-resort: kill a detached background supervisor so stop.cmd leaves
+    # nothing behind. The supervisor normally exits on its own via exit-42 /
+    # stop.sentinel, but if it is stuck this guarantees teardown.
+    sup_pid_path = os.path.join(STATE_DIR, "supervisor.pid")
+    try:
+        with open(sup_pid_path, "r") as f:
+            sup_pid = int((f.read() or "0").strip())
+        if sup_pid:
+            _kill_pid(sup_pid)
+    except (OSError, ValueError):
+        pass
+    try:
+        os.unlink(sup_pid_path)
+    except OSError:
+        pass
+    return {"web_port_free": not _port_alive(PICKER_PORT),
+            "manager_port_free": not _port_alive(MANAGER_PORT)}
 
 
 # ---------- websocket frame helpers (RFC 6455, minimal) ----------
@@ -513,6 +945,24 @@ def read_scrollback(sid, cap=BUF_CAP):
         frames.append(data[i + 4:i + 4 + ln])
         i += 4 + ln
     return frames
+
+
+def kill_registry_sessions():
+    """Best-effort sweep: tree-kill every ttyd pid recorded in the registry.
+    Used by `app.py --stop` to reap sessions the manager can no longer reach (it
+    already died) or that a soft-exit deliberately orphaned. Safe on already-dead
+    pids (taskkill/kill just no-op). Returns the list of pids it attempted."""
+    reg = registry_load()
+    sess = reg.get("sessions") if isinstance(reg, dict) else None
+    if not isinstance(sess, dict) or not sess:
+        return []
+    tried = []
+    for sid, e in sess.items():
+        pid = e.get("pid") if isinstance(e, dict) else None
+        if pid:
+            _kill_pid(pid)
+            tried.append((sid, pid))
+    return tried
 
 
 # ---------- history ----------
@@ -894,12 +1344,217 @@ def session_obj(sid, s, host):
             "last_output_ts": hub.last_output_ts, "cols": hub.cols, "rows": hub.rows}
 
 
+# ---- terminal-page injection: "适配本屏" button + scale-to-fit (multi-device) ----
+# Injected into the ttyd page served at /t/<sid>/. The button POSTs /api/adapt so
+# any device can claim the optimal PTY size; the page also polls /api/sessions and
+# forces its local xterm to the shared PTY cols/rows, then CSS-scales it to fit the
+# viewport. Combined with hub's sticky-PTY policy this means a phone joining/leaving
+# never resizes the PC, yet every device sees a non-garbled, full terminal.
+# NOTE: keep this backslash-free and quote-simple — it is spliced into HTML as-is.
+TTY_INJECT_STYLE = (
+    "#acadapt{position:fixed;top:6px;right:6px;z-index:99999;background:rgba(42,91,215,.92);"
+    "color:#fff;border:0;border-radius:8px;padding:7px 11px;"
+    "font:600 12px/1 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45)}"
+    "#acadapt.on{background:rgba(58,138,96,.95)}"
+    "#acadapt:active{transform:scale(.95)}"
+    "html,body{overflow:hidden}"
+)
+
+TTY_INJECT_SCRIPT = """(function(){
+  function sidFromPath(){
+    var p = location.pathname.split('/');
+    for (var i = 0; i < p.length - 1; i++) { if (p[i] === 't') { return p[i + 1] || ''; } }
+    return '';
+  }
+  var SID = sidFromPath();
+  if (!SID) { return; }
+  var btn = document.createElement('button');
+  btn.id = 'acadapt'; btn.type = 'button';
+  btn.textContent = '📺 适配本屏';
+  btn.title = '把终端尺寸切到当前屏幕(其他端会等比缩放看全,不会互相挤压)';
+  document.body.appendChild(btn);
+  function waitTerm(cb){
+    var n = 0;
+    var t = setInterval(function(){
+      if (window.term && window.term.element) { clearInterval(t); cb(window.term); }
+      else if (++n > 120) { clearInterval(t); }
+    }, 120);
+  }
+  waitTerm(function(term){
+    var PC = 0, PR = 0;
+    btn.addEventListener('click', function(){
+      var c = term.cols || 0, r = term.rows || 0;
+      if (!c || !r) { return; }
+      fetch('/api/adapt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sid: SID, cols: c, rows: r })
+      }).then(function(x){ return x.json(); }).then(function(d){
+        if (d && d.ok) { btn.classList.add('on'); PC = c; PR = r; applyFit(); }
+      }).catch(function(){});
+    });
+    function termEl(){ return term.element || document.querySelector('.xterm'); }
+    function applyFit(){
+      var e = termEl(); if (!e) { return; }
+      e.style.transform = 'none';
+      var w = e.offsetWidth || e.scrollWidth || 1;
+      var h = e.offsetHeight || e.scrollHeight || 1;
+      var vw = document.documentElement.clientWidth || window.innerWidth || 1;
+      var vh = document.documentElement.clientHeight || window.innerHeight || 1;
+      var s = Math.min(1, vw / w, vh / h);
+      e.style.transformOrigin = 'top left';
+      e.style.transform = (s < 1) ? ('scale(' + s + ')') : 'none';
+    }
+    function reassert(){
+      if (PC && PR && (term.cols !== PC || term.rows !== PR)) {
+        try { term.resize(PC, PR); } catch (_) {}
+      }
+      applyFit();
+    }
+    function tick(){
+      fetch('/api/sessions').then(function(x){ return x.json(); }).then(function(d){
+        var arr = (d && d.sessions) || [];
+        var me = null;
+        for (var i = 0; i < arr.length; i++) { if (arr[i].sid === SID) { me = arr[i]; break; } }
+        if (!me) { return; }
+        var pc = me.cols || 0, pr = me.rows || 0;
+        if (pc && pr) { PC = pc; PR = pr; reassert(); }
+      }).catch(function(){});
+    }
+    setInterval(tick, 1500);
+    window.addEventListener('resize', function(){ setTimeout(reassert, 120); });
+    setTimeout(tick, 500);
+    setTimeout(applyFit, 800);
+  });
+})();"""
+
+
+def _inject_terminal_controls(html_bytes):
+    """Splice the 适配本屏 button + scale-to-fit script into a ttyd page."""
+    try:
+        html = html_bytes.decode("utf-8", "replace")
+    except Exception:
+        return html_bytes
+    blob = "<style>" + TTY_INJECT_STYLE + "</style><script>" + TTY_INJECT_SCRIPT + "</script>"
+    if "</body>" in html:
+        html = html.replace("</body>", blob + "</body>", 1)
+    else:
+        html = html + blob
+    return html.encode("utf-8")
+
+
 def fetch_ttyd_html(port):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/")
         resp = conn.getresponse()
-        return resp.read()
+        return _inject_terminal_controls(resp.read())
+    finally:
+        conn.close()
+
+
+# ---------- external push notifications (Telegram / Bark / webhook) ----------
+def _notify_enabled_for(event):
+    return NOTIFY_ENABLED and event in NOTIFY_EVENTS
+
+
+def push_notify(title, body, event):
+    """Fire-and-forget external push over every configured channel. Blocking HTTP — the
+    caller (manager._notify_sender worker) is expected to run this off the main loop.
+    Returns True if at least one channel returned 2xx. Silent on error (prints a line)."""
+    if not _notify_enabled_for(event):
+        return False
+    ok = False
+    full = (str(title) + "\n" + str(body)).strip()
+    # --- Telegram Bot ---
+    if NOTIFY_TG_TOKEN and NOTIFY_TG_CHAT:
+        try:
+            data = urllib.parse.urlencode({"chat_id": NOTIFY_TG_CHAT, "text": full}).encode()
+            conn = http.client.HTTPSConnection("api.telegram.org", timeout=NOTIFY_TIMEOUT)
+            try:
+                conn.request("POST", "/bot%s/sendMessage" % NOTIFY_TG_TOKEN, body=data,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+                r = conn.getresponse(); r.read()
+                ok = ok or 200 <= r.status < 300
+            finally:
+                conn.close()
+        except Exception as e:
+            print("notify telegram failed: %s" % e)
+    # --- Bark (iOS): bare key -> api.day.app, or a full https URL ---
+    if NOTIFY_BARK_KEY:
+        try:
+            if NOTIFY_BARK_KEY.lower().startswith("http"):
+                pr = urllib.parse.urlsplit(NOTIFY_BARK_KEY)
+                scheme, host, basepath = pr.scheme or "https", pr.netloc, pr.path.rstrip("/")
+            else:
+                scheme, host, basepath = "https", "api.day.app", "/" + NOTIFY_BARK_KEY.strip("/")
+            path = "%s/%s/%s" % (basepath,
+                                 urllib.parse.quote(str(title).strip() or "notice", safe=""),
+                                 urllib.parse.quote(str(body).strip(), safe=""))
+            cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+            conn = cls(host, timeout=NOTIFY_TIMEOUT)
+            try:
+                conn.request("GET", path); r = conn.getresponse(); r.read()
+                ok = ok or 200 <= r.status < 300
+            finally:
+                conn.close()
+        except Exception as e:
+            print("notify bark failed: %s" % e)
+    # --- webhook (auto-detects Feishu/Lark schema vs generic JSON) ---
+    if NOTIFY_WEBHOOK_URL:
+        try:
+            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET, title, body, event):
+                ok = True
+        except Exception as e:
+            print("notify webhook failed: %s" % e)
+    return ok
+
+
+def _webhook_is_feishu(url):
+    u = url.lower()
+    return "feishu.cn" in u or "larksuite" in u or "open-apis/bot" in u
+
+
+def _webhook_send(url, secret, title, body, event):
+    """POST a notification to a webhook. Auto-detects Feishu/Lark custom-bot schema
+    ({msg_type, content}) vs a generic {title, body, event} JSON. For Feishu, `secret`
+    is used as the signing key (enable "自定义签名" on the bot); for generic webhooks it
+    rides in the X-Notify-Secret header. Returns True only if the endpoint accepted the
+    message (HTTP 2xx AND, for Feishu, body code == 0)."""
+    pr = urllib.parse.urlsplit(url)
+    path_q = (pr.path or "/") + (("?" + pr.query) if pr.query else "")
+    cls = http.client.HTTPSConnection if pr.scheme == "https" else http.client.HTTPConnection
+    if _webhook_is_feishu(url):
+        text = (str(title) + "\n" + str(body)).strip()
+        data = {"msg_type": "text", "content": {"text": text}}
+        if secret:   # Feishu signature: HMAC-SHA256 over "{ts}\n{secret}"
+            ts = str(int(time.time()))
+            sign = base64.b64encode(
+                hmac.new(("%s\n%s" % (ts, secret)).encode("utf-8"),
+                         digestmod=hashlib.sha256).digest()).decode("utf-8")
+            data["timestamp"] = ts
+            data["sign"] = sign
+        payload = json.dumps(data).encode()
+    else:
+        payload = json.dumps({"title": str(title), "body": str(body), "event": event}).encode()
+    conn = cls(pr.netloc, timeout=NOTIFY_TIMEOUT)
+    try:
+        conn.request("POST", path_q, body=payload, headers={"Content-Type": "application/json"})
+        r = conn.getresponse()
+        raw = r.read()
+        success = 200 <= r.status < 300
+        if success and _webhook_is_feishu(url):
+            # Feishu answers HTTP 200 with a body code on business errors (keyword /
+            # signature / ip mismatch) — surface those so they're debuggable.
+            try:
+                j = json.loads(raw.decode("utf-8", "replace"))
+                code = j.get("code", j.get("StatusCode", 0))
+                if code not in (0, None):
+                    success = False
+                    print("notify feishu rejected: %s" % (j.get("msg") or j.get("StatusMessage") or raw[:200]))
+            except Exception:
+                pass
+        return success
     finally:
         conn.close()
 

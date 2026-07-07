@@ -15,6 +15,10 @@ import socket
 import threading
 import http.client
 import urllib.parse
+import json
+import hmac
+import os
+import ssl
 
 import common
 from common import BaseHandler, ThreadingServer
@@ -89,12 +93,40 @@ def restart_server_soon():
     threading.Thread(target=_restart, daemon=True).start()
 
 
+WEB_STOP_EXIT_CODE = 42   # the supervisor treats this as "intentional stop, don't relaunch"
+
+
+def stop_soon():
+    """完全停止(由 POST /api/_stop 触发,`app.py --stop` 调用)。通过 common.STOPPING
+    冻结看门狗与 ensure_manager 重生,让 manager 杀掉全部会话并退出,然后本进程以
+    退出码 42 退出 —— start.cmd 见 42 即停止重启循环。Win32 Job Object 保证我们
+    退出时残留的子进程(若有)一并被内核回收。"""
+    def _go():
+        time.sleep(0.3)            # 让 HTTP 响应先 flush 回调用方
+        try:
+            _ask_manager_to_exit()
+        except Exception:
+            pass
+        time.sleep(0.2)
+        srv = _server[0]
+        if srv:
+            try: srv.shutdown()
+            except Exception: pass
+            try: srv.server_close()
+            except Exception: pass
+        os._exit(WEB_STOP_EXIT_CODE)
+    threading.Thread(target=_go, daemon=True).start()
+
+
 def _manager_watchdog():
     """Respawn the manager if it disappears (crash or intentional soft restart).
-    Idempotent: ensure_manager() port-probes before spawning."""
+    Stops entirely once common.STOPPING is set (full stop in progress), so it
+    never resurrects the manager out from under `app.py --stop`."""
     consec = 0
-    while True:
+    while not common.STOPPING:
         time.sleep(common.MANAGER_HEARTBEAT_INTERVAL)
+        if common.STOPPING:
+            break
         if common.manager_available():
             consec = 0
         else:
@@ -109,14 +141,87 @@ def _manager_watchdog():
 
 # ---------- HTTP handler (web mode) ----------
 class WebHandler(BaseHandler):
+    def _cookie(self, name):
+        h = self.headers.get("Cookie", "")
+        if not h:
+            return ""
+        for part in h.split(";"):
+            part = part.strip()
+            if "=" in part and part.partition("=")[0] == name:
+                return part.partition("=")[2]
+        return ""
+
     def _auth(self):
-        if self.headers.get("Authorization", "") == common.EXPECTED_AUTH:
+        # 会话化登录(cookie / Bearer token)。common.py 升级后启用;未升级时回退到
+        # Basic auth 并用常量时间比较(顺手堵住时序侧信道),保证过渡期 App 不中断。
+        # 内部管理通道:本机进程持内部凭证(`app.py --stop` 等本地工具)直接放行,
+        # 与 manager 信任本机的模型一致 —— 这样 stop 命令无需浏览器 cookie 即可调用重启/停止接口。
+        if common._is_local_client(self.client_address) and \
+           hmac.compare_digest(self.headers.get("Authorization", ""), common.EXPECTED_AUTH):
+            return True
+        if hasattr(common, "verify_session_token"):
+            tok = self._cookie("ac_session")
+            user = common.verify_session_token(tok) if tok else None
+            if not user:
+                ah = self.headers.get("Authorization", "")
+                if ah.startswith("Bearer "):
+                    user = common.verify_session_token(ah[7:].strip())
+            if user:
+                return True
+            self._json({"error": "auth required"}, 401)
+            return False
+        if hmac.compare_digest(self.headers.get("Authorization", ""), common.EXPECTED_AUTH):
             return True
         self.send_response(401)
         self.send_header("WWW-Authenticate", 'Basic realm="agent-cockpit"')
         self.send_header("Content-Length", "12"); self.end_headers()
         self.wfile.write(b"auth required")
         return False
+
+    def _whoami(self):
+        tok = self._cookie("ac_session")
+        user = common.verify_session_token(tok) if tok else None
+        if user:
+            self._json({"user": user})
+        else:
+            self._json({"error": "not authed"}, 401)
+
+    def _login(self, raw):
+        if not hasattr(common, "USERS"):
+            self._json({"error": "会话登录未启用(common.py 待升级)"}, 503); return
+        ip = (self.client_address or ("",))[0]
+        allowed, wait = common.check_lockout(ip)
+        if not allowed:
+            self._json({"error": "登录失败次数过多,请 %d 秒后再试" % wait}, 429); return
+        try:
+            data = json.loads((raw or b"{}").decode("utf-8") or "{}")
+        except ValueError:
+            data = {}
+        u = (data.get("user") or "").strip()
+        stored = common.USERS.get(u)
+        if stored is not None and common.verify_password(data.get("password") or "", stored):
+            common.register_login_success(ip)
+            _secure = common.COOKIE_SECURE and isinstance(self.connection, ssl.SSLSocket)
+            tok = common.make_session_token(u)
+            body = json.dumps({"ok": True, "user": u}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Set-Cookie", common.session_cookie_header("ac_session", tok, secure=_secure))
+            self.send_header("Content-Length", str(len(body))); self.end_headers()
+            self.wfile.write(body)
+        else:
+            locked = common.register_login_fail(ip)
+            self._json({"error": "用户名或密码错误" + (";连续失败过多,已临时锁定" if locked else "")}, 401)
+
+    def _logout(self):
+        body = json.dumps({"ok": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        if hasattr(common, "session_cookie_header"):
+            _secure = common.COOKIE_SECURE and isinstance(self.connection, ssl.SSLSocket)
+            self.send_header("Set-Cookie", common.session_cookie_header("ac_session", "", max_age=0, secure=_secure))
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
 
     def _proxy_manager_http(self, method, body=None):
         if not common.ensure_manager():
@@ -229,32 +334,62 @@ class WebHandler(BaseHandler):
             self._json({"ok": True, "restarting": True})
             restart_server_soon()
             return
+        if path == "/api/_stop":
+            # 完全停止:冻结看门狗 → 让 manager 杀光会话并退出 → 本进程退出码 42,
+            # 启动器见 42 即不再重启。Job Object 保证子进程随本进程一起被回收。
+            common.STOPPING = True
+            self._json({"ok": True, "stopping": True})
+            stop_soon()
+            return
         if path.startswith("/api/"):
             self._proxy_manager_http("POST", raw); return
         self._json({"error": "not found"}, 404)
 
     def do_GET(self):
+        path = urllib.parse.urlparse(self.path).path
+        # 会话化登录启用后,/ 与 /api/whoami 公开(登录页内嵌在 index.html);未启用时保持原 Basic 行为
+        if hasattr(common, "verify_session_token"):
+            if path in ("/", "/index.html"):
+                self._serve_index(); return
+            if path == "/api/whoami":
+                self._whoami(); return
         if not self._auth():
             return
-        path = urllib.parse.urlparse(self.path).path
         self._web_get(path)
 
     def do_POST(self):
-        if not self._auth():
-            return
-        pr = urllib.parse.urlparse(self.path)
+        path = urllib.parse.urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(n) if n else b"{}"
-        self._web_post(pr.path, raw)
+        # 会话化登录启用后,登录/登出公开
+        if hasattr(common, "USERS") and path == "/api/login":
+            self._login(raw); return
+        if hasattr(common, "session_cookie_header") and path == "/api/logout":
+            self._logout(); return
+        if not self._auth():
+            return
+        self._web_post(path, raw)
 
 
 def run():
+    # Win32: bind a KILL_ON_JOB_CLOSE job object BEFORE spawning the manager, so
+    # the whole tree (manager -> ttyd -> codex/claude) dies with us if we crash
+    # or the console window is closed. No-op + fallback on POSIX / old hosts.
+    common.bind_to_kill_on_close_job()
+    if os.name == "posix":
+        # start.sh sends SIGTERM to the process group on shutdown; do a clean stop.
+        import signal as _sig
+        _sig.signal(_sig.SIGTERM, lambda *_: (setattr(common, "STOPPING", True), stop_soon()))
     common.ensure_manager()
     threading.Thread(target=_manager_watchdog, daemon=True).start()
     ip = common.lan_ip()
+    scheme = "https" if common.USE_HTTPS else "http"
     print("=" * 56)
     print(" Agents Cockpit  (三层拆分: 前端 / web / manager 各自可独立重启)")
-    print(" 控制台(手机/电脑打开): http://%s:%d" % (ip, common.PICKER_PORT))
+    print(" 控制台(手机/电脑打开): %s://%s:%d" % (scheme, ip, common.PICKER_PORT))
+    if common.USE_HTTPS:
+        print(" HTTPS 已启用(自签证书)。浏览器首次访问会提示不安全 → 高级/继续。")
+        print(" 经 tcp 隧道(openfrp 等)暴露时,穿透商看不到明文,口令/Cookie 端到端加密。")
     print(" Manager(本机): http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     print(" 账号: %s  密码: ***" % common.CRED.split(":", 1)[0])
     print(" codex : %s" % (common.CODEX_BIN or "(未找到)"))
@@ -268,6 +403,23 @@ def run():
             print("ERROR: 控制台端口 %d 已被旧 Web 占用：%s" % (common.PICKER_PORT, e))
             print("请关闭旧的 start.cmd/Python 窗口后再启动，或结束占用该端口的旧 Web 进程。")
             sys.exit(1)
+        if common.USE_HTTPS:
+            try:
+                common.ensure_self_signed_cert(common.CERT_FILE, common.KEY_FILE)
+                _ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                _ctx.load_cert_chain(common.CERT_FILE, common.KEY_FILE)
+                _server[0].socket = _ctx.wrap_socket(_server[0].socket, server_side=True)
+            except Exception as e:
+                print("ERROR: 启用 HTTPS 失败(%s)。" % e)
+                print("请在 config.ini 设 [server] use_https = 0,或 pip install cryptography,或提供 cert_file/key_file。")
+                sys.exit(1)
+            if common.LAN_HTTP_PORT > 0:
+                try:
+                    _http_srv = ThreadingServer((common.HOST, common.LAN_HTTP_PORT), WebHandler)
+                    threading.Thread(target=_http_srv.serve_forever, daemon=True).start()
+                    print(" 局域网明文入口(本机/局域网方便访问,无证书警告): http://%s:%d" % (ip, common.LAN_HTTP_PORT))
+                except OSError as e:
+                    print("WARNING: 局域网 HTTP 端口 %d 启动失败:%s(忽略,继续只用 HTTPS 端口)" % (common.LAN_HTTP_PORT, e))
         _server[0].serve_forever()
     except KeyboardInterrupt:
         print("web bye")

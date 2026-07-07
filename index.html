@@ -60,6 +60,8 @@ button:disabled{opacity:.45;cursor:default}
 .conv .dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-left:3px}
 .conv .dot.run{background:#7ad7a0;box-shadow:0 0 6px #7ad7a0aa}
 .conv .dot.confirm{background:#ffb877;box-shadow:0 0 6px #ffb877aa;animation:pulse 1.4s infinite}
+.conv .dot.plan{background:#c89bff;box-shadow:0 0 6px #c89bffaa;animation:pulse 1.4s infinite}
+.conv .dot.new{background:#7ab7ff;box-shadow:0 0 6px #7ab7ffaa}
 .conv .dot.idle{background:#5a6172}
 .conv .ct{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .conv .cm{flex:0 0 auto;font-size:10.5px;color:#8b91a0;white-space:nowrap}
@@ -81,6 +83,8 @@ button:disabled{opacity:.45;cursor:default}
 .sumchip .sl{font-size:11px;color:#8b91a0;margin-top:4px}
 .sumprov{font-size:12px;color:#8b91a0;margin:0 0 16px}
 .welcome .hint{font-size:12px;color:#7f8691;margin-top:8px}
+.welcome .author{font-size:12px;color:#6b727f;margin-top:18px;padding-top:12px;border-top:1px solid #23242c}
+.welcome .author b{color:#9aa0aa;font-weight:600}
 
 /* terminal stage */
 #termstage{background:#000}
@@ -110,6 +114,8 @@ button:disabled{opacity:.45;cursor:default}
 .tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:5px;background:#2e2f37;color:#9aa0aa;margin-right:5px}
 .tag.run{background:#2a3a2e;color:#7ad7a0}
 .tag.confirm{background:#3a2e22;color:#ffb877;animation:pulse 1.4s infinite}
+.tag.plan{background:#2e223a;color:#c89bff;animation:pulse 1.4s infinite}
+.tag.new{background:#22303f;color:#7fd0ff}
 .tag.idle{background:#33343d;color:#9aa0aa}
 .tag.be-codex{background:#3a2e22;color:#ffb877}
 .tag.be-claude{background:#2e223a;color:#c89bff}
@@ -125,6 +131,9 @@ body.sb-collapsed #sidebar{display:none}
 #noticearea{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:80;display:flex;flex-direction:column;gap:8px;width:min(360px,calc(100vw - 20px));pointer-events:none}
 .notice{pointer-events:auto;background:linear-gradient(135deg,#202631,#14161d);border:1px solid #374253;box-shadow:0 14px 40px rgba(0,0,0,.38);border-radius:13px;padding:11px 12px;color:#e8edf6;animation:noticeIn .18s ease-out}
 .notice.confirm{border-color:#7a5528}
+.notice.plan{border-color:#5a3a7a}
+.notice.done{border-color:#39564a}
+.notice.new{border-color:#2e4253}
 .notice.idle{border-color:#394656}
 .notice .nt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
 .notice .nb{margin-top:5px;font-size:12px;line-height:1.35;color:#aeb8c8;word-break:break-word}
@@ -155,6 +164,8 @@ body.sb-collapsed #sidebar{display:none}
 .modal .mhint{font-size:11px;color:#7f8691;margin:5px 2px 0}
 .modal .macts{display:flex;gap:8px;margin-top:4px}
 .modal .macts button{flex:1;padding:13px;font-size:14px}
+.modal .mauthor{font-size:11px;color:#6b727f;text-align:center;margin-top:14px}
+.modal .mauthor b{color:#9aa0aa;font-weight:600}
 .modal .msep{height:1px;background:#23242c;margin:14px 2px}
 .modal .browsebar{display:flex;align-items:center;gap:8px;padding:8px 4px 10px;font-size:12px;color:#9aa0aa}
 .modal .browsebar b{color:#7ab7ff;word-break:break-all}
@@ -176,6 +187,18 @@ body.sb-collapsed #sidebar{display:none}
 </style>
 </head>
 <body>
+<!-- login modal (会话化登录) -->
+<div class="modal" id="loginmodal">
+  <div class="card" style="max-width:360px">
+    <div class="mtitle">登录 Agents Cockpit</div>
+    <div class="mfield"><label>用户名</label><input class="margs" id="lg-user" autocomplete="username" placeholder="用户名"></div>
+    <div class="mfield"><label>密码</label><input class="margs" id="lg-pass" type="password" autocomplete="current-password" placeholder="密码"></div>
+    <div class="err" id="lg-err"></div>
+    <div class="macts"><button id="lg-btn">登录</button></div>
+    <div class="mauthor">Made by <b>Misoryan</b></div>
+  </div>
+</div>
+
 <div id="mobilebar">
   <button class="mbbtn" id="menubtn" title="目录">≡</button>
   <div class="mbttl">Agents Cockpit <small id="runcnt"></small></div>
@@ -205,6 +228,7 @@ body.sb-collapsed #sidebar{display:none}
         <div id="summary" class="summary"></div>
         <button class="ghost" id="landing-usage">查看完整用量</button>
         <div class="hint">运行中的会话会在对应目录上显示绿色徽标。</div>
+        <div class="author">Made by <b>Misoryan</b></div>
       </div>
     </section>
 
@@ -341,7 +365,13 @@ function normDir(p){
   while(s.length>1 && s.slice(-1)==="/") s=s.slice(0,-1);
   return s;
 }
-function stateTag(st){ return st==="running"?'<span class="tag run">运行中</span>':st==="confirm"?'<span class="tag confirm">需确认</span>':'<span class="tag idle">空闲</span>'; }
+function stateTag(st){
+  if(st==="running") return '<span class="tag run">运行中</span>';
+  if(st==="confirm") return '<span class="tag confirm">需确认</span>';
+  if(st==="plan") return '<span class="tag plan">Plan 待确认</span>';
+  if(st==="new") return '<span class="tag new">新窗口</span>';
+  return '<span class="tag idle">空闲</span>';
+}
 function backendLabel(b){ return b==="claude"?"Claude":"Codex"; }
 function backendTag(b){ return b==="claude"?'<span class="tag be-claude">Claude</span>':'<span class="tag be-codex">Codex</span>'; }
 function backendShort(b){ return b==="claude"?"Claude":"Codex"; }
@@ -388,7 +418,7 @@ function removeNotice(key){ var el=document.querySelector('[data-notice-key="'+k
 function showSiteNotice(kind, s, title, body){
   var key=s.sid+"-"+kind; removeNotice(key);
   var box=document.createElement("div"); box.className="notice "+kind; box.setAttribute("data-notice-key", key);
-  box.innerHTML='<div class="nt">'+(kind==="confirm"?"⚠️ ":"✅ ")+esc(title)+'</div><div class="nb">'+esc(body)+'</div>';
+  box.innerHTML='<div class="nt">'+({confirm:"⚠️ ",plan:"📋 ",done:"✅ ",new:"🆕 "}[kind]||"🔔 ")+esc(title)+'</div><div class="nb">'+esc(body)+'</div>';
   var acts=document.createElement("div"); acts.className="na";
   var open=document.createElement("button"); open.textContent="打开";
   var close=document.createElement("button"); close.className="ghost"; close.textContent="关闭";
@@ -398,12 +428,14 @@ function showSiteNotice(kind, s, title, body){
   acts.appendChild(open); acts.appendChild(close); box.appendChild(acts);
   var area=$("noticearea"); area.appendChild(box);
   while(area.children.length>4) removeNotice(area.children[0].getAttribute("data-notice-key"));
-  noticeTimers[key]=setTimeout(function(){ removeNotice(key); }, kind==="confirm"?60000:22000);
+  noticeTimers[key]=setTimeout(function(){ removeNotice(key); }, (kind==="confirm"||kind==="plan")?60000:22000);
 }
 function emitAiNotice(kind, s){
   var name=backendLabel(s.backend||"codex")+" · "+(s.title||basename(s.dir));
-  var title=kind==="confirm"?name+" 需要确认":name+" 已空闲";
-  var body=(s.dir||"")+(kind==="confirm"?" · 点击跳转处理确认":" · 点击跳转查看结果");
+  var title, body;
+  if(kind==="confirm"){ title=name+" 需要确认"; body=(s.dir||"")+" · 点击处理确认"; }
+  else if(kind==="plan"){ title=name+" Plan 待确认"; body=(s.dir||"")+" · 点击查看计划"; }
+  else { title=name+" 已完成"; body=(s.dir||"")+" · 等待下一条指令"; }
   showSiteNotice(kind, s, title, body);
 }
 
@@ -433,9 +465,10 @@ function rememberSessions(ss, skipPendingOpen){
   Object.keys(iframes).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
   ss.forEach(function(s){
     var prev=sessionWatch[s.sid];
-    if(prev){
+    if(prev && prev.state){
       if(s.state==="confirm" && prev.state!=="confirm") emitAiNotice("confirm", s);
-      else if(s.state==="idle" && prev.state && prev.state!=="idle") emitAiNotice("idle", s);
+      else if(s.state==="plan" && prev.state!=="plan") emitAiNotice("plan", s);
+      else if(s.state==="idle" && prev.state!=="idle" && prev.state!=="new") emitAiNotice("done", s);
     }
     sessionWatch[s.sid]={state:s.state, last_output_ts:s.last_output_ts||0, last_input_ts:s.last_input_ts||0};
   });
@@ -520,7 +553,7 @@ function renderDirBody(d, mc){
 function renderConv(it){
   var el=document.createElement("div"); el.className="conv";
   if(it.kind==="run"){
-    var s=it.data; var dot=s.state==="confirm"?"confirm":(s.state==="running"?"run":"idle");
+    var s=it.data; var dot=s.state==="confirm"?"confirm":s.state==="plan"?"plan":s.state==="new"?"new":(s.state==="running"?"run":"idle");
     var meta=backendShort(s.backend)+(s.mode==="resume"?" · 恢复":"")+" · "+elapsedStr(s.last_input_ts);
     el.innerHTML='<span class="dot '+dot+'"></span><span class="ct">'+esc(s.title||basename(s.dir))+'</span><span class="cm">'+esc(meta)+'</span>';
     var b=document.createElement("button"); b.className="cbtn"; b.textContent="打开";
@@ -827,6 +860,31 @@ loadSidebarData(); pollSessionSignals(); refreshCC();
 setInterval(pollSessionSignals, 4000);
 setInterval(loadSidebarData, 20000);
 setInterval(refreshCC, 30000);
+</script>
+<script>
+// 会话化登录门禁:启动探测 /api/whoami,未登录则弹登录框,登录成功后刷新页面。
+(function(){
+  function $(id){ return document.getElementById(id); }
+  function showLogin(){ $("loginmodal").classList.add("open"); setTimeout(function(){ var u=$("lg-user"); if(u) u.focus(); }, 60); }
+  function hideLogin(){ $("loginmodal").classList.remove("open"); }
+  function doLogin(){
+    var u = $("lg-user").value, p = $("lg-pass").value;
+    $("lg-err").textContent = ""; $("lg-btn").disabled = true;
+    fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({user:u, password:p})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, json:j}; }); })
+      .then(function(x){
+        $("lg-btn").disabled = false;
+        if (x.ok) { location.reload(); }
+        else { $("lg-err").textContent = (x.json && x.json.error) || "登录失败"; $("lg-pass").value=""; }
+      })
+      .catch(function(){ $("lg-btn").disabled = false; $("lg-err").textContent = "网络错误,请重试"; });
+  }
+  $("lg-btn").addEventListener("click", doLogin);
+  $("lg-pass").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
+  $("lg-user").addEventListener("keydown", function(e){ if(e.key==="Enter") $("lg-pass").focus(); });
+  fetch("/api/whoami").then(function(r){ if(r.ok) hideLogin(); else showLogin(); }).catch(function(){ showLogin(); });
+})();
 </script>
 </body>
 </html>

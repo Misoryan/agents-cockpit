@@ -18,6 +18,7 @@ import socket
 import subprocess
 import threading
 import urllib.parse
+import queue
 
 import common
 from common import BaseHandler, ThreadingServer
@@ -73,7 +74,10 @@ def prune_dead():
 
 
 def kill_session(sid):
-    """Stop one session. Works for fresh (have Popen) and re-attached (pid only)."""
+    """Stop one session. Works for fresh (have Popen) and re-attached (pid only).
+    Always tree-kills by pid: on Windows proc.terminate() only kills ttyd and
+    leaves the codex/claude grandchildren orphaned, so we taskkill /F /T the pid
+    regardless of branch and just use the Popen handle to reap the exit code."""
     with _lock:
         s = sessions.pop(sid, None)
     if not s:
@@ -84,20 +88,13 @@ def kill_session(sid):
         except OSError:
             pass
     proc = s.get("proc")
+    pid = s.get("pid") or (proc.pid if proc is not None else None)
+    common._kill_pid(pid)   # taskkill /F /T (Win) / SIGTERM->SIGKILL tree (POSIX)
     if proc is not None:
-        try:
-            proc.terminate()
-        except OSError:
-            pass
         try:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
-            try:
-                proc.kill()
-            except OSError:
-                pass
-    else:
-        common._kill_pid(s.get("pid"))
+            pass
     common.registry_drop(sid)
     return True
 
@@ -127,7 +124,7 @@ def launch(cwd, backend="codex", cli_args=None, title="", mode="new", session_id
     proc = subprocess.Popen(cmd, creationflags=common.CREATE_NO_WINDOW,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     common.wait_port(port)
-    hub = Hub(port)
+    hub = Hub(port, backend)
     with _lock:
         _sid[0] += 1
         sid = "s%d" % _sid[0]
@@ -168,11 +165,12 @@ def reattach_sessions():
             common.registry_drop(sid)
             continue
         try:
-            hub = Hub(port)   # reconnect upstream WS to the surviving ttyd
+            hub = Hub(port, e.get("backend", "codex"))   # reconnect upstream WS to the surviving ttyd
         except OSError:
             common.registry_drop(sid)
             continue
         hub.open_scrollback(sid)
+        hub.ever_input = True   # a re-attachable session was already interacted with
         for fr in common.read_scrollback(sid):   # restore scrollback for late-joining browsers
             hub.replay_frame(fr)
         hub.cols = e.get("cols") or 0
@@ -201,6 +199,95 @@ def reattach_sessions():
                     pass
     except OSError:
         pass
+
+
+# ---------- external push watcher (fires on state transitions) ----------
+# Single watcher polls each hub's state every few seconds; a single sender drains the
+# push queue so slow HTTP/DNS in one channel never stalls the next notification.
+_notify_state = {}         # sid -> last observed state
+_notify_pushed = {}        # sid -> {event: last_pushed_ts}
+_notify_idle_since = {}    # sid -> ts it first became idle (None once a "done" fired)
+_notify_q = queue.Queue()
+_NOTIFY_INTERVAL = 4.0
+
+
+def _notify_enqueue(title, body, event):
+    _notify_q.put((title, body, event))
+
+
+def _notify_sender():
+    while True:
+        try:
+            title, body, event = _notify_q.get(timeout=60)
+        except queue.Empty:
+            continue
+        try:
+            common.push_notify(title, body, event)
+        except Exception:
+            pass
+        finally:
+            try:
+                _notify_q.task_done()
+            except ValueError:
+                pass
+
+
+def _session_label(s):
+    be = common.BACKENDS.get(s.get("backend", "codex"), {}).get("label", "")
+    return "%s · %s" % (be, s.get("title") or os.path.basename((s.get("dir") or "").rstrip("\\/")) or s.get("dir") or "")
+
+
+def _notify_watcher():
+    while True:
+        time.sleep(_NOTIFY_INTERVAL)
+        try:
+            with _lock:
+                snap = {sid: s for sid, s in sessions.items() if s.get("hub")}
+            now = time.time()
+            # drop state for sessions that disappeared
+            for sid in [k for k in _notify_state if k not in snap]:
+                _notify_state.pop(sid, None)
+                _notify_pushed.pop(sid, None)
+                _notify_idle_since.pop(sid, None)
+            for sid, s in snap.items():
+                try:
+                    cur = s["hub"].state(now)
+                except Exception:
+                    continue
+                prev = _notify_state.get(sid)
+                idle_since = _notify_idle_since.get(sid)
+                if prev is None:
+                    # first observation after restart / new session: record silently
+                    _notify_state[sid] = cur
+                    _notify_idle_since[sid] = now if cur == "idle" else None
+                    continue
+                if cur == prev:
+                    # unchanged; an idle that persists long enough matures into a "done"
+                    if cur == "idle" and idle_since is not None and "done" in common.NOTIFY_EVENTS \
+                            and (now - idle_since) >= common.IDLE_DEBOUNCE:
+                        _notify_enqueue(_session_label(s) + " · 已完成",
+                                        (s.get("dir") or "") + " — 等待下一条指令", "done")
+                        _notify_idle_since[sid] = None   # fire once per idle stretch
+                    continue
+                # state transitioned
+                if cur in ("confirm", "plan"):
+                    ev = cur
+                    if ev in common.NOTIFY_EVENTS and \
+                            (now - _notify_pushed.get(sid, {}).get(ev, 0)) >= common.NOTIFY_MIN_INTERVAL:
+                        head = "Plan 待确认" if cur == "plan" else "需要确认"
+                        _notify_enqueue(_session_label(s) + " · " + head,
+                                        (s.get("dir") or "") + " — 点击处理", ev)
+                        _notify_pushed.setdefault(sid, {})[ev] = now
+                    _notify_idle_since[sid] = None
+                elif cur == "idle":
+                    # just went idle: arm the debounce timer (push only if it persists)
+                    _notify_idle_since[sid] = now
+                else:
+                    # running / new: cancel any pending idle completion
+                    _notify_idle_since[sid] = None
+                _notify_state[sid] = cur
+        except Exception:
+            pass
 
 
 # ---------- HTTP handler (manager mode) ----------
@@ -341,6 +428,19 @@ class ManagerHandler(BaseHandler):
             self._json({"ok": kill_session((data.get("sid") or "").strip())})
         elif pr.path == "/api/stop_all":
             kill_all(); self._json({"ok": True})
+        elif pr.path == "/api/adapt":
+            # 把 PTY 尺寸显式切到请求端(终端页"适配本屏"按钮)。不再随客户端进出/缩放自动变。
+            sid = (data.get("sid") or "").strip()
+            try:
+                cols = int(data.get("cols") or 0); rows = int(data.get("rows") or 0)
+            except (TypeError, ValueError):
+                cols = rows = 0
+            with _lock:
+                s = sessions.get(sid); hub = s["hub"] if s else None
+            if not s:
+                self._json({"error": "session not found"}, 404); return
+            ok = hub.adapt(cols, rows) if hub else False
+            self._json({"ok": ok, "cols": hub.cols if hub else 0, "rows": hub.rows if hub else 0})
         elif pr.path == "/api/_exit":
             # 完全重启:杀掉全部会话后退出 manager;web 层的 ensure_manager 会用新代码重新拉起。
             def _die():
@@ -368,10 +468,26 @@ class ManagerHandler(BaseHandler):
             self._json({"error": "not found"}, 404)
 
 
+def _sigterm_die(*_a):
+    """POSIX SIGTERM (e.g. start.sh's `kill 0` on the process group): reap every
+    session tree then exit. Windows ignores this (the Job Object covers it)."""
+    try:
+        kill_all()
+    except Exception:
+        pass
+    os._exit(0)
+
+
 def run():
     print("Agents Cockpit manager: http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     reattach_sessions()
     atexit.register(kill_all)
+    if os.name == "posix":
+        import signal as _sig
+        _sig.signal(_sig.SIGTERM, _sigterm_die)
+    if common.NOTIFY_ENABLED:
+        threading.Thread(target=_notify_sender, daemon=True).start()
+        threading.Thread(target=_notify_watcher, daemon=True).start()
     try:
         try:
             _server[0] = ThreadingServer((common.MANAGER_HOST, common.MANAGER_PORT), ManagerHandler)

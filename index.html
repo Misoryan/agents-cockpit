@@ -249,6 +249,61 @@ body.sb-collapsed #sidebar{display:none}
       </div>
       <div class="panelbody" id="usagebody"></div>
     </section>
+
+    <section class="main-view" id="nativestage">
+      <style>
+        #nativestage{flex-direction:column;flex:1 1 auto;min-height:0}
+        .nathead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#15161a;border-bottom:1px solid #2e2f37}
+        .nathead .nt{flex:1;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        #nativemsgs{flex:1 1 auto;overflow-y:auto;padding:14px;max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px}
+        .nmsg{padding:10px 12px;border-radius:10px;word-break:break-word;line-height:1.55;animation:nfade .12s ease}
+        @keyframes nfade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+        .nmsg.user{align-self:flex-end;max-width:80%;background:#2a5bd7;color:#fff}
+        .nmsg.assistant{align-self:flex-start;max-width:92%;background:#1b1d24;border:1px solid #2a2c35}
+        .nmsg.assistant .ntxt{font:14px/1.6 system-ui,Segoe UI,"Microsoft YaHei",sans-serif;white-space:normal;word-break:break-word}
+        .nmsg.assistant .ntxt p{margin:8px 0}
+        .nmsg.assistant .ntxt h1,.nmsg.assistant .ntxt h2,.nmsg.assistant .ntxt h3{margin:12px 0 6px;font-weight:700;line-height:1.3}
+        .nmsg.assistant .ntxt h1{font-size:18px}.nmsg.assistant .ntxt h2{font-size:16px}.nmsg.assistant .ntxt h3{font-size:14px}
+        .nmsg.assistant .ntxt code{background:#0b0c10;padding:2px 5px;border-radius:4px;font:12px ui-monospace,Consolas,monospace;color:#e6c07b}
+        .nmsg.assistant .ntxt pre{background:#0b0c10;padding:10px;border-radius:8px;overflow:auto;margin:8px 0;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre}
+        .nmsg.assistant .ntxt pre code{background:none;padding:0;color:#cdd2dc;font:inherit}
+        .nmsg.assistant .ntxt ul,.nmsg.assistant .ntxt ol{margin:8px 0;padding-left:22px}
+        .nmsg.assistant .ntxt li{margin:3px 0}
+        .nmsg.assistant .ntxt strong{color:#fff;font-weight:700}
+        .nmsg.assistant .ntxt a{color:#7ab7ff}
+        .nmsg.assistant .ntxt blockquote{border-left:3px solid #2e2f37;margin:8px 0;padding:4px 12px;color:#9aa0aa}
+        .nmsg.sys{align-self:center;background:#171821;border:1px dashed #333443;color:#9aa0aa;font-size:12px}
+        .nmsg.tool,.nmsg.result,.nmsg.think{align-self:flex-start;max-width:92%;background:#16181f;border:1px solid #262830;font-size:12px}
+        .nmsg.tool .tcmd{font:13px ui-monospace,Consolas,monospace;color:#9fd0ff;padding:6px 8px;background:#0b0c10;border-radius:6px;margin:6px 0;white-space:pre-wrap;word-break:break-all}
+        .nmsg.tool .tres{margin-top:6px}
+        .nmsg.tool .tres pre{margin:0}
+        .nmsg details summary{cursor:pointer;color:#7ab7ff;font-weight:600}
+        .nmsg pre{margin:6px 0 0;background:#0b0c10;padding:8px;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.4 ui-monospace,Consolas,monospace;color:#cdd2dc;white-space:pre-wrap}
+        .nmsg.approval{align-self:flex-start;max-width:92%;background:#2a2410;border:1px solid #6a5320}
+        .nmsg.approval.danger{background:#2a1414;border-color:#5a2424}
+        .nmsg.approval .abtns{display:flex;gap:8px;margin-top:8px}
+        .nmsg.approval button{padding:5px 12px;border-radius:6px;border:0;cursor:pointer;font-weight:600}
+        .nmsg.approval .allow{background:#3a8a60;color:#fff}
+        .nmsg.approval .deny{background:#5a2424;color:#fff}
+        #nativesend{display:flex;gap:8px;padding:10px;background:#15161a;border-top:1px solid #2e2f37}
+        #nativesend .nwrap{max-width:920px;width:100%;margin:0 auto;display:flex;gap:8px}
+        #nativeinput{flex:1;resize:none;height:52px;padding:8px 10px;background:#0e0f13;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font:14px/1.4 system-ui,sans-serif}
+        #nativesend button{padding:0 18px;font-weight:600;background:#2a5bd7;color:#fff;border:0;border-radius:8px;cursor:pointer}
+        #nativesend button:disabled{opacity:.5}
+      </style>
+      <div class="nathead">
+        <button class="ghost" id="nativeback">‹ 返回</button>
+        <span class="nt" id="nativettl">原生会话</span>
+        <button class="danger" id="nativestop">停止</button>
+      </div>
+      <div id="nativemsgs"></div>
+      <form id="nativesend">
+        <div class="nwrap">
+          <textarea id="nativeinput" placeholder="给 agent 发消息…(Enter 发送)"></textarea>
+          <button type="submit" id="nativesubmit">发送</button>
+        </div>
+      </form>
+    </section>
   </main>
 </div>
 
@@ -263,6 +318,11 @@ body.sb-collapsed #sidebar{display:none}
     <div class="mdir" id="lm-dir">📁 未选择目录</div>
     <div class="mpick"><button id="lm-pickdir">📁 选择目录…</button></div>
     <div class="mfield">
+      <label>会话类型</label>
+      <div class="mopts" id="lm-mode"></div>
+      <div class="mhint" id="lm-mode-hint"></div>
+    </div>
+    <div class="mfield" id="lm-backend-field">
       <label>模型</label>
       <div class="mopts" id="lm-backend"></div>
     </div>
@@ -329,6 +389,7 @@ body.sb-collapsed #sidebar{display:none}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
@@ -510,6 +571,7 @@ function rememberSessions(ss, skipPendingOpen){
   runSessions=ss||[];
   var rc=$("runcnt"); if(rc) rc.textContent=ss.length?"· "+ss.length+" 运行":"";
   Object.keys(iframes).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
+  Object.keys(nativeStages).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropNativeStage(sid); });
   ss.forEach(function(s){
     var prev=sessionWatch[s.sid];
     if(prev && prev.state){
@@ -604,7 +666,10 @@ function renderConv(it){
     var meta=backendShort(s.backend)+(s.mode==="resume"?" · 恢复":"")+" · "+elapsedStr(s.last_input_ts);
     el.innerHTML='<span class="dot '+dot+'"></span><span class="ct">'+esc(s.title||basename(s.dir))+'</span><span class="cm">'+esc(meta)+'</span>';
     var b=document.createElement("button"); b.className="cbtn"; b.textContent="打开";
-    var openFn=function(){ showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); };
+    var openFn=function(){
+      if(s.backend==="native" || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
+      else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
+    };
     b.addEventListener("click", function(ev){ ev.stopPropagation(); openFn(); });
     el.addEventListener("click", openFn); el.appendChild(b);
   } else {
@@ -628,15 +693,16 @@ function resumeHist(h){
 
 /* ---- main view switching ---- */
 function setMainView(view){
-  var id=view==="term"?"termstage":view==="usage"?"usageview":"landing";
-  ["landing","termstage","usageview"].forEach(function(x){ $(x).classList.toggle("active", x===id); });
+  var id=view==="term"?"termstage":view==="usage"?"usageview":view==="native"?"nativestage":"landing";
+  ["landing","termstage","usageview","nativestage"].forEach(function(x){ $(x).classList.toggle("active", x===id); });
   if(id==="usageview") refreshCC();
   if(id==="landing") renderSummary();
 }
 
 /* ---- terminal ---- */
 var iframes={}, currentSid=null;
-var lmDir="", lmTitle="", lmBackend="codex", lmYolo=true, lmArgs="";
+var nativeStages={}, nativeWs={};
+var lmDir="", lmTitle="", lmBackend="codex", lmYolo=true, lmArgs="", lmMode="terminal";
 /* 设置读取:cookie 优先(localStorage 回退并自动迁入 cookie)—— 穿透下每个访问者各自独立 */
 (function(){
   var b = acPrefGetRaw("acBackend", "acBackend");
@@ -646,6 +712,9 @@ var lmDir="", lmTitle="", lmBackend="codex", lmYolo=true, lmArgs="";
   lmYolo = (y.val === "") ? true : (y.val !== "0");
   if(y.src === "none") acSetCookie("acYolo", lmYolo ? "1" : "0", 3650);
   lmArgs = acPrefGetRaw("acArgs", "acArgs").val || "";
+  var _m = acPrefGetRaw("acMode", "acMode");
+  lmMode = (_m.val === "native") ? "native" : "terminal";
+  if(_m.src === "none") acSetCookie("acMode", lmMode, 3650);
 })();
 
 function termIframe(sid, path){
@@ -662,10 +731,189 @@ function showTerminal(sid, path, title){
 }
 function hideTerminal(){ currentSid=null; setMainView("landing"); }
 function dropIframe(sid){ if(iframes[sid]){ iframes[sid].remove(); delete iframes[sid]; } if(currentSid===sid) hideTerminal(); }
+
+/* ---- native agent session (WS, 结构化渲染, 类 claude.ai) ---- */
+function nEsc(s){ s=String(s==null?"":s); return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function renderMd(s){
+  if(window.marked){ try{ return marked.parse(String(s==null?"":s)); }catch(e){} }
+  return nEsc(s).replace(/\n/g,"<br>");
+}
+function nScrollBottom(){ var m=$("nativemsgs"); if(m) requestAnimationFrame(function(){ m.scrollTop=m.scrollHeight; }); }
+function nativeStage(sid){
+  if(nativeStages[sid]) return nativeStages[sid];
+  var d=document.createElement("div");
+  d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
+  d.dataset.sid=sid; $("nativemsgs").appendChild(d);
+  nativeStages[sid]={root:d, curTxt:null, curThink:null};
+  return nativeStages[sid];
+}
+function dropNativeStage(sid){
+  var st=nativeStages[sid]; if(!st) return;
+  if(st.root.parentNode) st.root.parentNode.removeChild(st.root);
+  delete nativeStages[sid];
+  if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} delete nativeWs[sid]; }
+  if(currentSid===sid) hideNative();
+}
+function hideNative(){ currentSid=null; setMainView("landing"); }
+function nNewTextBubble(st){
+  var d=document.createElement("div"); d.className="nmsg assistant";
+  var t=document.createElement("div"); t.className="ntxt";
+  d.appendChild(t); st.root.appendChild(d); st.curTxt=t; nScrollBottom();
+}
+function nNewThink(st){
+  var d=document.createElement("div"); d.className="nmsg think";
+  var det=document.createElement("details"); det.open=true;
+  var sum=document.createElement("summary"); sum.textContent="💭 思考中…";
+  var pre=document.createElement("pre");
+  det.appendChild(sum); det.appendChild(pre); d.appendChild(det);
+  st.root.appendChild(d); st.curThink=pre; nScrollBottom();
+}
+function nAddRow(st, cls, html){
+  st.curTxt=null;
+  var d=document.createElement("div"); d.className="nmsg "+cls;
+  d.innerHTML=html; st.root.appendChild(d); nScrollBottom();
+}
+function nHandle(sid, obj){
+  try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
+  var st=nativeStages[sid]; if(!st) return;
+  if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
+  var t=obj.type;
+  if(t==="system"){
+    if(obj.subtype==="init") nAddRow(st, "sys", "🔵 会话开始 · model: "+nEsc(obj.model||""));
+    return;
+  }
+  if(t==="stream_event"){
+    var dl=(obj.event||{}).delta||{};
+    if(dl.type==="text_delta" && dl.text){
+      if(!st.curTxt) nNewTextBubble(st);
+      st.curTxt.appendChild(document.createTextNode(dl.text));
+      nScrollBottom();
+    } else if(dl.type==="thinking_delta" && dl.thinking){
+      if(!st.curThink) nNewThink(st);
+      st.curThink.appendChild(document.createTextNode(dl.thinking));
+      nScrollBottom();
+    }
+    return;
+  }
+  if(t==="assistant"){
+    var blocks=(obj.message&&obj.message.content)||[];
+    blocks.forEach(function(b){
+      if(b.type==="text"){
+        if(!st.curTxt) nNewTextBubble(st);
+        st.curTxt.innerHTML=renderMd(b.text);
+      } else if(b.type==="tool_use"){
+        var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
+        var _body = (b.name==="bash") ? '<div class="tcmd">$ '+nEsc((b.input&&b.input.command)||"")+'</div>'
+                                      : '<pre>'+nEsc(JSON.stringify(b.input,null,2))+'</pre>';
+        _tu.innerHTML='<details open><summary>🔧 '+nEsc(b.name)+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
+        st.root.appendChild(_tu); st.curTxt=null; nScrollBottom();
+      } else if(b.type==="thinking"){
+        if(!st.curThink || !st.curThink.textContent){
+          nAddRow(st, "think", "<details open><summary>💭 思考</summary><pre>"+nEsc(b.thinking||"")+"</pre></details>");
+        }
+      }
+    });
+    st.curThink=null; st.curTxt=null;
+    nScrollBottom(); return;
+  }
+  if(t==="user"){
+    var bs=((obj.message||{}).content);
+    if(typeof bs==="string"){ nAddRow(st,"user",nEsc(bs)); return; }
+    if(!Array.isArray(bs)) bs = bs?[bs]:[];
+    bs.forEach(function(b){
+      if(b && b.type==="tool_result"){
+        var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
+        var tu=st.root.querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
+        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML='<pre>'+nEsc(txt)+'</pre>'; } }
+        else { nAddRow(st, "result", "<details open><summary>↩ 工具结果</summary><pre>"+nEsc(txt)+"</pre></details>"); }
+      }
+    });
+    return;
+  }
+  if(t==="pending_approval"){
+    var dng=obj.danger?" danger":"";
+    var card=document.createElement("div"); card.className="nmsg approval"+dng; card.dataset.tuid=obj.tool_use_id;
+    card.innerHTML=(obj.danger?"⚠️ <b>高危命令,请仔细确认</b> ":"")+nEsc(obj.name||"")+"<pre>"+nEsc(obj.preview||JSON.stringify(obj.input||{}))+"</pre>"+
+      '<div class="abtns"><button class="allow">允许</button><button class="deny">拒绝</button></div>';
+    card.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); card.remove(); });
+    card.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); card.remove(); });
+    st.root.appendChild(card); st.curTxt=null; nScrollBottom(); return;
+  }
+  if(t==="approval_decision"){
+    var c2=st.root.querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
+    if(c2) c2.remove();
+    return;
+  }
+  if(t==="result"){
+    nAddRow(st, "sys", obj.error?("⚠️ "+nEsc(obj.error)):"✅ 完成");
+    var sb=$("nativesubmit"); if(sb){ sb.disabled=false; sb.textContent="发送"; }
+    return;
+  }
+}
+function nApprove(sid, tuid, allow){ postJSON("/api/napprove", {sid:sid, tool_use_id:tuid, allow:allow}); }
+function nativeConnect(sid){
+  if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
+  var st=nativeStage(sid);
+  if(st){ st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.replayDone=false; }
+  var proto=location.protocol==="https:"?"wss:":"ws:";
+  var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
+  nativeWs[sid]=ws;
+  ws.onmessage=function(ev){ try{ nHandle(sid, JSON.parse(ev.data)); }catch(e){} };
+  ws.onclose=function(){
+    console.log("[N] ws closed", sid);
+    if(nativeWs[sid]===ws) nativeWs[sid]=null;
+    clearInterval(ws._ka);
+    if(currentSid===sid && nativeStages[sid]){
+      setTimeout(function(){ if(currentSid===sid && (!nativeWs[sid] || nativeWs[sid].readyState>1)) nativeConnect(sid); }, 1500);
+    }
+  };
+  ws.onerror=function(){ console.log("[N] ws error", sid); };
+  ws._ka=setInterval(function(){ if(ws.readyState===1){ try{ ws.send("ping"); }catch(e){} } }, 20000);
+}
+function showNativeSession(sid, title){
+  currentSid=sid; $("nativettl").textContent=title||sid;
+  Object.keys(nativeStages).forEach(function(k){ nativeStages[k].root.style.display=(k===sid)?"flex":"none"; });
+  var st=nativeStage(sid);
+  st.root.style.display="flex";
+  if(!nativeWs[sid] || nativeWs[sid].readyState===3) nativeConnect(sid);
+  setMainView("native"); closeSidebar();
+  setTimeout(function(){ $("nativeinput").focus(); }, 60);
+}
+function nativeSend(){
+  var inp=$("nativeinput"), p=inp.value.trim();
+  if(!p || !currentSid) return;
+  var st=nativeStage(currentSid); if(!st) return;
+  nAddRow(st, "user", nEsc(p));
+  inp.value="";
+  var sb=$("nativesubmit"); if(sb){ sb.disabled=true; sb.textContent="思考中…"; }
+  postJSON("/api/nsend", {sid:currentSid, prompt:p}).then(function(r){
+    if(r && r.error){ nAddRow(st, "sys", "⚠️ 发送失败: "+nEsc(r.error)+"（若刚更新代码,请「设置 → 重启后端层」加载 native.py 后刷新页面）"); if(sb){ sb.disabled=false; sb.textContent="发送"; } }
+  }).catch(function(e){ nAddRow(st, "sys", "⚠️ 网络错误: "+nEsc(e&&e.message||e)); if(sb){ sb.disabled=false; sb.textContent="发送"; } });
+}
+function renderMode(boxId){
+  var box=$(boxId); if(!box) return; box.innerHTML="";
+  [["terminal","🖥️ 终端"],["native","🟣 原生 Agent"]].forEach(function(m){
+    var btn=document.createElement("button"); btn.type="button"; btn.textContent=m[1];
+    if(m[0]===lmMode) btn.classList.add("active");
+    btn.addEventListener("click", function(){ lmMode=m[0]; acPrefSet("acMode", lmMode, "acMode"); renderMode(boxId); });
+    box.appendChild(btn);
+  });
+  var f=$("lm-backend-field"); if(f) f.style.display=(lmMode==="native")?"none":"";
+  var h=$("lm-mode-hint");
+  if(h) h.textContent=(lmMode==="native")?"自建 agent harness 直接打 Anthropic 兼容端点(GLM/Claude),bash 需审批":"ttyd 驱动 codex/claude CLI(原有终端)";
+}
+$("nativeback").addEventListener("click", hideNative);
+$("nativestop").addEventListener("click", function(){ if(currentSid){ postJSON("/api/stop",{sid:currentSid}); dropNativeStage(currentSid); pollSessionSignals(); } });
+$("nativesend").addEventListener("submit", function(e){ e.preventDefault(); nativeSend(); });
+$("nativeinput").addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); nativeSend(); } });
 function openSessionBySid(sid, skipFetch){
   if(!sid) return false;
   var i, s; for(i=0;i<runSessions.length;i+=1){ if(runSessions[i].sid===sid){ s=runSessions[i]; break; } }
-  if(s){ showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); return true; }
+  if(s){
+    if(s.backend==="native" || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
+    else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
+    return true;
+  }
   if(!skipFetch){ api("/api/sessions").then(function(r){ rememberSessions(r.sessions||[], true); openSessionBySid(sid, true); }); }
   return false;
 }
@@ -756,11 +1004,18 @@ $("termstop").addEventListener("click", function(){
 });
 
 /* ---- launch ---- */
-function launchDir(dir, title, backend, yolo, args){
+function launchDir(dir, title, backend, yolo, args, mode){
+  mode=mode||lmMode||"terminal";
   backend=backend||"codex";
+  if(mode==="native") backend="native";
   postJSON("/api/launch", {dir:dir, backend:backend, yolo:!!yolo, args:args||""}).then(function(r){
     if(r.error){ alert("启动失败："+r.error); return; }
-    showTerminal(r.sid, r.term_path, (title||basename(r.dir))+" · "+backendLabel(backend));
+    if(r.backend==="native"){
+      showNativeSession(r.sid, (title||basename(r.dir))+" · 原生 Agent");
+    } else {
+      if(mode==="native"){ alert("后端把「原生模式」当成了 "+backendLabel(r.backend||backend)+" 终端会话。\n\n说明 manager 还在跑旧代码。请先「设置 → 重启后端层」加载 native.py,刷新页面后再新建原生会话。"); }
+      showTerminal(r.sid, r.term_path, (title||basename(r.dir))+" · "+backendLabel(r.backend||backend));
+    }
     loadSidebarData(); pollSessionSignals();
   });
 }
@@ -779,7 +1034,7 @@ function setArgs(v, persist){ lmArgs=(v||"").trim(); $("lm-args").value=lmArgs; 
 function updateLmStart(){ $("lm-start").disabled=!lmDir; }
 function openLaunchNew(){
   lmDir=""; lmTitle=""; $("lm-dir").textContent="📁 未选择目录 — 点「选择目录」"; updateLmStart();
-  renderBackend("lm-backend"); setYolo(lmYolo, false); setArgs(lmArgs, false);
+  renderMode("lm-mode"); renderBackend("lm-backend"); setYolo(lmYolo, false); setArgs(lmArgs, false);
   $("launchmodal").classList.add("open");
 }
 function closeLaunch(){ $("launchmodal").classList.remove("open"); }
@@ -793,8 +1048,8 @@ $("set-args").addEventListener("input", function(){ setArgs($("set-args").value,
 $("lm-cancel").addEventListener("click", closeLaunch);
 $("launchmodal").addEventListener("click", function(e){ if(e.target===$("launchmodal")) closeLaunch(); });
 $("lm-start").addEventListener("click", function(){
-  if(!lmDir) return; var dir=lmDir, title=lmTitle||basename(lmDir), backend=lmBackend, yolo=lmYolo, args=lmArgs;
-  closeLaunch(); launchDir(dir, title, backend, yolo, args);
+  if(!lmDir) return; var dir=lmDir, title=lmTitle||basename(lmDir), backend=lmBackend, yolo=lmYolo, args=lmArgs, mode=lmMode;
+  closeLaunch(); launchDir(dir, title, backend, yolo, args, mode);
 });
 
 /* ---- browse modal ---- */

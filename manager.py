@@ -23,6 +23,7 @@ import queue
 import common
 from common import BaseHandler, ThreadingServer
 from hub import Hub
+from native import NativeSession
 
 # ---- manager-only state ----
 sessions = {}        # sid -> {port, proc|None, pid, dir, title, started, mode, session_id, backend, hub}
@@ -55,6 +56,11 @@ def prune_dead():
     dead = []
     with _lock:
         for sid, s in sessions.items():
+            if s.get("backend") == "native":
+                ns = s.get("native")
+                if not ns or not ns.alive:
+                    dead.append(sid)
+                continue
             proc = s.get("proc")
             hub = s.get("hub")
             if proc is not None:
@@ -82,6 +88,13 @@ def kill_session(sid):
         s = sessions.pop(sid, None)
     if not s:
         return False
+    if s.get("backend") == "native":
+        ns = s.get("native")
+        if ns:
+            try: ns.close()
+            except Exception: pass
+        common.registry_drop(sid)
+        return True
     if s.get("hub"):
         try:
             s["hub"].close()
@@ -137,6 +150,25 @@ def launch(cwd, backend="codex", cli_args=None, title="", mode="new", session_id
     hub.open_scrollback(sid)
     common.registry_upsert(sid, common._registry_safe_entry(sid, snap))
     return sid, port
+
+
+def launch_native(cwd, title="", auto_approve=False):
+    """启动一个原生 agent 会话(不打 ttyd/PTY,直接打 Anthropic 兼容端点)。
+    和终端会话并列,backend='native'。auto_approve=True 时 bash 跳过审批(等同 yolo)。v1 不支持 reattach。"""
+    prune_dead()
+    with _lock:
+        _sid[0] += 1
+        sid = "s%d" % _sid[0]
+        ns = NativeSession(sid, cwd, approve_tools=() if auto_approve else ("bash",))
+        sessions[sid] = {
+            "port": None, "proc": None, "pid": None, "dir": cwd, "backend": "native",
+            "title": title or os.path.basename(cwd.rstrip(os.sep)) or cwd,
+            "started": time.time(), "mode": "new", "session_id": None,
+            "hub": None, "native": ns,
+        }
+        snap = dict(sessions[sid])
+    common.registry_upsert(sid, common._registry_safe_entry(sid, snap))
+    return sid
 
 
 # ---------- re-attach on startup (Phase B) ----------
@@ -313,6 +345,13 @@ class ManagerHandler(BaseHandler):
             self.send_response(404); self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
             return
+        if s.get("backend") == "native":
+            ns = s.get("native")
+            if rest == "ws":
+                self._native_ws_handshake(ns)
+            else:
+                self._serve_native_page(sid, s)
+            return
         if rest == "ws":
             self._ws_handshake(hub)
         else:
@@ -340,6 +379,31 @@ class ManagerHandler(BaseHandler):
         except Exception:
             pass
         hub.add_client(self.connection)
+
+    def _native_ws_handshake(self, ns):
+        # 复用 ttyd 的 101 握手形状,但握手后把 socket 交给 NativeSession.add_client
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self.send_response(400); self.send_header("Content-Length", "0"); self.end_headers(); return
+        if not ns:
+            self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
+        self.close_connection = True
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket"); self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", common.ws_accept_key(key))
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        ns.add_client(self.connection)
+
+    def _serve_native_page(self, sid, s):
+        body = ("<h3>原生会话: %s</h3><p>请在 <a href='/'>控制台</a> 中打开此会话。</p>"
+                % s.get("title", sid)).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_GET(self):
         if not self._auth():
@@ -395,6 +459,13 @@ class ManagerHandler(BaseHandler):
             if not d or not os.path.isdir(d):
                 self._json({"error": "invalid directory: %r" % d}, 400); return
             backend = (data.get("backend") or "codex").strip()
+            if backend == "native":
+                try:
+                    sid = launch_native(d, title=data.get("title") or "", auto_approve=bool(yo))
+                except Exception as e:
+                    self._json({"error": str(e)}, 500); return
+                self._json({"ok": True, "sid": sid, "dir": d, "backend": "native", "term_path": "/t/%s/" % sid})
+                return
             if backend not in common.BACKENDS:
                 backend = "codex"
             yo = data.get("yolo")
@@ -426,6 +497,29 @@ class ManagerHandler(BaseHandler):
             self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "term_path": "/t/%s/" % sid})
         elif pr.path == "/api/stop":
             self._json({"ok": kill_session((data.get("sid") or "").strip())})
+        elif pr.path == "/api/nsend":
+            sid = (data.get("sid") or "").strip()
+            prompt = (data.get("prompt") or "").strip()
+            with _lock:
+                s = sessions.get(sid)
+            ns = s.get("native") if (s and s.get("backend") == "native") else None
+            if not ns:
+                self._json({"error": "native session not found"}, 404); return
+            if not prompt:
+                self._json({"error": "missing prompt"}, 400); return
+            ns.send(prompt)
+            self._json({"ok": True})
+        elif pr.path == "/api/napprove":
+            sid = (data.get("sid") or "").strip()
+            tuid = (data.get("tool_use_id") or "").strip()
+            allow = bool(data.get("allow"))
+            with _lock:
+                s = sessions.get(sid)
+            ns = s.get("native") if (s and s.get("backend") == "native") else None
+            if not ns:
+                self._json({"error": "native session not found"}, 404); return
+            ok = ns.approve(tuid, allow, data.get("message"))
+            self._json({"ok": ok})
         elif pr.path == "/api/stop_all":
             kill_all(); self._json({"ok": True})
         elif pr.path == "/api/adapt":
@@ -485,9 +579,10 @@ def run():
     if os.name == "posix":
         import signal as _sig
         _sig.signal(_sig.SIGTERM, _sigterm_die)
-    if common.NOTIFY_ENABLED:
-        threading.Thread(target=_notify_sender, daemon=True).start()
-        threading.Thread(target=_notify_watcher, daemon=True).start()
+    # 通知功能已停用:native 有 WS 实时 + 前端反馈,terminal 用户直接看终端输出
+    # if common.NOTIFY_ENABLED:
+    #     threading.Thread(target=_notify_sender, daemon=True).start()
+    #     threading.Thread(target=_notify_watcher, daemon=True).start()
     try:
         try:
             _server[0] = ThreadingServer((common.MANAGER_HOST, common.MANAGER_PORT), ManagerHandler)

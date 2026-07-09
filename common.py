@@ -1338,6 +1338,13 @@ def browse(path):
 
 
 def session_obj(sid, s, host):
+    if s.get("backend") == "native":
+        ns = s.get("native")
+        return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
+                "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,
+                "backend": "native", "native": True,
+                "state": ns.state() if ns else "idle",
+                "last_input_ts": 0, "last_output_ts": 0, "cols": 0, "rows": 0}
     hub = s["hub"]; now = time.time()
     return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
             "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,

@@ -904,8 +904,8 @@ function nativeConnect(sid){
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;
   ws.onmessage=function(ev){ try{ nHandle(sid, JSON.parse(ev.data)); }catch(e){} };
-  ws.onclose=function(){
-    console.log("[N] ws closed", sid);
+  ws.onclose=function(ev){
+    console.log("[N] ws closed", sid, "code="+ev.code, ev.reason||"");
     if(nativeWs[sid]===ws) nativeWs[sid]=null;
     clearInterval(ws._ka);
     if(currentSid===sid && nativeStages[sid]){

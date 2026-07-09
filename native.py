@@ -91,6 +91,9 @@ _TOOLS = [
      "input_schema": {"type": "object",
                       "properties": {"action": {"type": "string"}, "key": {"type": "string"}, "content": {"type": "string"}},
                       "required": ["action"]}},
+    {"name": "ask_user", "description": "向用户提问以获取澄清/确认/输入(会等待用户回答)。question 是问题。返回用户的回答文本。信息不足、需要用户决策或确认意图时用。",
+     "input_schema": {"type": "object",
+                      "properties": {"question": {"type": "string"}}, "required": ["question"]}},
     {"name": "task", "description": "派一个子 agent 独立完成子任务(自有上下文 + 全部工具,自动执行不审批)。prompt 是子任务描述。返回子 agent 的最终文本。最长 180s。适合并行/独立探索。",
      "input_schema": {"type": "object",
                       "properties": {"prompt": {"type": "string"}, "description": {"type": "string"}},
@@ -151,6 +154,17 @@ class NativeSession:
             return False
         if req["decision"] is None:
             req["decision"] = {"allow": bool(allow), "message": message}
+            req["event"].set()
+        return True
+
+    def answer(self, tool_use_id, text):
+        """回复 ask_user 工具的提问。"""
+        with self._approvals_lock:
+            req = self._approvals.get(tool_use_id)
+        if not req:
+            return False
+        if req.get("answer") is None:
+            req["answer"] = text
             req["event"].set()
         return True
 
@@ -397,6 +411,12 @@ class NativeSession:
             name = b.get("name")
             inp = b.get("input", {}) or {}
             tuid = b.get("id", "")
+            if name == "ask_user":
+                ans = self._await_user_input(tuid, inp.get("question", ""))
+                results.append({"type": "tool_result", "tool_use_id": tuid, "content": ans})
+                self._broadcast({"type": "user", "message": {"role": "user",
+                             "content": [{"type": "tool_result", "content": ans}]}})
+                continue
             if name in self.approve_tools:
                 dec = self._await_approval(tuid, name, inp)
                 self._broadcast({"type": "approval_decision", "tool_use_id": tuid,
@@ -429,6 +449,21 @@ class NativeSession:
         if not ok or req["decision"] is None:
             return {"allow": False, "message": "审批超时(自动拒绝)"}
         return req["decision"]
+
+    def _await_user_input(self, tuid, question):
+        """ask_user 工具:广播问题、阻塞等用户回答(复用审批超时)。"""
+        req = {"event": threading.Event(), "decision": None, "answer": None}
+        with self._approvals_lock:
+            self._approvals[tuid] = req
+        self._has_pending = True
+        self._broadcast({"type": "pending_ask", "tool_use_id": tuid, "question": question})
+        ok = req["event"].wait(timeout=_APPROVAL_TIMEOUT)
+        with self._approvals_lock:
+            self._approvals.pop(tuid, None)
+        self._has_pending = False
+        if not ok or req.get("answer") is None:
+            return "(用户未回答,超时)"
+        return req["answer"][:8000]
 
     def _safe_exec(self, name, inp):
         try:

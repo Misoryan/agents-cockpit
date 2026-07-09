@@ -539,6 +539,17 @@ class ManagerHandler(BaseHandler):
                 self._json({"error": "native session not found"}, 404); return
             ok = ns.approve(tuid, allow, data.get("message"))
             self._json({"ok": ok})
+        elif pr.path == "/api/nanswer":
+            sid = (data.get("sid") or "").strip()
+            tuid = (data.get("tool_use_id") or "").strip()
+            ans = data.get("answer") or ""
+            with _lock:
+                s = sessions.get(sid)
+            ns = s.get("native") if (s and s.get("backend") == "native") else None
+            if not ns:
+                self._json({"error": "native session not found"}, 404); return
+            ok = ns.answer(tuid, ans)
+            self._json({"ok": ok})
         elif pr.path == "/api/stop_all":
             kill_all(); self._json({"ok": True})
         elif pr.path == "/api/adapt":

@@ -747,7 +747,8 @@ function renderMd(s){
   if(window.marked){ try{ return marked.parse(String(s==null?"":s)); }catch(e){} }
   return nEsc(s).replace(/\n/g,"<br>");
 }
-function nScrollBottom(){ var m=$("nativemsgs"); if(m) requestAnimationFrame(function(){ m.scrollTop=m.scrollHeight; }); }
+function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;
+  requestAnimationFrame(function(){ if(m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight; }); }
 function nTurnCard(st){
   if(st.turnCard) return st.turnCard;
   var d=document.createElement("div"); d.className="nmsg turn";
@@ -927,7 +928,7 @@ function nativeSend(){
   var inp=$("nativeinput"), p=inp.value.trim();
   if(!p || !currentSid) return;
   var st=nativeStage(currentSid); if(!st) return;
-  nAddRow(st, "user", nEsc(p));
+  var ud=document.createElement("div"); ud.className="nmsg user"; ud.textContent=p; st.root.appendChild(ud); nScrollBottom();
   inp.value="";
   var sb=$("nativesubmit"); if(sb){ sb.disabled=true; sb.textContent="思考中…"; }
   postJSON("/api/nsend", {sid:currentSid, prompt:p}).then(function(r){

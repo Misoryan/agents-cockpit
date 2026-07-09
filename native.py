@@ -125,6 +125,8 @@ _BASH_TIMEOUT = 120         # bash 执行超时
 _MAX_STEPS = 40             # 单轮 agent loop 最大工具调用次数(防失控)
 _THINK_BUDGET = 1024
 _MAX_TOKENS = 4096
+_COMPACT_THRESHOLD = 80000   # messages 字符数超此 → 压缩(粗估 ~20K token)
+_COMPACT_KEEP = 6            # 压缩时保留最近 N 条原始 message
 
 
 def _looks_dangerous(cmd):
@@ -274,6 +276,68 @@ class NativeSession:
         except OSError:
             with self.clients_lock:
                 self.clients.discard(sock)
+
+    def _msg_to_text(self, m):
+        role = m.get("role", "")
+        c = m.get("content")
+        if isinstance(c, str):
+            return role + ": " + c
+        parts = []
+        for b in c:
+            t = b.get("type")
+            if t == "text":
+                parts.append(b.get("text", ""))
+            elif t == "thinking":
+                parts.append("[思考省略]")
+            elif t == "tool_use":
+                parts.append("[调用 %s(%s)]" % (b.get("name"), json.dumps(b.get("input", {}), ensure_ascii=False)[:150]))
+            elif t == "tool_result":
+                parts.append("[结果: %s]" % str(b.get("content", ""))[:150])
+        return role + ": " + " ".join(parts)
+
+    def _summarize(self, old_messages):
+        text = "\n".join(self._msg_to_text(m) for m in old_messages)[:30000]
+        try:
+            u = urlparse(self.base_url)
+            conn_cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+            conn = conn_cls(u.netloc, timeout=60)
+            body = json.dumps({
+                "model": self.model, "max_tokens": 2000,
+                "messages": [{"role": "user", "content":
+                    "下面是一个 agent 与用户/工具的早期对话历史。请用中文精炼总结成要点:"
+                    "关键决策、已完成的工作、用户的关键要求与偏好、未完成的待办、"
+                    "重要的文件路径/命令/约定。只保留对后续有用的信息,丢弃冗余的工具输出细节。\n\n" + text}],
+            }, ensure_ascii=False).encode("utf-8")
+            conn.request("POST", u.path.rstrip("/") + "/v1/messages", body, headers={
+                "x-api-key": self.token, "anthropic-version": "2023-06-01", "Content-Type": "application/json"})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                conn.close(); return None
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+            conn.close()
+            for b in data.get("content", []):
+                if b.get("type") == "text":
+                    return b.get("text", "")
+        except Exception:
+            return None
+        return None
+
+    def _maybe_compact(self):
+        """messages 字符数超阈值时,把早期对话压成摘要 + 保留最近 N 轮,避免撞 context 上限。"""
+        total = sum(len(json.dumps(m, ensure_ascii=False)) for m in self.messages)
+        if total < _COMPACT_THRESHOLD or len(self.messages) <= _COMPACT_KEEP:
+            return
+        old = self.messages[:-_COMPACT_KEEP]
+        recent = self.messages[-_COMPACT_KEEP:]
+        summary = self._summarize(old)
+        if not summary:
+            return
+        self.messages = [
+            {"role": "user", "content": "[之前对话的摘要]\n" + summary},
+            {"role": "assistant", "content": [{"type": "text", "text": "(已了解上面的摘要,继续工作。)"}]},
+        ] + recent
+        self._persist()
+        self._broadcast({"type": "compacted"})
 
     # ---------- agent loop ----------
     def _run_loop(self):

@@ -277,6 +277,8 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.tool .tcmd{font:13px ui-monospace,Consolas,monospace;color:#9fd0ff;padding:6px 8px;background:#0b0c10;border-radius:6px;margin:6px 0;white-space:pre-wrap;word-break:break-all}
         .nmsg.tool .tres{margin-top:6px}
         .nmsg.tool .tres pre{margin:0}
+        .nmsg.thinking-ind{display:flex;align-items:center;gap:8px;color:#9aa0aa;font-style:italic;padding:10px 12px}
+        .ti-dot{width:8px;height:8px;border-radius:50%;background:#7ab7ff;animation:pulse 1.4s infinite}
         .nmsg details summary{cursor:pointer;color:#7ab7ff;font-weight:600}
         .nmsg pre{margin:6px 0 0;background:#0b0c10;padding:8px;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.4 ui-monospace,Consolas,monospace;color:#cdd2dc;white-space:pre-wrap}
         .nmsg.approval{align-self:flex-start;max-width:92%;background:#2a2410;border:1px solid #6a5320}
@@ -480,9 +482,9 @@ function stateTag(st){
   if(st==="new") return '<span class="tag new">新窗口</span>';
   return '<span class="tag idle">空闲</span>';
 }
-function backendLabel(b){ return b==="claude"?"Claude":"Codex"; }
+function backendLabel(b){ return b==="native"?"原生 Agent":(b==="claude"?"Claude":"Codex"); }
 function backendTag(b){ return b==="claude"?'<span class="tag be-claude">Claude</span>':'<span class="tag be-codex">Codex</span>'; }
-function backendShort(b){ return b==="claude"?"Claude":"Codex"; }
+function backendShort(b){ return b==="native"?"原生":(b==="claude"?"Claude":"Codex"); }
 
 /* ---- restart ---- */
 function restartWebOnly(){
@@ -760,13 +762,22 @@ function nNewTextBubble(st){
   var t=document.createElement("div"); t.className="ntxt";
   d.appendChild(t); st.root.appendChild(d); st.curTxt=t; nScrollBottom();
 }
-function nNewThink(st){
-  var d=document.createElement("div"); d.className="nmsg think";
-  var det=document.createElement("details"); det.open=true;
-  var sum=document.createElement("summary"); sum.textContent="💭 思考中…";
-  var pre=document.createElement("pre");
-  det.appendChild(sum); det.appendChild(pre); d.appendChild(det);
-  st.root.appendChild(d); st.curThink=pre; nScrollBottom();
+function nStartThinking(st){
+  if(st.thinking) return;
+  st.thinking=true; st.thinkStart=Date.now();
+  var d=document.createElement("div"); d.className="nmsg assistant thinking-ind";
+  d.innerHTML='<span class="ti-dot"></span><span class="ti-txt">思考中… 0s</span>';
+  st.root.appendChild(d); st.thinkBubble=d; nScrollBottom();
+  st.thinkTimer=setInterval(function(){
+    var s=Math.floor((Date.now()-st.thinkStart)/1000);
+    var t=d.querySelector('.ti-txt'); if(t) t.textContent='思考中… '+s+'s';
+  },1000);
+}
+function nStopThinking(st){
+  if(!st.thinking) return;
+  st.thinking=false;
+  if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  if(st.thinkBubble){ st.thinkBubble.remove(); st.thinkBubble=null; }
 }
 function nAddRow(st, cls, html){
   st.curTxt=null;
@@ -785,17 +796,17 @@ function nHandle(sid, obj){
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};
     if(dl.type==="text_delta" && dl.text){
+      nStopThinking(st);
       if(!st.curTxt) nNewTextBubble(st);
       st.curTxt.appendChild(document.createTextNode(dl.text));
       nScrollBottom();
-    } else if(dl.type==="thinking_delta" && dl.thinking){
-      if(!st.curThink) nNewThink(st);
-      st.curThink.appendChild(document.createTextNode(dl.thinking));
-      nScrollBottom();
+    } else if(dl.type==="thinking_delta"){
+      nStartThinking(st);
     }
     return;
   }
   if(t==="assistant"){
+    nStopThinking(st);
     var blocks=(obj.message&&obj.message.content)||[];
     blocks.forEach(function(b){
       if(b.type==="text"){
@@ -808,9 +819,7 @@ function nHandle(sid, obj){
         _tu.innerHTML='<details open><summary>🔧 '+nEsc(b.name)+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
         st.root.appendChild(_tu); st.curTxt=null; nScrollBottom();
       } else if(b.type==="thinking"){
-        if(!st.curThink || !st.curThink.textContent){
-          nAddRow(st, "think", "<details open><summary>💭 思考</summary><pre>"+nEsc(b.thinking||"")+"</pre></details>");
-        }
+        nAddRow(st, "think", "<details><summary>💭 思考</summary><pre>"+nEsc(b.thinking||"")+"</pre></details>");
       }
     });
     st.curThink=null; st.curTxt=null;
@@ -854,7 +863,7 @@ function nApprove(sid, tuid, allow){ postJSON("/api/napprove", {sid:sid, tool_us
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.replayDone=false; }
+  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.replayDone=false; }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;

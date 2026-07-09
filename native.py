@@ -19,7 +19,7 @@ import traceback
 import http.client
 from urllib.parse import urlparse
 
-from common import ws_send, ws_recv
+from common import ws_send, ws_recv, STATE_DIR
 
 def _load_cfg():
     """env 优先;缺失则回退读 cc-switch 写入的 ~/.claude/settings.json
@@ -67,6 +67,13 @@ _TOOLS = [
                       "properties": {"command": {"type": "string"}}, "required": ["command"]}},
 ]
 
+_SYSTEM_PROMPT = (
+    "你是一个运行在用户本机的编码助手 agent。你可以用工具(read_file / str_replace_edit / "
+    "write_file / bash)读写文件、执行命令,帮助用户完成编程与系统任务。回答用中文,简洁专业。"
+    "需要信息时主动用工具获取(读文件、跑命令),不要臆测。改文件前先读懂现状;执行可能有"
+    "副作用的命令前简要说明意图。完成后简要总结做了什么。"
+)
+
 _APPROVAL_TIMEOUT = 300.0   # 审批超时 5 分钟 → 自动拒绝
 _BASH_TIMEOUT = 120         # bash 执行超时
 _MAX_STEPS = 40             # 单轮 agent loop 最大工具调用次数(防失控)
@@ -104,6 +111,7 @@ class NativeSession:
 
     # ---------- public API ----------
     def send(self, prompt):
+        self.last_activity = time.time()
         self._inbox.put({"role": "user", "content": prompt})
 
     def approve(self, tool_use_id, allow, message=None):
@@ -133,6 +141,27 @@ class NativeSession:
         for c in socks:
             try: c.close()
             except OSError: pass
+
+    def _persist(self):
+        """把对话历史落盘,供 manager 重启后 reattach 恢复。"""
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            with open(os.path.join(STATE_DIR, "native_%s.json" % self.sid), "w", encoding="utf-8") as f:
+                json.dump({"messages": self.messages, "cwd": self.cwd}, f, ensure_ascii=False)
+        except OSError:
+            pass
+
+    @classmethod
+    def recover(cls, sid, cwd):
+        """从落盘文件恢复一个 native 会话(读取历史 messages)。失败返回 None。"""
+        try:
+            with open(os.path.join(STATE_DIR, "native_%s.json" % sid), "r", encoding="utf-8") as f:
+                d = json.load(f)
+            ns = cls(sid, d.get("cwd", cwd))
+            ns.messages = d.get("messages", [])
+            return ns
+        except (OSError, ValueError):
+            return None
 
     def state(self):
         if self._closed:
@@ -211,6 +240,7 @@ class NativeSession:
                         stop_loop = True
                         break
                     self.messages.append({"role": "assistant", "content": blocks})
+                    self._persist()
                     self._broadcast({"type": "assistant",
                                      "message": {"role": "assistant", "content": blocks}})
                     if stop != "tool_use":
@@ -222,6 +252,7 @@ class NativeSession:
                         stop_loop = True
                         break
                     self.messages.append({"role": "user", "content": results})
+                    self._persist()
                 if not stop_loop and not self._closed:
                     self._broadcast({"type": "result", "error": "达到最大步数上限(%d),已停止" % _MAX_STEPS})
             except Exception:
@@ -239,6 +270,7 @@ class NativeSession:
         网络失败重试 3 次;全失败返回 (None, None)。"""
         body = json.dumps({
             "model": self.model, "max_tokens": _MAX_TOKENS,
+            "system": _SYSTEM_PROMPT,
             "thinking": {"type": "enabled", "budget_tokens": _THINK_BUDGET},
             "tools": _TOOLS, "messages": self.messages, "stream": True,
         }, ensure_ascii=False).encode("utf-8")

@@ -1344,7 +1344,9 @@ def session_obj(sid, s, host):
                 "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,
                 "backend": "native", "native": True,
                 "state": ns.state() if ns else "idle",
-                "last_input_ts": 0, "last_output_ts": 0, "cols": 0, "rows": 0}
+                "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
+                "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
+                "cols": 0, "rows": 0}
     hub = s["hub"]; now = time.time()
     return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
             "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,

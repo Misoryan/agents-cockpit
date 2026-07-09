@@ -193,6 +193,24 @@ def reattach_sessions():
     for sid, e in sess.items():
         port = e.get("port")
         pid = e.get("pid")
+        if e.get("backend") == "native":
+            ns = NativeSession.recover(sid, e.get("dir", ""))
+            if ns:
+                with _lock:
+                    sessions[sid] = {"port": None, "proc": None, "pid": None,
+                                     "dir": e.get("dir", ""), "backend": "native",
+                                     "title": e.get("title", ""), "started": e.get("started", time.time()),
+                                     "mode": e.get("mode", "new"), "session_id": None, "hub": None, "native": ns}
+                live_sids.add(sid)
+                try:
+                    num = int(sid[1:]) if sid.startswith("s") and sid[1:].isdigit() else 0
+                    if num > _sid[0]:
+                        _sid[0] = num
+                except Exception:
+                    pass
+            else:
+                common.registry_drop(sid)
+            continue
         if not port or not common._port_alive(port):
             common.registry_drop(sid)
             continue
@@ -459,6 +477,7 @@ class ManagerHandler(BaseHandler):
             if not d or not os.path.isdir(d):
                 self._json({"error": "invalid directory: %r" % d}, 400); return
             backend = (data.get("backend") or "codex").strip()
+            yo = data.get("yolo")
             if backend == "native":
                 try:
                     sid = launch_native(d, title=data.get("title") or "", auto_approve=bool(yo))

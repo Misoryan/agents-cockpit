@@ -76,10 +76,8 @@ class NativeSession:
     def add_client(self, sock):
         with self._lock:
             snapshot = list(self.events)
-        for ev in snapshot:
-            ev2 = dict(ev)
-            ev2["replay"] = True
-            self._send_one(sock, ev2)
+        if snapshot:
+            self._send_one(sock, {"type": "replay_batch", "events": snapshot})
         with self.clients_lock:
             self.clients.add(sock)
         def keepalive():

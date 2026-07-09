@@ -764,7 +764,7 @@ function nativeStage(sid){
   var d=document.createElement("div");
   d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
-  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null};
+  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -805,6 +805,12 @@ function nAddRow(st, cls, html){
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var st=nativeStages[sid]; if(!st) return;
+  if(t==="replay_batch"){
+    var evs=obj.events||[]; st.shownCount=st.shownCount||0;
+    for(var i=st.shownCount; i<evs.length; i++){ evs[i].replay=true; nHandle(sid, evs[i]); }
+    st.shownCount=evs.length;
+    return;
+  }
   if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
   var t=obj.type;
   if(t==="system"){ return; }
@@ -899,7 +905,7 @@ function nApprove(sid, tuid, allow){ postJSON("/api/napprove", {sid:sid, tool_us
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.turnCard=null; st.replayDone=false; }
+  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.curTxt=null; st.curThink=null; st.turnCard=null; st.replayDone=false; }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;

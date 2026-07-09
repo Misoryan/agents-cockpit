@@ -65,6 +65,20 @@ _TOOLS = [
     {"name": "bash", "description": "执行 shell 命令(需用户审批)。在指定工作目录运行。",
      "input_schema": {"type": "object",
                       "properties": {"command": {"type": "string"}}, "required": ["command"]}},
+    {"name": "glob", "description": "按 glob 模式匹配文件(如 **/*.py 或 src/**/*.ts)。返回匹配文件的相对路径列表。path 可选(默认工作目录)。",
+     "input_schema": {"type": "object",
+                      "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}},
+                      "required": ["pattern"]}},
+    {"name": "grep", "description": "在文件中正则搜索(递归)。pattern 是正则;path 可选(默认工作目录);include 文件名过滤(如 *.py)。返回 file:line:content。",
+     "input_schema": {"type": "object",
+                      "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}, "include": {"type": "string"}},
+                      "required": ["pattern"]}},
+    {"name": "ls", "description": "列目录内容。path 默认工作目录。子目录名前加 /。",
+     "input_schema": {"type": "object",
+                      "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"name": "web_fetch", "description": "抓取 URL 的网页内容(纯文本,截断)。用于查文档/资料。",
+     "input_schema": {"type": "object",
+                      "properties": {"url": {"type": "string"}}, "required": ["url"]}},
 ]
 
 _SYSTEM_PROMPT = (
@@ -446,6 +460,54 @@ class NativeSession:
                 if r.stderr:
                     out += ("\n[stderr]\n" + r.stderr)
                 return ("[exit %d]\n" % r.returncode) + out[:20000] + ("…[已截断]" if len(out) > 20000 else "")
+            if name == "glob":
+                import glob as _glob
+                pat = inp.get("pattern", "")
+                base = inp.get("path") or self.cwd
+                full = pat if os.path.isabs(pat) else os.path.join(base, pat)
+                ms = _glob.glob(full, recursive=True)[:200]
+                return "\n".join(os.path.relpath(m, self.cwd) for m in ms) or "(无匹配)"
+            if name == "grep":
+                import re as _re
+                import fnmatch as _fm
+                try:
+                    rx = _re.compile(inp.get("pattern", "") or "", _re.IGNORECASE)
+                except _re.error as e:
+                    return "(正则错误: %s)" % e
+                base = self._resolve(inp.get("path") or ".")
+                inc = inp.get("include")
+                hits = []
+                for dp, _d, fs in os.walk(base):
+                    for fn in fs:
+                        if inc and not _fm.fnmatch(fn, inc):
+                            continue
+                        fp = os.path.join(dp, fn)
+                        try:
+                            with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                                for i, line in enumerate(f, 1):
+                                    if rx.search(line):
+                                        hits.append("%s:%d: %s" % (os.path.relpath(fp, self.cwd), i, line.rstrip()[:200]))
+                                        if len(hits) >= 100:
+                                            break
+                        except OSError:
+                            pass
+                    if len(hits) >= 100:
+                        break
+                return "\n".join(hits) or "(无匹配)"
+            if name == "ls":
+                base = self._resolve(inp.get("path") or ".")
+                items = sorted(os.listdir(base))[:300]
+                return "\n".join(("/" + x if os.path.isdir(os.path.join(base, x)) else x) for x in items)
+            if name == "web_fetch":
+                import urllib.request
+                url = inp.get("url", "")
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=15) as r:
+                        data = r.read(60000).decode("utf-8", "replace")
+                    return data[:8000]
+                except Exception as e:
+                    return "(抓取失败: %s)" % e
             return "(未知工具: %s)" % name
         except subprocess.TimeoutExpired:
             return "(bash 超时 %ds,已终止)" % _BASH_TIMEOUT

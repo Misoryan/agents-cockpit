@@ -82,6 +82,18 @@ class NativeSession:
             self._send_one(sock, ev2)
         with self.clients_lock:
             self.clients.add(sock)
+        def keepalive():
+            # 服务端定期发 WS 协议级 ping(0x9) → 浏览器自动回 pong,产生下行流量,
+            # 否则浏览器会在长时间无下行时判定连接死亡(code=1006)。
+            while not self._closed:
+                time.sleep(15)
+                if self._closed:
+                    break
+                try:
+                    ws_send(sock, b"", 0x9)
+                except OSError:
+                    break
+        threading.Thread(target=keepalive, daemon=True).start()
         try:
             while not self._closed:
                 op, _payload = ws_recv(sock)

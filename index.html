@@ -916,6 +916,11 @@ function nHandle(sid, obj){
     if(c2) c2.remove();
     return;
   }
+  if(t==="ask_answered"){
+    var a2=(st.turnCard||st.root).querySelector('.nmsg.ask[data-tuid="'+obj.tool_use_id+'"]');
+    if(a2) a2.remove();
+    return;
+  }
   if(t==="compacted"){
     nAddRow(st, "sys", "🗂 对话历史已压缩(早期摘要、近期保留,可继续长任务)");
     return;

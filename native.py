@@ -40,6 +40,8 @@ class NativeSession:
 
     # ---------- public API ----------
     def send(self, prompt):
+        with self._lock:
+            self.events.append({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
         threading.Thread(target=self._run_cli, args=(prompt,), daemon=True).start()
 

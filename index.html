@@ -277,6 +277,10 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.tool .tcmd{font:13px ui-monospace,Consolas,monospace;color:#9fd0ff;padding:6px 8px;background:#0b0c10;border-radius:6px;margin:6px 0;white-space:pre-wrap;word-break:break-all}
         .nmsg.tool .tres{margin-top:6px}
         .nmsg.tool .tres pre{margin:0}
+        .nmsg.tool .diff{font:12px/1.5 ui-monospace,Consolas,monospace}
+        .nmsg.tool .diff-file{color:#7ab7ff;margin-bottom:4px;font-weight:600}
+        .nmsg.tool .diff-del{background:#2a1414;border-left:3px solid #d35050;color:#ff9a9a;padding:6px 8px;margin:0 0 2px;border-radius:4px;white-space:pre-wrap;word-break:break-all}
+        .nmsg.tool .diff-add{background:#142a14;border-left:3px solid #50d370;color:#9aff9a;padding:6px 8px;margin:0;border-radius:4px;white-space:pre-wrap;word-break:break-all}
         .nmsg.thinking-ind{display:flex;align-items:center;gap:8px;color:#9aa0aa;font-style:italic;padding:10px 12px}
         .ti-dot{width:8px;height:8px;border-radius:50%;background:#7ab7ff;animation:pulse 1.4s infinite}
         .nmsg.ask{align-self:flex-start;max-width:92%;background:#10242a;border:1px solid #1f4a5a}
@@ -834,8 +838,22 @@ function nHandle(sid, obj){
       } else if(b.type==="tool_use"){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
         var _cmd = b.input && (b.input.command || b.input.cmd);
-        var _body = (b.name==="bash"||b.name==="PowerShell") ? '<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>'
-                                      : '<pre>'+nEsc(JSON.stringify(b.input,null,2))+'</pre>';
+        var _isEdit = (b.name==="Edit"||b.name==="str_replace_edit"||b.name==="edit"||b.name==="Write"||b.name==="write_file"||b.name==="write") && b.input;
+        var _body;
+        if(b.name==="bash"||b.name==="PowerShell"){
+          _body='<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>';
+        } else if(_isEdit){
+          _body='<div class="diff"><div class="diff-file">'+nEsc(b.input.file_path||b.input.path||"")+'</div>';
+          if(b.input.old_str||b.input.old_string){
+            _body+='<pre class="diff-del">'+nEsc("- "+(b.input.old_str||b.input.old_string||""))+'</pre>';
+          }
+          if(b.input.new_str||b.input.new_string||b.input.content){
+            _body+='<pre class="diff-add">'+nEsc("+ "+(b.input.new_str||b.input.new_string||b.input.content||""))+'</pre>';
+          }
+          _body+='</div>';
+        } else {
+          _body='<pre>'+nEsc(JSON.stringify(b.input,null,2))+'</pre>';
+        }
         _tu.innerHTML='<details open><summary>🔧 '+nEsc(b.name)+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
         nTurnCard(st).appendChild(_tu); st.curTxt=null; nScrollBottom();
       } else if(b.type==="thinking"){

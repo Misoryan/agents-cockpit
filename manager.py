@@ -478,7 +478,7 @@ class ManagerHandler(BaseHandler):
                 self._json({"error": "invalid directory: %r" % d}, 400); return
             backend = (data.get("backend") or "codex").strip()
             yo = data.get("yolo")
-            if backend == "native":
+            if backend in ("native", "claude"):
                 try:
                     sid = launch_native(d, title=data.get("title") or "", auto_approve=bool(yo))
                 except Exception as e:

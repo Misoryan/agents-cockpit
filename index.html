@@ -857,7 +857,7 @@ function nHandle(sid, obj){
       postJSON("/api/nanswer",{sid:sid,tool_use_id:obj.tool_use_id,answer:ta.value});
       acard.remove();
     });
-    ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ acard.querySelector('.asend").click(); } });
+    ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ acard.querySelector('.asend').click(); } });
     st.root.appendChild(acard); st.curTxt=null; nScrollBottom();
     setTimeout(function(){ ta.focus(); }, 50);
     return;

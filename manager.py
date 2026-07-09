@@ -159,7 +159,7 @@ def launch_native(cwd, title="", auto_approve=False):
     with _lock:
         _sid[0] += 1
         sid = "s%d" % _sid[0]
-        ns = NativeSession(sid, cwd, approve_tools=() if auto_approve else ("bash",))
+        ns = NativeSession(sid, cwd, yolo=bool(auto_approve))
         sessions[sid] = {
             "port": None, "proc": None, "pid": None, "dir": cwd, "backend": "native",
             "title": title or os.path.basename(cwd.rstrip(os.sep)) or cwd,
@@ -550,6 +550,30 @@ class ManagerHandler(BaseHandler):
                 self._json({"error": "native session not found"}, 404); return
             ok = ns.answer(tuid, ans)
             self._json({"ok": ok})
+        elif pr.path == "/api/_perm_gate":
+            # 网关(gate_mcp.py)调用:阻塞等网页审批。本地子进程 → _auth 自动放行,无需 token。
+            sid = (data.get("sid") or "").strip()
+            with _lock:
+                s = sessions.get(sid)
+            ns = s.get("native") if (s and s.get("backend") == "native") else None
+            if not ns:
+                self._json({"behavior": "deny", "message": "会话不存在"}, 404); return
+            allow, msg = ns.await_permission(data.get("tool_use_id") or "",
+                                             data.get("tool_name") or "",
+                                             data.get("input") or {})
+            if allow:
+                self._json({"behavior": "allow", "updatedInput": data.get("input") or {}})
+            else:
+                self._json({"behavior": "deny", "message": msg or "用户拒绝"})
+        elif pr.path == "/api/_ask_gate":
+            sid = (data.get("sid") or "").strip()
+            with _lock:
+                s = sessions.get(sid)
+            ns = s.get("native") if (s and s.get("backend") == "native") else None
+            if not ns:
+                self._json({"answer": "(会话不存在)"}, 404); return
+            ans = ns.await_answer(data.get("tool_use_id") or "", data.get("question") or "")
+            self._json({"answer": ans})
         elif pr.path == "/api/stop_all":
             kill_all(); self._json({"ok": True})
         elif pr.path == "/api/adapt":

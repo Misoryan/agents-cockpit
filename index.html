@@ -823,8 +823,16 @@ function nHandle(sid, obj){
       if(!st.curTxt) nNewTextBubble(st);
       st.curTxt.appendChild(document.createTextNode(dl.text));
       nScrollBottom();
-    } else if(dl.type==="thinking_delta"){
-      nStartThinking(st);
+    } else if(dl.type==="thinking_delta" && dl.thinking){
+      if(!st.curThink){
+        var _thd=document.createElement("details"); _thd.open=true;
+        var _sum=document.createElement("summary"); _sum.textContent="💭 思考中…";
+        var _pre=document.createElement("pre");
+        _thd.appendChild(_sum); _thd.appendChild(_pre);
+        nTurnCard(st).appendChild(_thd); st.curThink=_pre;
+      }
+      st.curThink.appendChild(document.createTextNode(dl.thinking));
+      nScrollBottom();
     }
     return;
   }

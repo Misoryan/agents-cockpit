@@ -79,6 +79,18 @@ _TOOLS = [
     {"name": "web_fetch", "description": "抓取 URL 的网页内容(纯文本,截断)。用于查文档/资料。",
      "input_schema": {"type": "object",
                       "properties": {"url": {"type": "string"}}, "required": ["url"]}},
+    {"name": "web_search", "description": "联网搜索(DuckDuckGo)。query 搜索词。返回前几条结果(标题+链接)。",
+     "input_schema": {"type": "object",
+                      "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "todo", "description": "任务清单管理(落盘)。action=write 覆盖写(需 todos);action=read 读当前。todos 每项 {content, status(pending/in_progress/completed), activeForm}。",
+     "input_schema": {"type": "object",
+                      "properties": {"action": {"type": "string"},
+                                     "todos": {"type": "array", "items": {"type": "object"}}},
+                      "required": ["action"]}},
+    {"name": "memory", "description": "跨会话记忆(落盘)。action=write(key+content)/read(key)/list。便于跨对话记住事实。",
+     "input_schema": {"type": "object",
+                      "properties": {"action": {"type": "string"}, "key": {"type": "string"}, "content": {"type": "string"}},
+                      "required": ["action"]}},
 ]
 
 _SYSTEM_PROMPT = (
@@ -508,6 +520,69 @@ class NativeSession:
                     return data[:8000]
                 except Exception as e:
                     return "(抓取失败: %s)" % e
+            if name == "web_search":
+                import urllib.request, urllib.parse
+                import re as _re2
+                q = inp.get("query", "")
+                try:
+                    surl = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(q)
+                    req = urllib.request.Request(surl, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=15) as r:
+                        html = r.read().decode("utf-8", "replace")
+                    results = []
+                    for m in _re2.finditer(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, _re2.S):
+                        title = _re2.sub(r'<[^>]+>', '', m.group(2)).strip()
+                        if title:
+                            results.append(title + " — " + m.group(1))
+                        if len(results) >= 6:
+                            break
+                    return "\n".join(results) or "(无结果/抓取失败)"
+                except Exception as e:
+                    return "(搜索失败: %s)" % e
+            if name == "todo":
+                action = (inp.get("action") or "").strip()
+                tpath = os.path.join(STATE_DIR, "native_%s_todo.json" % self.sid)
+                if action == "write":
+                    todos = inp.get("todos", [])
+                    try:
+                        with open(tpath, "w", encoding="utf-8") as f:
+                            json.dump(todos, f, ensure_ascii=False)
+                    except OSError as e:
+                        return "(写失败: %s)" % e
+                    return "已保存 %d 个任务" % len(todos)
+                if action == "read":
+                    try:
+                        with open(tpath, encoding="utf-8") as f:
+                            return json.dumps(json.load(f), ensure_ascii=False, indent=2)
+                    except OSError:
+                        return "(无任务)"
+                return "(未知 action: %s;用 write/read)" % action
+            if name == "memory":
+                action = (inp.get("action") or "").strip()
+                mem_dir = os.path.join(STATE_DIR, "memory")
+                key = (inp.get("key") or "").strip().replace("/", "_").replace("\\", "_")
+                if action == "write":
+                    if not key:
+                        return "(缺少 key)"
+                    os.makedirs(mem_dir, exist_ok=True)
+                    try:
+                        with open(os.path.join(mem_dir, key + ".md"), "w", encoding="utf-8") as f:
+                            f.write(inp.get("content", ""))
+                    except OSError as e:
+                        return "(写失败: %s)" % e
+                    return "已写入 memory/%s" % key
+                if action == "read":
+                    try:
+                        with open(os.path.join(mem_dir, key + ".md"), encoding="utf-8") as f:
+                            return f.read()
+                    except OSError:
+                        return "(无此 memory: %s)" % key
+                if action == "list":
+                    try:
+                        return "\n".join(sorted(os.listdir(mem_dir))) or "(空)"
+                    except OSError:
+                        return "(空)"
+                return "(未知 action: %s;用 write/read/list)" % action
             return "(未知工具: %s)" % name
         except subprocess.TimeoutExpired:
             return "(bash 超时 %ds,已终止)" % _BASH_TIMEOUT

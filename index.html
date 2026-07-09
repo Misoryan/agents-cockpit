@@ -66,6 +66,8 @@ button:disabled{opacity:.45;cursor:default}
 .conv .ct{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .conv .cm{flex:0 0 auto;font-size:10.5px;color:#8b91a0;white-space:nowrap}
 .conv .cbtn{flex:0 0 auto;padding:5px 10px;font-size:11px;border-radius:7px}
+.conv .cbtn.delbtn{color:#ff8b8b}
+.conv .cbtn.delbtn:hover{background:#3a2026;color:#ffb3b3}
 .more{display:block;width:100%;margin-top:6px;padding:8px;font-size:11.5px;background:#22232b;color:#9fd0ff;border-radius:8px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 
@@ -692,6 +694,9 @@ function renderConv(it){
     var resumeFn=function(){ resumeHist(h); };
     rb.addEventListener("click", function(ev){ ev.stopPropagation(); resumeFn(); });
     el.addEventListener("click", resumeFn); el.appendChild(rb);
+    var delbtn=document.createElement("button"); delbtn.className="cbtn ghost delbtn"; delbtn.textContent="删除"; delbtn.title="删除此历史(移除底层会话文件,不可恢复)";
+    delbtn.addEventListener("click", function(ev){ ev.stopPropagation(); delHist(h, delbtn); });
+    el.appendChild(delbtn);
   }
   return el;
 }
@@ -702,6 +707,16 @@ function resumeHist(h){
     showTerminal(r.sid, r.term_path, (h.title||"恢复会话")+" · "+backendLabel(be));
     loadSidebarData();
   });
+}
+function delHist(h, btn){
+  var be=h.backend||"codex";
+  if(!confirm("确认删除「"+(h.title||"(无标题)")+"」?将移除底层会话文件,删除后无法再恢复或续聊该对话。")) return;
+  if(btn){ btn.disabled=true; btn.textContent="删除中"; }
+  postJSON("/api/history_delete", {sid:h.session_id, backend:be}).then(function(r){
+    if(r.error){ alert("删除失败："+r.error); if(btn){ btn.disabled=false; btn.textContent="删除"; } return; }
+    if(!r.deleted){ alert("未找到对应会话文件,可能已被删除。"); }
+    loadSidebarData();
+  }).catch(function(){ if(btn){ btn.disabled=false; btn.textContent="删除"; } alert("删除失败:网络错误"); });
 }
 
 /* ---- main view switching ---- */
@@ -808,6 +823,7 @@ function nAddRow(st, cls, html){
 }
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
+  var t=obj.type;
   var st=nativeStages[sid]; if(!st) return;
   if(t==="replay_batch"){
     console.log("[N] replay_batch events=", (obj.events||[]).length, "rootKids=", st.root.children.length, "display=", st.root.style.display);
@@ -816,7 +832,6 @@ function nHandle(sid, obj){
     return;
   }
   if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
-  var t=obj.type;
   if(t==="system"){ return; }
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};

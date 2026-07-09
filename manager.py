@@ -588,6 +588,16 @@ class ManagerHandler(BaseHandler):
                 os._exit(0)   # DO NOT kill_all — children must survive
             threading.Thread(target=_soft_die, daemon=True).start()
             self._json({"ok": True, "restarting": True, "soft": True})
+        elif pr.path == "/api/history_delete":
+            sid = (data.get("sid") or "").strip()
+            backend = (data.get("backend") or "codex").strip()
+            if backend not in ("codex", "claude"):
+                backend = "codex"
+            try:
+                r = common.delete_history(sid, backend)
+            except Exception as e:
+                self._json({"error": str(e)}, 500); return
+            self._json({"ok": r["deleted"], "deleted": r["deleted"]})
         else:
             self._json({"error": "not found"}, 404)
 

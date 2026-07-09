@@ -1091,6 +1091,97 @@ def load_history(limit=60):
     return out[:limit]
 
 
+def _strip_history_title_lines(drop_sid):
+    """原子地从 history.jsonl 移除某 session_id 的所有标题行(tmp + os.replace)。"""
+    if not drop_sid or not os.path.isfile(HISTORY_JSONL):
+        return
+    kept, changed = [], False
+    try:
+        with open(HISTORY_JSONL, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                try:
+                    o = json.loads(s)
+                except ValueError:
+                    kept.append(line)
+                    continue
+                if o.get("session_id") == drop_sid:
+                    changed = True
+                    continue
+                kept.append(line)
+    except OSError:
+        return
+    if not changed:
+        return
+    tmp = HISTORY_JSONL + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+        os.replace(tmp, HISTORY_JSONL)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def delete_history(sid, backend):
+    """删除一条历史会话的底层转写文件(只删磁盘文件,不影响运行中的会话)。
+
+    codex : session_id 藏在每个 .jsonl 首行 session_meta.payload.session_id,
+            需遍历 sessions 目录匹配;命中后另从 history.jsonl 移除其标题行。
+    claude: <uuid>.jsonl 文件名即 session_id,直接定位删除(原生模式会话同此)。
+    返回 {"deleted": bool, "session_file": <path 或 None>}。"""
+    sid = (sid or "").strip()
+    res = {"deleted": False, "session_file": None}
+    if not sid:
+        return res
+
+    def _unlink(p):
+        try:
+            os.unlink(p)
+            return True
+        except OSError:
+            return False
+
+    if backend == "claude":
+        if os.path.isdir(CLAUDE_PROJECTS_DIR):
+            target = sid + ".jsonl"
+            for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+                if target in fs:
+                    p = os.path.join(dp, target)
+                    if _unlink(p):
+                        res["deleted"] = True
+                        res["session_file"] = p
+                    break
+        return res
+
+    # ---- codex:按首行 session_meta.session_id 匹配 ----
+    if os.path.isdir(SESSIONS_DIR):
+        for dp, _dirs, fs in os.walk(SESSIONS_DIR):
+            for f in fs:
+                if not f.endswith(".jsonl"):
+                    continue
+                p = os.path.join(dp, f)
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        meta = json.loads(fh.readline())
+                except (OSError, ValueError):
+                    continue
+                if meta.get("type") == "session_meta" and \
+                        (meta.get("payload") or {}).get("session_id") == sid:
+                    if _unlink(p):
+                        res["deleted"] = True
+                        res["session_file"] = p
+                    break
+            if res["deleted"]:
+                break
+    _strip_history_title_lines(sid)
+    return res
+
+
 def recent_dirs(limit=30):
     by = {}
     for h in load_history(500):

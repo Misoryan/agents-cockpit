@@ -362,10 +362,6 @@ body.sb-collapsed #sidebar{display:none}
   <div class="card">
     <div class="mtitle">设置</div>
     <div class="mfield">
-      <label>默认模型</label>
-      <div class="mopts" id="set-backend"></div>
-    </div>
-    <div class="mfield">
       <label>默认自动批准</label>
       <div class="mtoggle" id="set-yolo"><span style="flex:1">允许自动执行（点目录「＋」时使用）</span><span class="sw" id="set-yolo-sw">开</span></div>
     </div>
@@ -520,7 +516,7 @@ function restartManagerOnly(){
 
 /* ---- backends ---- */
 var availBackends=["codex","claude"];
-api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ availBackends=r.backends; renderBackend("lm-backend"); renderBackend("set-backend"); } });
+api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ availBackends=r.backends; renderBackend("lm-backend"); } });
 
 /* ---- notifications (in-site only) ---- */
 var noticeTimers={};
@@ -1033,7 +1029,7 @@ function renderBackend(boxId){
   availBackends.forEach(function(b){
     var btn=document.createElement("button"); btn.textContent=b==="claude"?"🟣 Claude":"🟠 Codex";
     if(b===lmBackend) btn.classList.add("active");
-    btn.addEventListener("click", function(){ lmBackend=b; acPrefSet("acBackend", b, "acBackend"); renderBackend("lm-backend"); renderBackend("set-backend"); });
+    btn.addEventListener("click", function(){ lmBackend=b; acPrefSet("acBackend", b, "acBackend"); renderBackend("lm-backend"); });
     box.appendChild(btn);
   });
 }
@@ -1162,7 +1158,7 @@ $("usagebtn").addEventListener("click", function(){ closeSidebar(); setMainView(
 $("settingsbtn").addEventListener("click", function(){ openSettings(); });
 $("landing-usage").addEventListener("click", function(){ setMainView("usage"); });
 $("usageback").addEventListener("click", function(){ setMainView("landing"); });
-function openSettings(){ renderBackend("set-backend"); renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; var sv=$("set-visitor"); if(sv) sv.textContent=AC_VISITOR; $("settingsmodal").classList.add("open"); }
+function openSettings(){ renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; var sv=$("set-visitor"); if(sv) sv.textContent=AC_VISITOR; $("settingsmodal").classList.add("open"); }
 function closeSettings(){ $("settingsmodal").classList.remove("open"); }
 $("set-restartweb").addEventListener("click", restartWebOnly);
 $("set-softrestart").addEventListener("click", restartManagerOnly);
@@ -1172,7 +1168,7 @@ $("settingsmodal").addEventListener("click", function(e){ if(e.target===$("setti
 
 /* ---- init ---- */
 (function(){ if("serviceWorker" in navigator){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }).catch(function(){}); } })();
-renderBackend("lm-backend"); renderBackend("set-backend"); renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw");
+renderBackend("lm-backend"); renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw");
 setMainView("landing");
 loadSidebarData(); pollSessionSignals(); refreshCC();
 setInterval(pollSessionSignals, 4000);

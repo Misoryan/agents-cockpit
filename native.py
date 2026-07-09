@@ -91,6 +91,10 @@ _TOOLS = [
      "input_schema": {"type": "object",
                       "properties": {"action": {"type": "string"}, "key": {"type": "string"}, "content": {"type": "string"}},
                       "required": ["action"]}},
+    {"name": "task", "description": "派一个子 agent 独立完成子任务(自有上下文 + 全部工具,自动执行不审批)。prompt 是子任务描述。返回子 agent 的最终文本。最长 180s。适合并行/独立探索。",
+     "input_schema": {"type": "object",
+                      "properties": {"prompt": {"type": "string"}, "description": {"type": "string"}},
+                      "required": ["prompt"]}},
 ]
 
 _SYSTEM_PROMPT = (
@@ -583,6 +587,29 @@ class NativeSession:
                     except OSError:
                         return "(空)"
                 return "(未知 action: %s;用 write/read/list)" % action
+            if name == "task":
+                sub_prompt = (inp.get("prompt") or inp.get("description") or "").strip()
+                if not sub_prompt:
+                    return "(缺少 prompt)"
+                sub = NativeSession("sub_%s_%d" % (self.sid, int(time.time() * 1000)), self.cwd, approve_tools=())
+                sub.send(sub_prompt)
+                deadline = time.time() + 180
+                while time.time() < deadline:
+                    time.sleep(1)
+                    if not sub._busy or self._closed:
+                        break
+                last = ""
+                for m in reversed(sub.messages):
+                    if m.get("role") == "assistant":
+                        for b in m.get("content", []):
+                            if b.get("type") == "text" and b.get("text"):
+                                last = b["text"]
+                        break
+                try:
+                    sub.close()
+                except Exception:
+                    pass
+                return last[:6000] or "(子任务无文本输出)"
             return "(未知工具: %s)" % name
         except subprocess.TimeoutExpired:
             return "(bash 超时 %ds,已终止)" % _BASH_TIMEOUT

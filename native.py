@@ -355,6 +355,7 @@ class NativeSession:
                 stop_loop = False
                 while steps < _MAX_STEPS and not self._closed:
                     steps += 1
+                    self._maybe_compact()
                     blocks, stop = self._stream_turn()
                     if blocks is None:
                         self._broadcast({"type": "result", "error": "请求失败(已重试),请稍后重试"})

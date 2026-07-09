@@ -810,7 +810,9 @@ function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var st=nativeStages[sid]; if(!st) return;
   if(t==="replay_batch"){
+    console.log("[N] replay_batch events=", (obj.events||[]).length, "rootKids=", st.root.children.length, "display=", st.root.style.display);
     (obj.events||[]).forEach(function(e){ e.replay=true; nHandle(sid, e); });
+    console.log("[N] replay_batch DONE rootKids=", st.root.children.length);
     return;
   }
   if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }

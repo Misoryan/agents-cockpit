@@ -284,6 +284,12 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.ask .ainp{width:100%;background:#0e0f13;border:1px solid #2e2f37;border-radius:6px;color:#e6e6e6;padding:8px;font:13px system-ui,sans-serif;resize:vertical}
         .nmsg.ask .abtns{margin-top:6px}
         .nmsg.ask .asend{padding:6px 16px}
+        .nmsg.turn{align-self:flex-start;max-width:92%;background:#1b1d24;border:1px solid #2a2c35;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+        .nmsg.turn.done{border-color:#2f4a36}
+        .nmsg.turn>.nmsg{align-self:stretch;max-width:none;border:0;background:none;padding:0;border-radius:0}
+        .nmsg.turn>.nmsg.tool,.nmsg.turn>.nmsg.think,.nmsg.turn>.nmsg.result{background:#16181f;border:1px solid #262830;padding:8px 10px;border-radius:8px}
+        .nmsg.turn>details{background:#16181f;border:1px solid #262830;padding:8px 10px;border-radius:8px;font-size:12px}
+        .nmsg.turn>details pre{margin:6px 0 0;max-height:240px}
         .nmsg details summary{cursor:pointer;color:#7ab7ff;font-weight:600}
         .nmsg pre{margin:6px 0 0;background:#0b0c10;padding:8px;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.4 ui-monospace,Consolas,monospace;color:#cdd2dc;white-space:pre-wrap}
         .nmsg.approval{align-self:flex-start;max-width:92%;background:#2a2410;border:1px solid #6a5320}
@@ -742,12 +748,22 @@ function renderMd(s){
   return nEsc(s).replace(/\n/g,"<br>");
 }
 function nScrollBottom(){ var m=$("nativemsgs"); if(m) requestAnimationFrame(function(){ m.scrollTop=m.scrollHeight; }); }
+function nTurnCard(st){
+  if(st.turnCard) return st.turnCard;
+  var d=document.createElement("div"); d.className="nmsg turn";
+  st.root.appendChild(d); st.turnCard=d; nScrollBottom();
+  return d;
+}
+function nEndTurn(st){
+  if(st.turnCard) st.turnCard.classList.add("done");
+  st.turnCard=null; st.curTxt=null; st.curThink=null;
+}
 function nativeStage(sid){
   if(nativeStages[sid]) return nativeStages[sid];
   var d=document.createElement("div");
   d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
-  nativeStages[sid]={root:d, curTxt:null, curThink:null};
+  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -761,14 +777,14 @@ function hideNative(){ currentSid=null; setMainView("landing"); }
 function nNewTextBubble(st){
   var d=document.createElement("div"); d.className="nmsg assistant";
   var t=document.createElement("div"); t.className="ntxt";
-  d.appendChild(t); st.root.appendChild(d); st.curTxt=t; nScrollBottom();
+  d.appendChild(t); nTurnCard(st).appendChild(d); st.curTxt=t; nScrollBottom();
 }
 function nStartThinking(st){
   if(st.thinking) return;
   st.thinking=true; st.thinkStart=Date.now();
   var d=document.createElement("div"); d.className="nmsg assistant thinking-ind";
   d.innerHTML='<span class="ti-dot"></span><span class="ti-txt">思考中… 0s</span>';
-  st.root.appendChild(d); st.thinkBubble=d; nScrollBottom();
+  nTurnCard(st).appendChild(d); st.thinkBubble=d; nScrollBottom();
   st.thinkTimer=setInterval(function(){
     var s=Math.floor((Date.now()-st.thinkStart)/1000);
     var t=d.querySelector('.ti-txt'); if(t) t.textContent='思考中… '+s+'s';
@@ -783,17 +799,14 @@ function nStopThinking(st){
 function nAddRow(st, cls, html){
   st.curTxt=null;
   var d=document.createElement("div"); d.className="nmsg "+cls;
-  d.innerHTML=html; st.root.appendChild(d); nScrollBottom();
+  d.innerHTML=html; (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var st=nativeStages[sid]; if(!st) return;
   if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
   var t=obj.type;
-  if(t==="system"){
-    if(obj.subtype==="init") nAddRow(st, "sys", "🔵 会话开始 · model: "+nEsc(obj.model||""));
-    return;
-  }
+  if(t==="system"){ return; }
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};
     if(dl.type==="text_delta" && dl.text){
@@ -815,12 +828,15 @@ function nHandle(sid, obj){
         st.curTxt.innerHTML=renderMd(b.text);
       } else if(b.type==="tool_use"){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
-        var _body = (b.name==="bash") ? '<div class="tcmd">$ '+nEsc((b.input&&b.input.command)||"")+'</div>'
+        var _cmd = b.input && (b.input.command || b.input.cmd);
+        var _body = (b.name==="bash"||b.name==="PowerShell") ? '<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>'
                                       : '<pre>'+nEsc(JSON.stringify(b.input,null,2))+'</pre>';
         _tu.innerHTML='<details open><summary>🔧 '+nEsc(b.name)+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
-        st.root.appendChild(_tu); st.curTxt=null; nScrollBottom();
+        nTurnCard(st).appendChild(_tu); st.curTxt=null; nScrollBottom();
       } else if(b.type==="thinking"){
-        nAddRow(st, "think", "<details><summary>💭 思考</summary><pre>"+nEsc(b.thinking||"")+"</pre></details>");
+        var _th=document.createElement("details"); _th.open=true;
+        _th.innerHTML='<summary>💭 思考</summary><pre>'+nEsc(b.thinking||"")+'</pre>';
+        nTurnCard(st).appendChild(_th); nScrollBottom();
       }
     });
     st.curThink=null; st.curTxt=null;
@@ -833,7 +849,7 @@ function nHandle(sid, obj){
     bs.forEach(function(b){
       if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
-        var tu=st.root.querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
+        var tu=(st.turnCard||st.root).querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
         if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML='<pre>'+nEsc(txt)+'</pre>'; } }
         else { nAddRow(st, "result", "<details open><summary>↩ 工具结果</summary><pre>"+nEsc(txt)+"</pre></details>"); }
       }
@@ -847,7 +863,7 @@ function nHandle(sid, obj){
       '<div class="abtns"><button class="allow">允许</button><button class="deny">拒绝</button></div>';
     card.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); card.remove(); });
     card.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); card.remove(); });
-    st.root.appendChild(card); st.curTxt=null; nScrollBottom(); return;
+    nTurnCard(st).appendChild(card); st.curTxt=null; nScrollBottom(); return;
   }
   if(t==="pending_ask"){
     var acard=document.createElement("div"); acard.className="nmsg ask"; acard.dataset.tuid=obj.tool_use_id;
@@ -858,12 +874,12 @@ function nHandle(sid, obj){
       acard.remove();
     });
     ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ acard.querySelector('.asend').click(); } });
-    st.root.appendChild(acard); st.curTxt=null; nScrollBottom();
+    nTurnCard(st).appendChild(acard); st.curTxt=null; nScrollBottom();
     setTimeout(function(){ ta.focus(); }, 50);
     return;
   }
   if(t==="approval_decision"){
-    var c2=st.root.querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
+    var c2=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
     if(c2) c2.remove();
     return;
   }
@@ -872,7 +888,8 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="result"){
-    nAddRow(st, "sys", obj.error?("⚠️ "+nEsc(obj.error)):"✅ 完成");
+    if(obj.error) nAddRow(st, "sys", "⚠️ "+nEsc(obj.error));
+    nEndTurn(st);
     var sb=$("nativesubmit"); if(sb){ sb.disabled=false; sb.textContent="发送"; }
     return;
   }
@@ -881,7 +898,7 @@ function nApprove(sid, tuid, allow){ postJSON("/api/napprove", {sid:sid, tool_us
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.replayDone=false; }
+  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.root.innerHTML=""; st.curTxt=null; st.curThink=null; st.turnCard=null; st.replayDone=false; }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;

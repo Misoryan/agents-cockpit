@@ -4,7 +4,6 @@ A lightweight browser console for local Codex and Claude Code sessions.
 
 This build uses structured web rendering:
 
-- No ttyd binary is required.
 - Creating a conversation opens the built-in web-rendered Codex or Claude view.
 - The browser talks to `web.py`; `web.py` supervises `manager.py`.
 - Claude sessions run the Claude CLI in stream-json mode through `native.py`.

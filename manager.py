@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Manager process for web-rendered Claude sessions.
+"""Manager process for web-rendered agent sessions.
 
 The manager owns in-memory NativeSession objects and exposes the HTTP/WebSocket
-API consumed by the browser. Terminal sessions are intentionally not supported
-in this build: every launch/resume opens the structured Claude web UI.
+API consumed by the browser. Every launch/resume opens the structured web UI.
 """
 import os
 import sys
@@ -133,8 +132,8 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
 def reattach_sessions():
     """Recover persisted native sessions after a manager restart.
 
-    Older registry entries from the removed terminal mode are dropped instead
-    of reattached.
+    Older registry entries without recoverable structured session state are
+    dropped instead of reattached.
     """
     global _reattached
     if _reattached:
@@ -298,7 +297,7 @@ class ManagerHandler(BaseHandler):
         except Exception as e:
             self._json({"error": str(e)}, 500)
             return
-        self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "term_path": "/t/%s/" % sid})
+        self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "session_path": "/t/%s/" % sid})
 
     def do_POST(self):
         if not self._auth():
@@ -322,7 +321,7 @@ class ManagerHandler(BaseHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
                 return
-            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "term_path": "/t/%s/" % sid})
+            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "session_path": "/t/%s/" % sid})
         elif pr.path in ("/api/resume", "/api/nresume"):
             self._resume_native(data)
         elif pr.path == "/api/stop":

@@ -2,7 +2,7 @@
 """
 Agents Cockpit — web process (the "后端接入层" facing the browser).
 
-Serves index.html, enforces basic-auth, and reverse-proxies every /api/* and /t/*
+Serves index.html, enforces basic-auth, and proxies /api/* plus session paths
 to the manager over plain TCP (HTTP + raw websocket bytes). The web process is
 DISPOSABLE: it can be restarted (restart_web) without touching the manager or
 any CLI session. It also supervises the manager: a heartbeat thread respawns the

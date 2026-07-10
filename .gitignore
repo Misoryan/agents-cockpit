@@ -8,8 +8,6 @@ config.ini
 
 
 # local binaries
-ttyd
-ttyd.exe
 codex
 codex.exe
 
@@ -23,7 +21,6 @@ __pycache__/
 .sid
 *.log
 .tmp*
-.term.html
 _shots/
 _repro/
 _probe_*.py

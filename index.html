@@ -88,21 +88,6 @@ button:disabled{opacity:.45;cursor:default}
 .welcome .author{font-size:12px;color:#6b727f;margin-top:18px;padding-top:12px;border-top:1px solid #23242c}
 .welcome .author b{color:#9aa0aa;font-weight:600}
 
-/* terminal stage */
-#termstage{background:#000}
-.termhead{display:flex;align-items:center;gap:6px;padding:7px 8px;background:#1f2026;border-bottom:1px solid #2e2f37;flex:0 0 auto;min-height:44px}
-.termhead .termttl{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.termhead .modebtn{padding:7px 10px;background:#252833;color:#a9b0bd;font-size:12px}
-.termhead .modebtn.active{background:#2a5bd7;color:#fff}
-#stage{position:relative;flex:1 1 auto;background:#000;min-height:0;overflow:hidden}
-#stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:none;touch-action:auto}
-#stage iframe.show{display:block}
-#keybar{flex:0 0 auto;display:flex;gap:5px;padding:7px 6px calc(7px + env(safe-area-inset-bottom));background:#1a1b21;border-top:1px solid #2e2f37;overflow-x:auto;-webkit-overflow-scrolling:touch}
-#keybar button{flex:0 0 auto;min-width:40px;padding:11px 9px;font-size:14px;background:#2e2f37;color:#e6e6e6}
-#keybar .sep{flex:0 0 1px;align-self:center;height:26px;background:#33343d;margin:0 2px}
-#keybar .scrollbtn{background:#26303a;color:#9fd0ff}
-#keybar .kbbtn{background:#2a5bd7;color:#fff}
-
 /* usage view */
 #usageview{overflow:hidden}
 .panelhead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #23242c;background:#17181d;flex:0 0 auto}
@@ -233,16 +218,6 @@ body.sb-collapsed #sidebar{display:none}
         <div class="hint">运行中的会话会在对应目录上显示绿色徽标。</div>
         <div class="author">Made by <b>Misoryan</b></div>
       </div>
-    </section>
-
-    <section class="main-view" id="termstage">
-      <div class="termhead">
-        <button class="ghost" id="termback">‹ 返回</button>
-        <span class="termttl" id="termttl">会话</span>
-        <button class="danger" id="termstop">停止</button>
-      </div>
-      <div id="stage"></div>
-      <div id="keybar"></div>
     </section>
 
     <section class="main-view" id="usageview">
@@ -404,11 +379,6 @@ body.sb-collapsed #sidebar{display:none}
     <div class="mtitle">启动新会话</div>
     <div class="mdir" id="lm-dir">📁 未选择目录</div>
     <div class="mpick"><button id="lm-pickdir">📁 选择目录…</button></div>
-    <div class="mfield">
-      <label>会话类型</label>
-      <div class="mopts" id="lm-mode"></div>
-      <div class="mhint" id="lm-mode-hint"></div>
-    </div>
     <div class="mfield" id="lm-backend-field">
       <label>模型</label>
       <div class="mopts" id="lm-backend"></div>
@@ -659,7 +629,6 @@ function attachSessionsToModel(){
 function rememberSessions(ss, skipPendingOpen){
   runSessions=ss||[];
   var rc=$("runcnt"); if(rc) rc.textContent=ss.length?"· "+ss.length+" 运行":"";
-  Object.keys(iframes).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropIframe(sid); });
   Object.keys(nativeStages).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropNativeStage(sid); });
   ss.forEach(function(s){
     var prev=sessionWatch[s.sid];
@@ -755,10 +724,7 @@ function renderConv(it){
     var meta=backendShort(s.backend)+(s.mode==="resume"?" · 恢复":"")+" · "+elapsedStr(s.last_input_ts);
     el.innerHTML='<span class="dot '+dot+'"></span><span class="ct">'+esc(s.title||basename(s.dir))+'</span><span class="cm">'+esc(meta)+'</span>';
     var b=document.createElement("button"); b.className="cbtn"; b.textContent="打开";
-    var openFn=function(){
-      if(isNativeBackend(s.backend) || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
-      else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
-    };
+    var openFn=function(){ showNativeSession(s.sid, s.title||basename(s.dir)); };
     b.addEventListener("click", function(ev){ ev.stopPropagation(); openFn(); });
     el.addEventListener("click", openFn); el.appendChild(b);
   } else {
@@ -779,11 +745,7 @@ function resumeHist(h){
   postJSON("/api/resume", {session_id:h.session_id, dir:h.cwd, title:h.title, backend:be}).then(function(r){
     if(r.error){ alert("恢复失败："+r.error); return; }
     var title=(h.title||"恢复会话")+" · "+backendLabel(be);
-    // 原生(native)会话必须走 WS 结构化渲染(showNativeSession),不能进 ttyd iframe ——
-    // 否则 iframe GET /t/<sid>/ 会拿到 manager _serve_native_page 的 "Open it from console"
-    // 占位页,点链接还会在 iframe 内套娃加载整个主站。与 launchDir/openSessionBySid 一致。
-    if(isNativeBackend(be) || isNativeBackend(r.backend)){ showNativeSession(r.sid, title); }
-    else { showTerminal(r.sid, r.term_path, title); }
+    showNativeSession(r.sid, title);
     loadSidebarData();
   });
 }
@@ -800,17 +762,17 @@ function delHist(h, btn){
 
 /* ---- main view switching ---- */
 function setMainView(view){
-  var id=view==="term"?"termstage":view==="usage"?"usageview":view==="native"?"nativestage":"landing";
-  ["landing","termstage","usageview","nativestage"].forEach(function(x){ $(x).classList.toggle("active", x===id); });
+  var id=view==="usage"?"usageview":view==="native"?"nativestage":"landing";
+  ["landing","usageview","nativestage"].forEach(function(x){ $(x).classList.toggle("active", x===id); });
   if(id==="usageview") refreshCC();
   if(id==="landing") renderSummary();
 }
 
-/* ---- terminal ---- */
-var iframes={}, currentSid=null;
+/* ---- structured agent session ---- */
+var currentSid=null;
 var nativeStages={}, nativeWs={};
-var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true, lmArgs="", lmMode="native";
-/* 设置读取:cookie 优先(localStorage 回退并自动迁入 cookie)—— 穿透下每个访问者各自独立 */
+var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true, lmArgs="";
+/* Preferences: cookie first, with localStorage fallback migrated into cookies. */
 (function(){
   var b = acPrefGetRaw("acBackend", "acBackend");
   lmBackend = b.val || "codex_native";
@@ -819,25 +781,7 @@ var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true, lmArgs="", lmMo
   lmYolo = (y.val === "") ? true : (y.val !== "0");
   if(y.src === "none") acSetCookie("acYolo", lmYolo ? "1" : "0", 3650);
   lmArgs = acPrefGetRaw("acArgs", "acArgs").val || "";
-  var _m = acPrefGetRaw("acMode", "acMode");
-  lmMode = (_m.val === "terminal") ? "terminal" : "native";
-  if(_m.src === "none") acSetCookie("acMode", lmMode, 3650);
 })();
-
-function termIframe(sid, path){
-  if(iframes[sid]) return iframes[sid];
-  var f=document.createElement("iframe"); f.src=path; f.setAttribute("allow","clipboard-read; clipboard-write"); f.dataset.sid=sid;
-  installNativeScroll(f); $("stage").appendChild(f); iframes[sid]=f; return f;
-}
-function showTerminal(sid, path, title){
-  currentSid=sid; $("termttl").textContent=title||sid;
-  Object.keys(iframes).forEach(function(k){ iframes[k].classList.toggle("show", k===sid); });
-  termIframe(sid, path).classList.add("show");
-  setMainView("term"); closeSidebar();
-  setTimeout(function(){ try{ iframes[sid].contentWindow.focus(); }catch(e){} }, 50);
-}
-function hideTerminal(){ currentSid=null; setMainView("landing"); if(isNarrow()) openSidebar(); }
-function dropIframe(sid){ if(iframes[sid]){ iframes[sid].remove(); delete iframes[sid]; } if(currentSid===sid) hideTerminal(); }
 
 /* ---- native agent session (WS, 结构化渲染, 类 claude.ai) ---- */
 function nEsc(s){ s=String(s==null?"":s); return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -1387,18 +1331,6 @@ function nativeSend(){
     if(r && r.error){ nAddRow(st, "sys", "⚠️ 发送失败: "+nEsc(r.error)+"（若刚更新代码,请「设置 → 重启后端层」加载 native.py 后刷新页面）"); if(sb){ sb.disabled=false; sb.textContent="发送"; } }
   }).catch(function(e){ nAddRow(st, "sys", "⚠️ 网络错误: "+nEsc(e&&e.message||e)); if(sb){ sb.disabled=false; sb.textContent="发送"; } });
 }
-function renderMode(boxId){
-  var box=$(boxId); if(!box) return; box.innerHTML="";
-  [["terminal","🖥️ 终端"],["native","🟣 原生 Agent"]].forEach(function(m){
-    var btn=document.createElement("button"); btn.type="button"; btn.textContent=m[1];
-    if(m[0]===lmMode) btn.classList.add("active");
-    btn.addEventListener("click", function(){ lmMode=m[0]; acPrefSet("acMode", lmMode, "acMode"); renderMode(boxId); });
-    box.appendChild(btn);
-  });
-  var f=$("lm-backend-field"); if(f) f.style.display="";
-  var h=$("lm-mode-hint");
-  if(h) h.textContent=(lmMode==="native")?"结构化 Web 渲染 Codex/Claude CLI，会话内显示工具、审批和结果":"兼容旧终端入口；当前后端会优先创建结构化会话";
-}
 $("nativeback").addEventListener("click", hideNative);
 $("nativestop").addEventListener("click", function(){ if(currentSid){ postJSON("/api/stop",{sid:currentSid}); dropNativeStage(currentSid); pollSessionSignals(); } });
 /* 「打断」:只 kill 当前正在跑的 claude 子进程,保留 sid / 历史 / WS。区别于「停止」(杀整个会话)。
@@ -1434,131 +1366,46 @@ function openSessionBySid(sid, skipFetch){
   if(!sid) return false;
   var i, s; for(i=0;i<runSessions.length;i+=1){ if(runSessions[i].sid===sid){ s=runSessions[i]; break; } }
   if(s){
-    if(isNativeBackend(s.backend) || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
-    else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
+    showNativeSession(s.sid, s.title||basename(s.dir));
     return true;
   }
   if(!skipFetch){ api("/api/sessions").then(function(r){ rememberSessions(r.sessions||[], true); openSessionBySid(sid, true); }); }
   return false;
 }
-function curTerm(){ try{ var f=iframes[currentSid]; return f && f.contentWindow && f.contentWindow.term; }catch(e){ return null; } }
-function sendKey(seq){
-  var t=curTerm(); if(!t) return;
-  try{ var core=t._core; if(core && core.coreService && core.coreService.triggerDataEvent){ core.coreService.triggerDataEvent(seq, true); return; } }catch(e){}
-  try{ if(t.paste) t.paste(seq); }catch(_){}
-}
-function scrollTerm(action){ scrollViewport(curTerm(), action); focusTerm(); }
-function focusTerm(){ try{ var t=curTerm(); t && t.focus && t.focus(); }catch(e){} }
-function scrollViewport(t, action){
-  if(!t) return false;
-  try{
-    if(action==="bottom"){ t.scrollToBottom && t.scrollToBottom(); return true; }
-    if(action==="top"){ t.scrollToTop && t.scrollToTop(); return true; }
-    if(action==="pageUp"){ scrollPages(t,-1); return true; }
-    if(action==="pageDown"){ scrollPages(t,1); return true; }
-    if(action==="up"){ t.scrollLines && t.scrollLines(-5); return true; }
-    if(action==="down"){ t.scrollLines && t.scrollLines(5); return true; }
-  }catch(e){}
-  return false;
-}
-function scrollPages(t, pages){ if(t.scrollPages) t.scrollPages(pages); else if(t.scrollLines) t.scrollLines(pages*Math.max(8,(t.rows||30)-2)); }
-function installNativeScroll(frame){
-  var tries=0, timer=null;
-  function setup(){
-    try{
-      var w=frame.contentWindow, d=w && w.document, t=w && w.term; if(!w||!d||!t) return false;
-      if(w.__acNativeScroll) return true; w.__acNativeScroll=true;
-      var wheelAcc=0, touchAcc=0, lastY=null;
-      d.addEventListener("wheel", function(ev){
-        var term=w.term; if(!term||!term.scrollLines) return; var rows=term.rows||30, lines;
-        if(ev.deltaMode===1) lines=ev.deltaY; else if(ev.deltaMode===2) lines=ev.deltaY*rows;
-        else { wheelAcc+=ev.deltaY/38; lines=wheelAcc<0?Math.ceil(wheelAcc):Math.floor(wheelAcc); wheelAcc-=lines; }
-        if(lines){ ev.preventDefault(); ev.stopPropagation(); term.scrollLines(lines); }
-      }, {passive:false, capture:true});
-      d.addEventListener("touchstart", function(ev){ lastY=ev.touches && ev.touches.length===1?ev.touches[0].clientY:null; }, {passive:true, capture:true});
-      d.addEventListener("touchmove", function(ev){
-        var term=w.term; if(!term||!term.scrollLines||lastY==null||!ev.touches||ev.touches.length!==1) return;
-        var y=ev.touches[0].clientY; touchAcc+=(lastY-y)/26; lastY=y;
-        var lines=touchAcc<0?Math.ceil(touchAcc):Math.floor(touchAcc); touchAcc-=lines;
-        if(lines){ ev.preventDefault(); ev.stopPropagation(); term.scrollLines(lines); }
-      }, {passive:false, capture:true});
-      d.addEventListener("touchend", function(){ lastY=null; touchAcc=0; }, {passive:true, capture:true});
-      d.addEventListener("touchcancel", function(){ lastY=null; touchAcc=0; }, {passive:true, capture:true});
-      return true;
-    }catch(e){ return false; }
-  }
-  frame.addEventListener("load", function(){ setTimeout(setup, 150); });
-  timer=setInterval(function(){ if(setup()||++tries>30) clearInterval(timer); }, 250);
-}
-
-/* keybar + scrolls (control chars built via char codes to avoid escape pitfalls) */
-var _ESC = String.fromCharCode(27);
-var KEYS = [
-  ["Tab", String.fromCharCode(9)],
-  ["⇧Tab", _ESC + "[Z"],
-  ["Esc", _ESC],
-  ["⌃C", String.fromCharCode(3)],
-  ["⌃D", String.fromCharCode(4)],
-  ["⌃L", String.fromCharCode(12)],
-  ["⌃Z", String.fromCharCode(26)],
-  ["↑", _ESC + "[A"],
-  ["↓", _ESC + "[B"],
-  ["←", _ESC + "[D"],
-  ["→", _ESC + "[C"],
-  ["/", "/"],
-  [":", ":"],
-  ["⌫", String.fromCharCode(127)]
-];
-var SCROLLS=[["↥","up"],["⇞","pageUp"],["⇟","pageDown"],["↧","down"],["⤓","bottom"]];
-(function(){
-  var kb=$("keybar");
-  KEYS.forEach(function(k){ var b=document.createElement("button"); b.textContent=k[0]; b.addEventListener("click", function(){ sendKey(k[1]); focusTerm(); }); kb.appendChild(b); });
-  var sep=document.createElement("div"); sep.className="sep"; kb.appendChild(sep);
-  SCROLLS.forEach(function(k){ var b=document.createElement("button"); b.className="scrollbtn"; b.textContent=k[0]; b.addEventListener("click", function(){ scrollTerm(k[1]); focusTerm(); }); kb.appendChild(b); });
-  var kb2=document.createElement("button"); kb2.className="kbbtn"; kb2.textContent="⌨"; kb2.addEventListener("click", focusTerm); kb.appendChild(kb2);
-})();
-
-$("termback").addEventListener("click", hideTerminal);
-$("termstop").addEventListener("click", function(){
-  if(!currentSid) return; var sid=currentSid; var cur=null;
-  for(var i=0;i<runSessions.length;i+=1){ if(runSessions[i].sid===sid) cur=runSessions[i]; }
-  var name=cur?backendLabel(cur.backend||"codex"):"会话";
-  if(!confirm("停止这个 "+name+" 会话？")) return;
-  postJSON("/api/stop", {sid:sid}).then(function(){ dropIframe(sid); pollSessionSignals(); });
-});
 
 /* ---- launch ---- */
-function launchDir(dir, title, backend, yolo, args, mode){
-  mode=mode||lmMode||"native";
+function launchDir(dir, title, backend, yolo, args){
   backend=backend||lmBackend||"codex_native";
-  postJSON("/api/launch", {dir:dir, backend:backend, yolo:!!yolo, args:args||""}).then(function(r){
-    if(r.error){ alert("启动失败："+r.error); return; }
-    if(isNativeBackend(r.backend)){
-      showNativeSession(r.sid, (title||basename(r.dir))+" · "+backendLabel(r.backend));
-    } else {
-      if(mode==="native"){ alert("后端把「原生模式」当成了 "+backendLabel(r.backend||backend)+" 终端会话。\n\n说明 manager 还在跑旧代码。请先「设置 → 重启后端层」加载 native.py,刷新页面后再新建原生会话。"); }
-      showTerminal(r.sid, r.term_path, (title||basename(r.dir))+" · "+backendLabel(r.backend||backend));
-    }
+  postJSON("/api/launch", {dir:dir, title:title||"", backend:backend, yolo:!!yolo, args:args||""}).then(function(r){
+    if(r.error){ alert("\u542f\u52a8\u5931\u8d25\uff1a"+r.error); return; }
+    var be=r.backend||backend;
+    if(!isNativeBackend(be)){ alert("\u540e\u7aef\u8fd4\u56de\u4e86\u4e0d\u652f\u6301\u7684\u4f1a\u8bdd\u7c7b\u578b\u3002\u8bf7\u5148\u5728\u8bbe\u7f6e\u91cc\u91cd\u542f\u540e\u7aef\u5c42\uff0c\u518d\u5237\u65b0\u9875\u9762\u91cd\u8bd5\u3002"); return; }
+    showNativeSession(r.sid, (title||basename(r.dir)) + " \u00b7 " + backendLabel(be));
     loadSidebarData(); pollSessionSignals();
   });
 }
 function renderBackend(boxId){
   var box=$(boxId); if(!box) return; box.innerHTML="";
   availBackends.forEach(function(b){
-    var btn=document.createElement("button"); btn.textContent=isClaudeBackend(b)?"🟣 Claude":"🟠 Codex";
+    var btn=document.createElement("button"); btn.textContent=isClaudeBackend(b)?"Claude":"Codex";
     if(b===lmBackend) btn.classList.add("active");
     btn.addEventListener("click", function(){ lmBackend=b; acPrefSet("acBackend", b, "acBackend"); renderBackend("lm-backend"); });
     box.appendChild(btn);
   });
 }
-function renderYolo(boxId, swId){ var b=$(boxId); if(!b) return; b.classList.toggle("active", lmYolo); if($(swId)) $(swId).textContent=lmYolo?"开":"关"; }
+function renderYolo(boxId, swId){ var b=$(boxId); if(!b) return; b.classList.toggle("active", lmYolo); if($(swId)) $(swId).textContent=lmYolo?"\u5f00":"\u5173"; }
 function setYolo(v, persist){ lmYolo=!!v; if(persist!==false){ acPrefSet("acYolo", lmYolo?"1":"0", "acYolo"); } renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw"); }
 function setArgs(v, persist){ lmArgs=(v||"").trim(); $("lm-args").value=lmArgs; var sa=$("set-args"); if(sa) sa.value=lmArgs; if(persist!==false){ acPrefSet("acArgs", lmArgs, "acArgs"); } }
 function updateLmStart(){ $("lm-start").disabled=!lmDir; }
-function openLaunchNew(){
-  lmDir=""; lmTitle=""; $("lm-dir").textContent="📁 未选择目录 — 点「选择目录」"; updateLmStart();
-  renderMode("lm-mode"); renderBackend("lm-backend"); setYolo(lmYolo, false); setArgs(lmArgs, false);
+function openLaunchModal(){
+  updateLmStart(); renderBackend("lm-backend"); setYolo(lmYolo, false); setArgs(lmArgs, false);
   $("launchmodal").classList.add("open");
+}
+function openLaunchNew(){
+  lmDir=""; lmTitle=""; $("lm-dir").textContent="\ud83d\udcc1 \u672a\u9009\u62e9\u76ee\u5f55 \u2014 \u70b9\u300c\u9009\u62e9\u76ee\u5f55\u300d"; openLaunchModal();
+}
+function openLaunchForDir(dir, title){
+  lmDir=dir||""; lmTitle=title||basename(dir); $("lm-dir").textContent="\ud83d\udcc1 "+lmDir; openLaunchModal();
 }
 function closeLaunch(){ $("launchmodal").classList.remove("open"); }
 $("newbtn").addEventListener("click", openLaunchNew);
@@ -1571,8 +1418,8 @@ $("set-args").addEventListener("input", function(){ setArgs($("set-args").value,
 $("lm-cancel").addEventListener("click", closeLaunch);
 $("launchmodal").addEventListener("click", function(e){ if(e.target===$("launchmodal")) closeLaunch(); });
 $("lm-start").addEventListener("click", function(){
-  if(!lmDir) return; var dir=lmDir, title=lmTitle||basename(lmDir), backend=lmBackend, yolo=lmYolo, args=lmArgs, mode=lmMode;
-  closeLaunch(); launchDir(dir, title, backend, yolo, args, mode);
+  if(!lmDir) return; var dir=lmDir, title=lmTitle||basename(lmDir), backend=lmBackend, yolo=lmYolo, args=lmArgs;
+  closeLaunch(); launchDir(dir, title, backend, yolo, args);
 });
 
 /* ---- browse modal ---- */

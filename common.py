@@ -1332,7 +1332,7 @@ def session_obj(sid, s, host):
     session_id = getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id")
     return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
             "session_id": session_id, "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
-            "started": s["started"], "term_path": "/t/%s/" % sid,
+            "started": s["started"], "session_path": "/t/%s/" % sid,
             "backend": backend, "provider": provider, "native": True,
             "state": ns.state() if ns else "idle",
             "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,

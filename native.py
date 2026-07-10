@@ -73,10 +73,10 @@ def _short_err(result_ev):
     return str(result_ev.get("result") or result_ev.get("error") or "")[:200]
 
 
-def _push_notify_worker(title, body, event):
+def _push_notify_worker(title, body, event, webhook_body=None):
     """外部推送(Telegram/Bark/webhook)的后台线程目标。阻塞 HTTP,必须脱线调用。"""
     try:
-        common.push_notify(title, body, event)
+        common.push_notify(title, body, event, webhook_body=webhook_body)
     except Exception:
         pass
 
@@ -186,7 +186,7 @@ class NativeSession:
             self.task_mode = bool(task)
         self._broadcast({"type": "mode_state", "plan": self.plan_mode, "task": self.task_mode})
 
-    def _push(self, event, title, body):
+    def _push(self, event, title, body, webhook_body=None):
         """状态层(侧边栏黄点 / 站内 notice)由前端轮询 state() 驱动;这里补「真正发到手机」
         的外部推送。后台线程发,按事件类型做 NOTIFY_MIN_INTERVAL 去抖。未配置/未启用则静默。"""
         try:
@@ -198,7 +198,8 @@ class NativeSession:
             self._last_notify[event] = now
         except Exception:
             pass
-        threading.Thread(target=_push_notify_worker, args=(title or "", body or "", event),
+        threading.Thread(target=_push_notify_worker,
+                         args=(title or "", body or "", event, webhook_body),
                          daemon=True).start()
 
     # ---------- 门控:权限审批 / ask_user ----------
@@ -515,8 +516,11 @@ class NativeSession:
                 self._interrupted = False
                 self._broadcast({"type": "interrupted"})
             elif success and not self._closed:
+                with self._lock:
+                    webhook_body = common.notify_result_text(self.events)
                 self._push("done", "✅ 已完成 · " + os.path.basename(self.cwd),
-                           self.cwd + " · 等待下一条指令")
+                           self.cwd + " · 等待下一条指令",
+                           webhook_body=webhook_body or (self.cwd + " · 已完成但没有文本结果"))
 
     # ---------- persistence ----------
     def _persist(self):

@@ -154,20 +154,25 @@ codex app-server --stdio
 
 ### 4.3 Server request 还有硬缺口
 
-schema 中存在但当前未处理的 server request:
+本机 `codex app-server generate-json-schema`（Codex CLI `0.142.4`）中仍需要关注的 server request / elicitation:
 
 - `item/tool/call`
-- `openai/form`
+- `mcpServer/elicitation/request` 的 `mode=openai/form`
 - `attestation/generate`
 - `account/chatgptAuthTokens/refresh`
 
-当前 `_handle_server_request` 对未知 request 会先在 Web 中显示 `codex_notice`，再返回 unsupported error。若未来 Codex CLI 某些工具或登录/认证/表单能力走这些 request，Web 端仍会中断，但用户能看到 method 和 params 摘要，不再是无反馈失败。
+当前进展（2026-07-10）:
+
+- `item/tool/call`: Web 端会渲染动态工具调用卡，并返回 `success=false` 的结构化 tool result，明确提示需要转 CLI 或后续接 MCP passthrough；不再返回空对象误导 app-server。
+- `mcpServer/elicitation/request` 的 `mode=form/openai/form`: 新增 Web 表单卡。JSON Schema/MCP form 的 `properties` 会自动拆成输入控件；无法识别的 openai/form schema 降级为 JSON 文本框，并返回 `{action, content}`。
+- `attestation/generate` / `account/chatgptAuthTokens/refresh`: Web 中显示明确认证能力缺失提示，并向 app-server 返回 JSON-RPC unsupported error；真实 attestation/token refresh 流程仍未实现。
+- 其他未知 request: Web 中显示 `Unsupported app-server request` 调试卡，并返回 unsupported error，避免静默失败或 `{}` 假成功。
 
 建议:
 
-- 对 `item/tool/call` 做 MCP/dynamic tool passthrough 或明确拒绝并显示可读错误。
-- 对 `openai/form` 做 Web 表单卡。
-- 对认证/attestation 类 request 至少返回明确 UI 提示；基础可见性已完成，真实授权流程待做。
+- 下一步若要继续推进 4.3，可把 `item/tool/call` 中 `namespace/tool` 明确可映射到 MCP server 的情况接到 `mcpServer/tool/call`，把真正可执行的动态工具从“结构化拒绝”升级为 passthrough。
+- `openai/form` 目前是通用控件/JSON 降级，若后续拿到真实 schema 样例，应补专用字段映射和校验。
+- 认证/attestation 类 request 的真实授权流程仍待设计，当前只保证用户可见、协议明确失败。
 
 ### 4.4 工具渲染还不够 Codex-native
 

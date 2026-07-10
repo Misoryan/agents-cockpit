@@ -26,9 +26,9 @@ _TASK_SYSTEM = (
 )
 
 
-def _push_notify_worker(title, body, event):
+def _push_notify_worker(title, body, event, webhook_body=None):
     try:
-        common.push_notify(title, body, event)
+        common.push_notify(title, body, event, webhook_body=webhook_body)
     except Exception:
         pass
 
@@ -191,6 +191,146 @@ def _extract_text(obj):
     return ""
 
 
+def _extract_proposed_plan(text):
+    text = str(text or "")
+    start_tag = "<proposed_plan>"
+    end_tag = "</proposed_plan>"
+    start = text.find(start_tag)
+    if start < 0:
+        return ""
+    end = text.find(end_tag, start + len(start_tag))
+    if end < 0:
+        return ""
+    return text[start + len(start_tag):end].strip()
+
+
+class AppServerRequestError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = int(code)
+        self.message = str(message)
+
+
+def _option_list(spec):
+    if not isinstance(spec, dict):
+        return []
+    raw = spec.get("options")
+    if raw is None:
+        raw = spec.get("choices")
+    opts = []
+    if isinstance(raw, list):
+        for opt in raw:
+            if isinstance(opt, dict):
+                value = opt.get("value")
+                if value is None:
+                    value = opt.get("id") or opt.get("name") or opt.get("const") or opt.get("label") or opt.get("title")
+                label = opt.get("label") or opt.get("title") or opt.get("name") or value
+                desc = opt.get("description") or opt.get("help") or ""
+                if value is not None:
+                    opts.append({"value": str(value), "label": str(label), "description": str(desc)})
+            elif opt is not None:
+                opts.append({"value": str(opt), "label": str(opt), "description": ""})
+    enum = spec.get("enum")
+    if isinstance(enum, list):
+        enum_names = spec.get("enumNames") or []
+        for idx, value in enumerate(enum):
+            if value is None:
+                continue
+            label = enum_names[idx] if idx < len(enum_names) and enum_names[idx] else value
+            opts.append({"value": str(value), "label": str(label), "description": ""})
+    for key in ("oneOf", "anyOf"):
+        raw_variants = spec.get(key)
+        if isinstance(raw_variants, list):
+            for variant in raw_variants:
+                if not isinstance(variant, dict):
+                    continue
+                value = variant.get("const")
+                if value is None:
+                    venum = variant.get("enum")
+                    if isinstance(venum, list) and len(venum) == 1:
+                        value = venum[0]
+                if value is None:
+                    continue
+                label = variant.get("title") or variant.get("label") or value
+                opts.append({
+                    "value": str(value),
+                    "label": str(label),
+                    "description": str(variant.get("description") or ""),
+                })
+    if not opts and isinstance(spec.get("items"), dict):
+        opts = _option_list(spec.get("items"))
+    deduped = []
+    seen = set()
+    for opt in opts:
+        value = opt.get("value")
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(opt)
+    return deduped
+
+
+def _schema_type(spec):
+    if not isinstance(spec, dict):
+        return "string"
+    typ = spec.get("type") or spec.get("inputType") or spec.get("input_type") or ""
+    if isinstance(typ, list):
+        typ = next((t for t in typ if t != "null"), typ[0] if typ else "")
+    return str(typ or "string").lower()
+
+
+def _form_input_type(spec, options):
+    typ = _schema_type(spec)
+    fmt = str(spec.get("format") or "").lower() if isinstance(spec, dict) else ""
+    widget = str(spec.get("widget") or spec.get("component") or "").lower() if isinstance(spec, dict) else ""
+    if typ in ("boolean", "checkbox") or widget == "checkbox":
+        return "checkbox"
+    if typ in ("array", "multi_select", "multiselect") or widget in ("multi_select", "multiselect"):
+        return "multiselect" if options else "textarea"
+    if options:
+        return "select"
+    if typ in ("number", "integer"):
+        return "number"
+    if typ in ("textarea", "long_text") or fmt in ("textarea", "multiline") or widget == "textarea":
+        return "textarea"
+    return "text"
+
+
+def _field_from_spec(key, spec, required=False):
+    if not isinstance(spec, dict):
+        spec = {}
+    options = _option_list(spec)
+    return {
+        "id": str(key),
+        "label": str(spec.get("label") or spec.get("title") or spec.get("name") or key),
+        "description": str(spec.get("description") or spec.get("help") or ""),
+        "type": _form_input_type(spec, options),
+        "required": bool(required or spec.get("required")),
+        "default": spec.get("default"),
+        "options": options,
+    }
+
+
+def _form_fields_from_schema(schema):
+    if not isinstance(schema, dict):
+        return []
+    fields = []
+    raw_fields = schema.get("fields") or schema.get("inputs") or schema.get("elements")
+    if isinstance(raw_fields, list):
+        for idx, spec in enumerate(raw_fields):
+            if not isinstance(spec, dict):
+                continue
+            key = spec.get("id") or spec.get("name") or spec.get("key") or spec.get("path") or ("field_%d" % (idx + 1))
+            fields.append(_field_from_spec(key, spec, bool(spec.get("required"))))
+        return fields
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        required = set(x for x in (schema.get("required") or []) if isinstance(x, str))
+        for key, spec in props.items():
+            fields.append(_field_from_spec(key, spec, key in required))
+    return fields
+
+
 class CodexAppServerClient:
     def __init__(self):
         self.proc = None
@@ -237,7 +377,11 @@ class CodexAppServerClient:
             "initialize",
             {
                 "clientInfo": {"name": "agents-cockpit", "title": "Agents Cockpit", "version": "0"},
-                "capabilities": {"experimentalApi": True, "requestAttestation": False},
+                "capabilities": {
+                    "experimentalApi": True,
+                    "mcpServerOpenaiFormElicitation": True,
+                    "requestAttestation": False,
+                },
             },
             timeout=15,
             ensure_started=False,
@@ -345,6 +489,8 @@ class CodexAppServerClient:
                     except Exception:
                         pass
                 self.respond_error(req_id, -32601, "unsupported app-server request: %s" % method)
+        except AppServerRequestError as e:
+            self.respond_error(req_id, e.code, e.message)
         except Exception as e:
             self.respond_error(req_id, -32000, str(e))
 
@@ -455,6 +601,7 @@ class CodexSession:
         self._last_usage = None
         self.plan_mode = False
         self.task_mode = False
+        self._awaiting_plan_decision = False
         self.last_activity = time.time()
 
     def start(self):
@@ -465,6 +612,7 @@ class CodexSession:
 
     def send(self, prompt):
         with self._lock:
+            self._awaiting_plan_decision = False
             self.events.append({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
         threading.Thread(target=self._run_turn, args=(prompt,), daemon=True).start()
@@ -514,6 +662,8 @@ class CodexSession:
         with self._pending_lock:
             if self._pending:
                 return "confirm"
+        if self._awaiting_plan_decision:
+            return "plan"
         if self._busy:
             return "running"
         return "new" if not self.events else "idle"
@@ -521,6 +671,9 @@ class CodexSession:
     def set_modes(self, plan=None, task=None):
         if plan is not None:
             self.plan_mode = bool(plan)
+            if not self.plan_mode:
+                self._awaiting_plan_decision = False
+            self._sync_collaboration_mode()
         if task is not None:
             self.task_mode = bool(task)
         self._broadcast({"type": "mode_state", "plan": self.plan_mode, "task": self.task_mode})
@@ -540,20 +693,38 @@ class CodexSession:
             "threadId": self.thread_id,
             "cwd": self.cwd,
             "input": [{"type": "text", "text": text, "text_elements": []}],
+            "collaborationMode": self._collaboration_mode(),
         }
-        if self.plan_mode:
-            params["collaborationMode"] = {
-                "mode": "plan",
-                "settings": {
-                    "model": self.model or "",
-                    "reasoning_effort": None,
-                    "developer_instructions": None,
-                },
-            }
         if self.yolo:
             params["approvalPolicy"] = "never"
             params["sandboxPolicy"] = {"type": "dangerFullAccess"}
         return params
+
+    def _collaboration_mode(self):
+        return {
+            "mode": "plan" if self.plan_mode else "default",
+            "settings": {
+                "model": self.model or "",
+                "reasoning_effort": None,
+                "developer_instructions": None,
+            },
+        }
+
+    def _sync_collaboration_mode(self):
+        if not self.thread_id:
+            return
+        try:
+            get_app_client().request(
+                "thread/settings/update",
+                {"threadId": self.thread_id, "collaborationMode": self._collaboration_mode()},
+                timeout=15,
+            )
+        except Exception as e:
+            self._codex_notice(
+                "Failed to update Codex Plan mode",
+                "thread/settings/update",
+                {"mode": "plan" if self.plan_mode else "default", "error": str(e)},
+            )
 
     def _apply_thread_response(self, res):
         if not isinstance(res, dict):
@@ -591,6 +762,7 @@ class CodexSession:
         self.last_activity = time.time()
         try:
             self._ensure_thread()
+            self._sync_collaboration_mode()
             res = get_app_client().request("turn/start", self._turn_params(prompt), timeout=30)
             turn = (res or {}).get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
@@ -626,6 +798,8 @@ class CodexSession:
             status = params.get("status")
             if status == "idle" or (isinstance(status, dict) and status.get("type") == "idle"):
                 self._busy = False
+        elif method == "thread/settings/updated":
+            self._on_thread_settings_updated(params.get("threadSettings") or {})
         elif method == "item/agentMessage/delta":
             delta = params.get("delta")
             if delta:
@@ -703,7 +877,10 @@ class CodexSession:
                 ev["is_error"] = True
             self._record_and_broadcast(ev)
             if not ev.get("error") and not self._closed:
-                self._push("done", "Codex done - " + os.path.basename(self.cwd), self.cwd)
+                with self._lock:
+                    webhook_body = common.notify_result_text(self.events)
+                self._push("done", "Codex done - " + os.path.basename(self.cwd), self.cwd,
+                           webhook_body=webhook_body or (self.cwd + " - done without final text"))
         self._persist()
 
     def _on_item_started(self, item):
@@ -716,6 +893,8 @@ class CodexSession:
         if typ == "agentMessage":
             text = item.get("text") or ""
             if text:
+                if _extract_proposed_plan(text):
+                    self._awaiting_plan_decision = True
                 self._record_and_broadcast({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
         elif typ == "reasoning":
             content = "\n".join((item.get("summary") or []) + (item.get("content") or []))
@@ -728,12 +907,32 @@ class CodexSession:
 
     def _on_plan_updated(self, params):
         plan = params.get("plan") or []
-        todos = [{"content": p.get("step") or "", "status": p.get("status") or "pending"} for p in plan if isinstance(p, dict)]
+        status_map = {"inProgress": "in_progress", "completed": "completed", "pending": "pending"}
+        todos = [
+            {"content": p.get("step") or "", "status": status_map.get(p.get("status"), p.get("status") or "pending")}
+            for p in plan
+            if isinstance(p, dict)
+        ]
         if todos:
             self._record_and_broadcast({
                 "type": "assistant",
                 "message": {"content": [{"type": "tool_use", "id": "codex-plan", "name": "TodoWrite", "input": {"todos": todos}}]},
             })
+
+    def _on_thread_settings_updated(self, settings):
+        if not isinstance(settings, dict):
+            return
+        self.model = settings.get("model") or self.model
+        self.model_provider = settings.get("modelProvider") or self.model_provider
+        self.service_tier = settings.get("serviceTier") or self.service_tier
+        mode = (((settings.get("collaborationMode") or {}).get("mode")) or "").lower()
+        if mode in ("plan", "default"):
+            new_plan = mode == "plan"
+            if self.plan_mode != new_plan:
+                self.plan_mode = new_plan
+                if not new_plan:
+                    self._awaiting_plan_decision = False
+                self._broadcast({"type": "mode_state", "plan": self.plan_mode, "task": self.task_mode})
 
     @staticmethod
     def _usage_for_meta(usage):
@@ -878,11 +1077,29 @@ class CodexSession:
         if method == "item/tool/requestUserInput":
             return self._await_user_input(req_id, method, params)
         if method == "mcpServer/elicitation/request":
+            if params.get("mode") in ("form", "openai/form"):
+                return self._await_form_input(req_id, method, params)
             return self._await_user_input(req_id, method, params)
+        if method == "item/tool/call":
+            return self._reject_dynamic_tool_call(req_id, method, params)
+        if method == "attestation/generate":
+            self._codex_notice(
+                "Codex requested client attestation; Agents Cockpit cannot generate it yet.",
+                method,
+                params,
+            )
+            raise AppServerRequestError(-32601, "client attestation is not supported by Agents Cockpit")
+        if method == "account/chatgptAuthTokens/refresh":
+            self._codex_notice(
+                "Codex requested ChatGPT auth token refresh; refresh the login in Codex CLI.",
+                method,
+                params,
+            )
+            raise AppServerRequestError(-32601, "ChatGPT auth token refresh is not supported by Agents Cockpit")
         if method == "currentTime/read":
             return {"utcTimestampMs": int(time.time() * 1000)}
-        self._codex_notice("Unhandled Codex request: " + str(method or "unknown"), method, params)
-        return {}
+        self._codex_notice("Unsupported app-server request: " + str(method or "unknown"), method, params)
+        raise AppServerRequestError(-32601, "unsupported app-server request: %s" % method)
 
     def _await_approval(self, req_id, method, params, name, preview):
         entry = {"event": threading.Event(), "kind": "approve", "method": method, "params": params, "allow": None, "always": False}
@@ -943,6 +1160,56 @@ class CodexSession:
             return {"action": "accept" if content else "decline", "content": content or None}
         return {"action": "accept" if ans else "decline", "content": {"answer": ans} if ans else None}
 
+    def _await_form_input(self, req_id, method, params):
+        schema = params.get("requestedSchema")
+        fields = _form_fields_from_schema(schema)
+        msg = params.get("message") or "Codex requests form input"
+        entry = {"event": threading.Event(), "kind": "form", "method": method, "params": params, "answer": None}
+        with self._pending_lock:
+            self._pending[req_id] = entry
+        self._broadcast({
+            "type": "pending_form",
+            "tool_use_id": req_id,
+            "message": msg,
+            "mode": params.get("mode") or "form",
+            "server_name": params.get("serverName") or "",
+            "fields": fields,
+            "schema_detail": _compact_json(schema, 2500) if schema is not None else "",
+        })
+        self._push("confirm", "Codex waits for form input - " + os.path.basename(self.cwd), msg)
+        entry["event"].wait(timeout=600)
+        with self._pending_lock:
+            self._pending.pop(req_id, None)
+        ans = entry.get("answer")
+        if not isinstance(ans, dict):
+            return {"action": "decline", "content": None}
+        action = ans.get("action") or ("accept" if ans.get("content") else "decline")
+        if action not in ("accept", "decline", "cancel"):
+            action = "accept"
+        content = ans.get("content") if action == "accept" else None
+        return {"action": action, "content": content}
+
+    def _reject_dynamic_tool_call(self, req_id, method, params):
+        tool = params.get("tool") or "tool"
+        namespace = params.get("namespace") or "dynamic"
+        call_id = params.get("callId") or req_id
+        name = ("%s.%s" % (namespace, tool)) if namespace else str(tool)
+        args = params.get("arguments")
+        self._record_and_broadcast({
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": args or {}}]},
+        })
+        msg = (
+            "Agents Cockpit cannot execute Codex dynamic tool calls yet. "
+            "Continue in Codex CLI or wire this tool through an MCP passthrough."
+        )
+        self._record_and_broadcast({
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "content": msg}]},
+        })
+        self._codex_notice("Dynamic tool call was rejected by the Web adapter", method, params)
+        return {"success": False, "contentItems": [{"type": "inputText", "text": msg}]}
+
     def _approval_response(self, method, allow, always, params):
         if method == "item/commandExecution/requestApproval":
             return {"decision": ("acceptForSession" if always else "accept") if allow else "decline"}
@@ -969,11 +1236,14 @@ class CodexSession:
     def answer(self, tool_use_id, ans):
         with self._pending_lock:
             entry = self._pending.get(tool_use_id)
-        if not entry or entry.get("kind") != "ask":
+        if not entry or entry.get("kind") not in ("ask", "form"):
             return False
-        entry["answer"] = ans or ""
+        entry["answer"] = ans if ans is not None else ""
         entry["event"].set()
-        self._broadcast({"type": "ask_answered", "tool_use_id": tool_use_id})
+        if entry.get("kind") == "form":
+            self._broadcast({"type": "form_answered", "tool_use_id": tool_use_id})
+        else:
+            self._broadcast({"type": "ask_answered", "tool_use_id": tool_use_id})
         return True
 
     @staticmethod
@@ -1045,7 +1315,7 @@ class CodexSession:
             except OSError:
                 pass
 
-    def _push(self, event, title, body):
+    def _push(self, event, title, body, webhook_body=None):
         try:
             if not common._notify_enabled_for(event):
                 return
@@ -1055,7 +1325,9 @@ class CodexSession:
             self._last_notify[event] = now
         except Exception:
             pass
-        threading.Thread(target=_push_notify_worker, args=(title or "", body or "", event), daemon=True).start()
+        threading.Thread(target=_push_notify_worker,
+                         args=(title or "", body or "", event, webhook_body),
+                         daemon=True).start()
 
     def on_client_exit(self):
         self._busy = False

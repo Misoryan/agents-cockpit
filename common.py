@@ -1359,7 +1359,30 @@ def _notify_enabled_for(event):
     return NOTIFY_ENABLED and event in NOTIFY_EVENTS
 
 
-def push_notify(title, body, event):
+def notify_result_text(events, limit=3500):
+    """Return the latest assistant text message, excluding thinking/tool process."""
+    for ev in reversed(events or []):
+        if not isinstance(ev, dict) or ev.get("type") != "assistant":
+            continue
+        msg = ev.get("message") or {}
+        content = msg.get("content")
+        parts = []
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text") or "")
+        text = "\n".join(p for p in parts if p).strip()
+        if text:
+            if limit and len(text) > limit:
+                suffix = "\n\n...(result text truncated)"
+                text = text[:max(0, limit - len(suffix))].rstrip() + suffix
+            return text
+    return ""
+
+
+def push_notify(title, body, event, webhook_body=None):
     """Fire-and-forget external push over every configured channel. Blocking HTTP — the
     caller (manager._notify_sender worker) is expected to run this off the main loop.
     Returns True if at least one channel returned 2xx. Silent on error (prints a line)."""
@@ -1404,7 +1427,8 @@ def push_notify(title, body, event):
     # --- webhook (auto-detects Feishu/Lark schema vs generic JSON) ---
     if NOTIFY_WEBHOOK_URL:
         try:
-            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET, title, body, event):
+            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET,
+                             title, body, event, webhook_body=webhook_body):
                 ok = True
         except Exception as e:
             print("notify webhook failed: %s" % e)
@@ -1416,7 +1440,7 @@ def _webhook_is_feishu(url):
     return "feishu.cn" in u or "larksuite" in u or "open-apis/bot" in u
 
 
-def _webhook_send(url, secret, title, body, event):
+def _webhook_send(url, secret, title, body, event, webhook_body=None):
     """POST a notification to a webhook. Auto-detects Feishu/Lark custom-bot schema
     ({msg_type, content}) vs a generic {title, body, event} JSON. For Feishu, `secret`
     is used as the signing key (enable "自定义签名" on the bot); for generic webhooks it
@@ -1425,8 +1449,9 @@ def _webhook_send(url, secret, title, body, event):
     pr = urllib.parse.urlsplit(url)
     path_q = (pr.path or "/") + (("?" + pr.query) if pr.query else "")
     cls = http.client.HTTPSConnection if pr.scheme == "https" else http.client.HTTPConnection
+    webhook_text = body if webhook_body is None else webhook_body
     if _webhook_is_feishu(url):
-        text = (str(title) + "\n" + str(body)).strip()
+        text = (str(title) + "\n" + str(webhook_text)).strip()
         data = {"msg_type": "text", "content": {"text": text}}
         if secret:   # Feishu signature: HMAC-SHA256 over "{ts}\n{secret}"
             ts = str(int(time.time()))
@@ -1437,7 +1462,7 @@ def _webhook_send(url, secret, title, body, event):
             data["sign"] = sign
         payload = json.dumps(data).encode()
     else:
-        payload = json.dumps({"title": str(title), "body": str(body), "event": event}).encode()
+        payload = json.dumps({"title": str(title), "body": str(webhook_text), "event": event}).encode()
     conn = cls(pr.netloc, timeout=NOTIFY_TIMEOUT)
     try:
         conn.request("POST", path_q, body=payload, headers={"Content-Type": "application/json"})

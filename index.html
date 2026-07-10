@@ -306,6 +306,24 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.ask .qlabel{display:block;font-weight:700}
         .nmsg.ask .qdesc{display:block;color:#b2c7d2;font-size:12px;line-height:1.35;margin-top:2px}
         .nmsg.ask .qfree{margin-top:6px}
+        .nmsg.form{align-self:flex-start;max-width:94%;background:#10241d;border:1px solid #235743}
+        .nmsg.form .fhead{font:700 13px/1.3 system-ui,Segoe UI,"Microsoft YaHei",sans-serif;color:#7ad7a0;margin-bottom:4px}
+        .nmsg.form .fmsg{font-size:13px;color:#d6e6dc;margin-bottom:8px}
+        .nmsg.form .fmeta{font:11px/1.4 ui-monospace,Consolas,monospace;color:#8b9a91;margin-bottom:8px}
+        .nmsg.form .fitem{border-top:1px solid #235743;padding-top:8px;margin-top:8px}
+        .nmsg.form .fitem:first-child{border-top:0;padding-top:0;margin-top:0}
+        .nmsg.form label{display:block;font-size:12px;font-weight:700;color:#9ee8bc;margin-bottom:4px}
+        .nmsg.form label .req{color:#ffb877}
+        .nmsg.form .fdesc{font-size:11px;color:#9aa9a0;margin:0 0 5px}
+        .nmsg.form input,.nmsg.form textarea,.nmsg.form select{width:100%;background:#0e0f13;border:1px solid #2e4f3f;border-radius:7px;color:#e6e6e6;padding:8px;font:13px system-ui,sans-serif}
+        .nmsg.form textarea{resize:vertical}
+        .nmsg.form .fcheck{display:flex;align-items:center;gap:8px;color:#d6e6dc}
+        .nmsg.form .fcheck input{width:auto}
+        .nmsg.form .fopts{display:flex;flex-direction:column;gap:5px}
+        .nmsg.form .ferr{color:#ff8b8b;font-size:12px;margin-top:6px}
+        .nmsg.form .abtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+        .nmsg.form .allow{background:#3a8a60;color:#fff}
+        .nmsg.form .deny{background:#5a3b24;color:#fff}
         .nmsg.turn{align-self:flex-start;max-width:92%;background:#1b1d24;border:1px solid #2a2c35;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
         .nmsg.turn.done{border-color:#2f4a36}
         .nmsg.turn>.nmsg{align-self:stretch;max-width:none;border:0;background:none;padding:0;border-radius:0}
@@ -994,6 +1012,65 @@ function nAddRow(st, cls, html){
   var d=document.createElement("div"); d.className="nmsg "+cls;
   d.innerHTML=html; (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }
+function nExtractProposedPlan(text){
+  text=String(text==null?"":text);
+  var open="<proposed_plan>", close="</proposed_plan>";
+  var s=text.indexOf(open);
+  if(s<0) return null;
+  var e=text.indexOf(close, s+open.length);
+  if(e<0) return null;
+  return {before:text.slice(0,s).trim(), plan:text.slice(s+open.length,e).trim(), after:text.slice(e+close.length).trim()};
+}
+function nSetPromptIfEmpty(text){
+  var inp=$("nativeinput");
+  if(inp && !inp.value.trim()){ inp.value=text; }
+  if(inp){ inp.focus({preventScroll:true}); }
+}
+function nAcceptProposedPlan(sid, st, card){
+  card.querySelectorAll("button").forEach(function(b){ b.disabled=true; });
+  postJSON("/api/nmode",{sid:sid, plan:false}).then(function(r){
+    if(r && r.error){ nAddRow(st, "sys", "⚠️ 退出 Plan 模式失败: "+nEsc(r.error)); return; }
+    st.planMode=false; localStorage.setItem("acPlan_"+sid, "0");
+    if(currentSid===sid){ nSyncModes(st); nSetPromptIfEmpty("请按上一条计划开始实现。"); }
+    pollSessionSignals();
+    var h=card.querySelector(".plan-head"); if(h) h.textContent="📋 计划方案 · 已采纳并退出 Plan 模式";
+  }).catch(function(e){
+    card.querySelectorAll("button").forEach(function(b){ b.disabled=false; });
+    nAddRow(st, "sys", "⚠️ 退出 Plan 模式失败: "+nEsc(e&&e.message||e));
+  });
+}
+function nKeepPlanning(st){
+  if(currentSid){ nSetPromptIfEmpty("请继续完善上面的计划："); }
+}
+function nRenderAssistantText(sid, st, text){
+  var pp=nExtractProposedPlan(text);
+  if(!pp){
+    if(!st.curTxt) nNewTextBubble(st);
+    st.curTxt.innerHTML=renderMd(text); nHljs(st.curTxt);
+    return;
+  }
+  var old=st.curTxt?st.curTxt.closest(".nmsg.assistant"):null;
+  if(old) old.remove();
+  st.curTxt=null;
+  if(pp.before){
+    nNewTextBubble(st);
+    st.curTxt.innerHTML=renderMd(pp.before); nHljs(st.curTxt);
+    st.curTxt=null;
+  }
+  var pcard=document.createElement("div"); pcard.className="nmsg plan codex-plan";
+  pcard.innerHTML='<div class="plan-head">📋 计划方案 · Codex Plan Mode</div><div class="plan-body">'+renderMd(pp.plan)+'</div>'+
+    '<div class="abtns"><button class="allow">✅ 采纳并退出 Plan 模式</button><button class="deny">✏️ 继续完善计划</button></div>';
+  nHljs(pcard.querySelector(".plan-body"));
+  pcard.querySelector(".allow").addEventListener("click", function(){ nAcceptProposedPlan(sid, st, pcard); });
+  pcard.querySelector(".deny").addEventListener("click", function(){ nKeepPlanning(st); });
+  nTurnCard(st).appendChild(pcard);
+  if(pp.after){
+    nNewTextBubble(st);
+    st.curTxt.innerHTML=renderMd(pp.after); nHljs(st.curTxt);
+    st.curTxt=null;
+  }
+  nScrollBottom();
+}
 /* 事件指纹:用 type+uuid 序列 + 数量签名(不 stringify 正文,免得大对话卡顿)。
    同一份事件流 → 同一指纹;新增/裁剪事件 → 指纹变。用于「内容没变就跳过重放」杜绝闪屏。 */
 function nEvSigPart(e){
@@ -1075,6 +1152,90 @@ function nRenderAsk(sid, st, obj){
   if(ta){ ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ nSubmitAsk(sid,obj,acard); } }); }
   nTurnCard(st).appendChild(acard); st.curTxt=null; st.lastWasHumanUser=false; nScrollBottom();
   setTimeout(function(){ var first=acard.querySelector('.qopt,.ainp'); if(first) first.focus({preventScroll:true}); }, 50);
+}
+function nFormFieldHtml(f){
+  f=f||{}; var fid=String(f.id||""), typ=String(f.type||"text"), req=!!f.required;
+  var def=f.default==null?"":String(f.default), opts=Array.isArray(f.options)?f.options:[];
+  var html='<div class="fitem" data-fid="'+nEscAttr(fid)+'" data-ftype="'+nEscAttr(typ)+'" data-required="'+(req?"1":"0")+'">';
+  html+='<label>'+nEsc(f.label||fid||"字段")+(req?' <span class="req">*</span>':'')+'</label>';
+  if(f.description){ html+='<div class="fdesc">'+nEsc(f.description)+'</div>'; }
+  if(typ==="textarea"){
+    html+='<textarea class="finp" rows="3">'+nEsc(def)+'</textarea>';
+  }else if(typ==="number"){
+    html+='<input class="finp" type="number" value="'+nEscAttr(def)+'">';
+  }else if(typ==="checkbox"){
+    var checked=(f.default===true||String(f.default).toLowerCase()==="true")?' checked':'';
+    html+='<label class="fcheck"><input class="finp" type="checkbox"'+checked+'> 是</label>';
+  }else if(typ==="select"){
+    html+='<select class="finp">'+(req?'':'<option value=""></option>');
+    opts.forEach(function(o){
+      var val=String((o&&o.value)!=null?o.value:""), lab=String((o&&o.label)!=null?o.label:val);
+      html+='<option value="'+nEscAttr(val)+'"'+(val===def?' selected':'')+'>'+nEsc(lab)+'</option>';
+    });
+    html+='</select>';
+  }else if(typ==="multiselect"){
+    html+='<div class="fopts">';
+    opts.forEach(function(o){
+      var val=String((o&&o.value)!=null?o.value:""), lab=String((o&&o.label)!=null?o.label:val);
+      html+='<label class="fcheck"><input type="checkbox" value="'+nEscAttr(val)+'"> '+nEsc(lab)+'</label>';
+    });
+    html+='</div>';
+  }else{
+    html+='<input class="finp" type="text" value="'+nEscAttr(def)+'">';
+  }
+  html+='</div>';
+  return html;
+}
+function nSubmitForm(sid, obj, card, action){
+  var payload={sid:sid, tool_use_id:obj.tool_use_id, answers:{action:action, content:null}};
+  if(action==="accept"){
+    var content={}, err="";
+    var raw=card.querySelector(".fjson");
+    if(raw){
+      var txt=raw.value.trim();
+      if(txt){ try{ content=JSON.parse(txt); }catch(e){ err="JSON 格式不正确: "+(e&&e.message||e); } }
+    }else{
+      card.querySelectorAll(".fitem").forEach(function(item){
+        if(err) return;
+        var fid=item.dataset.fid||"", typ=item.dataset.ftype||"text", req=item.dataset.required==="1";
+        var val="";
+        if(typ==="checkbox"){
+          var cb=item.querySelector('input[type="checkbox"]'); val=!!(cb&&cb.checked);
+        }else if(typ==="multiselect"){
+          val=[]; item.querySelectorAll('input[type="checkbox"]').forEach(function(cb){ if(cb.checked) val.push(cb.value); });
+        }else if(typ==="number"){
+          var inp=item.querySelector(".finp"); var rawv=inp?inp.value.trim():"";
+          val=rawv===""?"":Number(rawv);
+          if(rawv!=="" && !isFinite(val)){ err=(fid||"数字字段")+" 不是有效数字"; }
+        }else{
+          var el=item.querySelector(".finp"); val=el?el.value.trim():"";
+        }
+        var missing=(Array.isArray(val)?val.length===0:val===""||val==null);
+        if(req && missing){ err=(item.querySelector("label")||{}).textContent+" 必填"; return; }
+        if(fid && !missing) content[fid]=val;
+      });
+    }
+    var ferr=card.querySelector(".ferr");
+    if(err){ if(ferr) ferr.textContent=err; return; }
+    payload.answers.content=content;
+  }
+  postJSON("/api/nanswer",payload);
+  card.remove();
+}
+function nRenderForm(sid, st, obj){
+  var card=document.createElement("div"); card.className="nmsg form"; card.dataset.tuid=obj.tool_use_id;
+  var fields=Array.isArray(obj.fields)?obj.fields:[];
+  var html='<div class="fhead">🧾 Codex 表单请求</div><div class="fmsg">'+nEsc(obj.message||"需要填写表单")+'</div>';
+  html+='<div class="fmeta">'+nEsc(obj.server_name||"MCP")+' · '+nEsc(obj.mode||"form")+'</div>';
+  if(fields.length){ html+=fields.map(nFormFieldHtml).join(""); }
+  else{ html+='<div class="fitem"><label>表单 JSON</label><div class="fdesc">当前 openai/form schema 无法自动拆字段,可直接填写 JSON 对象。</div><textarea class="finp fjson" rows="5" placeholder="{&quot;field&quot;:&quot;value&quot;}"></textarea></div>'; }
+  if(obj.schema_detail){ html+='<details><summary>schema 详情</summary><pre>'+nEsc(obj.schema_detail)+'</pre></details>'; }
+  html+='<div class="ferr"></div><div class="abtns"><button class="allow">提交</button><button class="deny">拒绝</button></div>';
+  card.innerHTML=html;
+  card.querySelector(".allow").addEventListener("click", function(){ nSubmitForm(sid,obj,card,"accept"); });
+  card.querySelector(".deny").addEventListener("click", function(){ nSubmitForm(sid,obj,card,"decline"); });
+  nTurnCard(st).appendChild(card); st.curTxt=null; st.lastWasHumanUser=false; nScrollBottom();
+  setTimeout(function(){ var first=card.querySelector(".finp"); if(first) first.focus({preventScroll:true}); }, 50);
 }
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
@@ -1163,8 +1324,7 @@ function nHandle(sid, obj){
     var blocks=(obj.message&&obj.message.content)||[];
     blocks.forEach(function(b){
       if(b.type==="text"){
-        if(!st.curTxt) nNewTextBubble(st);
-        st.curTxt.innerHTML=renderMd(b.text); nHljs(st.curTxt);
+        nRenderAssistantText(sid, st, b.text);
       } else if(b.type==="tool_use"){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
         var _inp=b.input||{};
@@ -1320,6 +1480,11 @@ function nHandle(sid, obj){
     nRenderAsk(sid, st, obj);
     return;
   }
+  if(t==="pending_form"){
+    nFinalizeThinking(st); nStopThinking(st);
+    nRenderForm(sid, st, obj);
+    return;
+  }
   if(t==="approval_decision"){
     var c2=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
     if(c2) c2.remove();
@@ -1328,6 +1493,11 @@ function nHandle(sid, obj){
   if(t==="ask_answered"){
     var a2=(st.turnCard||st.root).querySelector('.nmsg.ask[data-tuid="'+obj.tool_use_id+'"]');
     if(a2) a2.remove();
+    return;
+  }
+  if(t==="form_answered"){
+    var f2=(st.turnCard||st.root).querySelector('.nmsg.form[data-tuid="'+obj.tool_use_id+'"]');
+    if(f2) f2.remove();
     return;
   }
   if(t==="auto_allow_added"){

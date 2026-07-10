@@ -286,12 +286,25 @@ class ManagerHandler(BaseHandler):
         if not sid_arg:
             self._json({"error": "missing session_id"}, 400)
             return
+        evs = []
+        title = data.get("title") or "Resume"
+        if common.is_codex_backend(backend):
+            try:
+                snap = CodexSession.history_snapshot(sid_arg)
+                evs = snap.get("events") or []
+                if snap.get("cwd") and not os.path.isdir(d):
+                    d = snap.get("cwd")
+                if snap.get("title") and not data.get("title"):
+                    title = snap.get("title")
+            except Exception as e:
+                evs = [{"type": "codex_notice", "message": "Codex history read failed: %s" % e}]
         if not d or not os.path.isdir(d):
             d = d or os.path.expanduser("~")
-        evs = [] if common.is_codex_backend(backend) else common.load_claude_transcript_events(sid_arg)
+        if not common.is_codex_backend(backend):
+            evs = common.load_claude_transcript_events(sid_arg)
         auto_approve = common.AUTO_APPROVE if data.get("yolo") is None else bool(data.get("yolo"))
         try:
-            sid = launch_native(d, title=data.get("title") or "Resume",
+            sid = launch_native(d, title=title,
                                 auto_approve=auto_approve, mode="resume",
                                 session_id=sid_arg, events=evs, backend=backend)
         except Exception as e:
@@ -380,7 +393,7 @@ class ManagerHandler(BaseHandler):
         elif pr.path == "/api/nanswer":
             sid = (data.get("sid") or "").strip()
             tuid = (data.get("tool_use_id") or "").strip()
-            ans = data.get("answer") or ""
+            ans = data.get("answers") if "answers" in data else (data.get("answer") or "")
             with _lock:
                 s = sessions.get(sid)
             ns = s.get("native") if s else None

@@ -41,11 +41,78 @@ def _text_from_user_input(items):
     return "\n".join(p for p in parts if p).strip()
 
 
+def _clean_questions(questions):
+    out = []
+    for q in questions or []:
+        if not isinstance(q, dict):
+            continue
+        opts = []
+        for opt in q.get("options") or []:
+            if isinstance(opt, dict):
+                opts.append({
+                    "label": str(opt.get("label") or ""),
+                    "description": str(opt.get("description") or ""),
+                })
+            elif opt is not None:
+                opts.append({"label": str(opt), "description": ""})
+        out.append({
+            "id": str(q.get("id") or ""),
+            "header": str(q.get("header") or ""),
+            "question": str(q.get("question") or ""),
+            "isOther": bool(q.get("isOther")),
+            "isSecret": bool(q.get("isSecret")),
+            "options": opts,
+        })
+    return out
+
+
+def _question_text(questions, fallback=""):
+    parts = []
+    for q in questions or []:
+        text = q.get("question") or q.get("header") or ""
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts) or fallback
+
+
+def _answer_list(value):
+    if isinstance(value, dict) and "answers" in value:
+        value = value.get("answers")
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value if v is not None and str(v) != ""]
+    if value is None:
+        return []
+    text = str(value)
+    return [text] if text else []
+
+
+def _answers_for_questions(questions, answer):
+    out = {}
+    answer_map = answer if isinstance(answer, dict) else None
+    for idx, q in enumerate(questions or []):
+        qid = q.get("id") or str(idx)
+        if answer_map is not None:
+            raw = answer_map.get(qid)
+            if raw is None:
+                raw = answer_map.get(str(idx))
+        else:
+            raw = answer
+        out[qid] = {"answers": _answer_list(raw)}
+    return out
+
+
 def _json_text(obj):
     try:
         return json.dumps(obj, ensure_ascii=False, indent=2)
     except Exception:
         return str(obj)
+
+
+def _compact_json(obj, limit=900):
+    text = _json_text(obj)
+    if len(text) > limit:
+        return text[:limit] + "\n... (truncated)"
+    return text
 
 
 def _changes_to_diff(changes):
@@ -61,6 +128,67 @@ def _changes_to_diff(changes):
         if diff:
             out.append(diff)
     return "\n".join(out).strip()
+
+
+def _epoch(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if value > 100000000000:
+        value = value / 1000.0
+    return value
+
+
+def _thread_id(thread):
+    if not isinstance(thread, dict):
+        return ""
+    return thread.get("id") or thread.get("sessionId") or ""
+
+
+def _thread_title(thread):
+    if not isinstance(thread, dict):
+        return "(Untitled)"
+    return (thread.get("name") or thread.get("preview") or thread.get("agentNickname")
+            or _thread_id(thread) or "(Untitled)")
+
+
+def _thread_history_item(thread, archived=False):
+    tid = _thread_id(thread)
+    if not tid:
+        return None
+    return {
+        "session_id": tid,
+        "thread_id": tid,
+        "cwd": thread.get("cwd") or os.path.expanduser("~"),
+        "ts": _epoch(thread.get("recencyAt") or thread.get("updatedAt") or thread.get("createdAt")),
+        "title": _thread_title(thread),
+        "originator": thread.get("source") or "",
+        "backend": "codex_native",
+        "provider": "codex",
+        "archived": bool(archived),
+    }
+
+
+def _status_text(status):
+    if isinstance(status, dict):
+        return status.get("type") or _compact_json(status, 180)
+    return str(status or "")
+
+
+def _extract_text(obj):
+    if obj is None:
+        return ""
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, list):
+        return "\n".join(x for x in (_extract_text(v) for v in obj) if x)
+    if isinstance(obj, dict):
+        for key in ("text", "summary", "content", "message", "delta", "part"):
+            text = _extract_text(obj.get(key))
+            if text:
+                return text
+    return ""
 
 
 class CodexAppServerClient:
@@ -179,6 +307,13 @@ class CodexAppServerClient:
             session = self.sessions.get(thread_id)
             if session:
                 session.handle_notification(method, params)
+                return
+        if method:
+            for session in list(self.sessions.values()):
+                try:
+                    session.handle_notification(method, params)
+                except Exception:
+                    pass
 
     @staticmethod
     def _thread_id_from_params(params):
@@ -204,6 +339,11 @@ class CodexAppServerClient:
             elif method == "currentTime/read":
                 self.respond(req_id, {"utcTimestampMs": int(time.time() * 1000)})
             else:
+                for s in list(self.sessions.values()):
+                    try:
+                        s._codex_notice("Unsupported app-server request", method, params)
+                    except Exception:
+                        pass
                 self.respond_error(req_id, -32601, "unsupported app-server request: %s" % method)
         except Exception as e:
             self.respond_error(req_id, -32000, str(e))
@@ -460,6 +600,14 @@ class CodexSession:
             self._record_and_broadcast({"type": "result", "error": "Codex turn failed: %s" % e})
             self._persist()
 
+    def _codex_notice(self, message, method=None, params=None):
+        ev = {"type": "codex_notice", "message": message}
+        if method:
+            ev["method"] = method
+        if params is not None:
+            ev["detail"] = _compact_json(params)
+        self._broadcast(ev)
+
     def handle_notification(self, method, params):
         if not method:
             return
@@ -470,6 +618,7 @@ class CodexSession:
             turn = params.get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
             self._busy = True
+            self._broadcast({"type": "turn_started", "provider": "codex", "turn_id": self.last_turn_id})
             self._persist()
         elif method == "turn/completed":
             self._on_turn_completed(params.get("turn") or {})
@@ -513,8 +662,32 @@ class CodexSession:
         elif method in ("warning", "guardianWarning", "configWarning", "deprecationNotice"):
             msg = params.get("message") or params.get("text") or _json_text(params)
             self._broadcast({"type": "codex_notice", "message": msg})
+        elif method == "item/reasoning/summaryPartAdded":
+            text = _extract_text(params)
+            if text:
+                self._broadcast({"type": "stream_event", "event": {"delta": {"type": "thinking_delta", "thinking": text}}})
+        elif method == "item/commandExecution/terminalInteraction":
+            self._codex_notice("Command requires terminal interaction; continue in CLI if input is required.", method, params)
+        elif method == "item/fileChange/outputDelta":
+            self._append_tool_output(params.get("itemId"), params.get("delta") or _extract_text(params) or "")
+        elif method == "item/plan/delta":
+            text = params.get("delta") or _extract_text(params)
+            if text:
+                self._broadcast({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": text}}})
+        elif method == "model/rerouted":
+            self._codex_notice("Model rerouted", method, params)
+        elif method == "model/safetyBuffering/updated":
+            self._codex_notice("Safety buffering state updated", method, params)
+        elif method == "account/rateLimits/updated":
+            self._codex_notice("Rate limits updated", method, params)
+        elif method == "mcpServer/startupStatus/updated":
+            self._codex_notice("MCP server startup status updated", method, params)
+        elif method == "turn/moderationMetadata":
+            self._codex_notice("Moderation metadata updated", method, params)
         elif method == "error":
             self._record_and_broadcast({"type": "result", "error": params.get("message") or _json_text(params)})
+        else:
+            self._codex_notice("Unhandled Codex event: " + method, method, params)
 
     def _on_turn_completed(self, turn):
         self._busy = False
@@ -573,6 +746,59 @@ class CodexSession:
             "reasoning_output_tokens": last.get("reasoningOutputTokens") or 0,
         }
 
+    @classmethod
+    def history_snapshot(cls, thread_id):
+        res = get_app_client().request(
+            "thread/read",
+            {"threadId": thread_id, "includeTurns": True},
+            timeout=30,
+        )
+        thread = (res or {}).get("thread") or {}
+        cwd = thread.get("cwd") or os.path.expanduser("~")
+        dummy = cls("__history__", cwd, yolo=False)
+        events = []
+        if thread.get("cliVersion") or thread.get("modelProvider"):
+            events.append({
+                "type": "system",
+                "model": thread.get("model") or thread.get("modelProvider") or "Codex",
+                "version": thread.get("cliVersion"),
+            })
+        for turn in thread.get("turns") or []:
+            before = len(events)
+            for item in turn.get("items") or []:
+                typ = item.get("type")
+                if typ == "userMessage":
+                    txt = _text_from_user_input(item.get("content") or [])
+                    if txt:
+                        events.append({"type": "user", "message": {"role": "user", "content": txt}})
+                elif typ == "agentMessage":
+                    txt = item.get("text") or ""
+                    if txt:
+                        events.append({"type": "assistant", "message": {"content": [{"type": "text", "text": txt}]}})
+                elif typ == "reasoning":
+                    txt = "\n".join((item.get("summary") or []) + (item.get("content") or []))
+                    if txt:
+                        events.append({"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": txt}]}})
+                else:
+                    ev = dummy._tool_event_from_item(item)
+                    if ev:
+                        events.append(ev)
+                    result = dummy._tool_result_from_item(item)
+                    if result:
+                        events.append(result)
+            if len(events) > before:
+                result_ev = {"type": "result", "duration_ms": turn.get("durationMs")}
+                if turn.get("status") == "failed" or turn.get("error"):
+                    result_ev["error"] = _compact_json(turn.get("error") or "Codex turn failed")
+                    result_ev["is_error"] = True
+                events.append(result_ev)
+        return {
+            "thread": thread,
+            "events": events[-200:],
+            "cwd": cwd,
+            "title": _thread_title(thread),
+        }
+
     def _tool_event_from_item(self, item):
         typ = item.get("type")
         item_id = item.get("id") or ("item-%d" % int(time.time() * 1000))
@@ -595,10 +821,9 @@ class CodexSession:
             inp = {"query": item.get("query") or "", "action": item.get("action")}
         elif typ == "plan":
             return {"type": "assistant", "message": {"content": [{"type": "text", "text": item.get("text") or ""}]}}
-        elif typ == "userMessage":
-            txt = _text_from_user_input(item.get("content") or [])
-            if txt:
-                return {"type": "user", "message": {"role": "user", "content": txt}}
+        elif typ in ("agentMessage", "reasoning", "userMessage"):
+            # These are first-class chat/reasoning items. Text/reasoning deltas and
+            # completed items render them; exposing item/started as a tool card is noise.
             return None
         else:
             name = typ or "CodexItem"
@@ -656,6 +881,7 @@ class CodexSession:
             return self._await_user_input(req_id, method, params)
         if method == "currentTime/read":
             return {"utcTimestampMs": int(time.time() * 1000)}
+        self._codex_notice("Unhandled Codex request: " + str(method or "unknown"), method, params)
         return {}
 
     def _await_approval(self, req_id, method, params, name, preview):
@@ -680,26 +906,41 @@ class CodexSession:
         return self._approval_response(method, True, bool(entry.get("always")), params)
 
     def _await_user_input(self, req_id, method, params):
-        questions = params.get("questions") or []
-        if questions:
-            question_text = "\n\n".join(q.get("question") or q.get("header") or "" for q in questions if isinstance(q, dict))
-        else:
-            question_text = params.get("message") or params.get("prompt") or _json_text(params)
+        questions = _clean_questions(params.get("questions") or [])
+        fallback = params.get("message") or params.get("prompt") or _json_text(params)
+        question_text = _question_text(questions, fallback)
         entry = {"event": threading.Event(), "kind": "ask", "method": method, "params": params, "answer": ""}
         with self._pending_lock:
             self._pending[req_id] = entry
-        self._broadcast({"type": "pending_ask", "tool_use_id": req_id, "question": question_text})
+        ev = {
+            "type": "pending_ask",
+            "tool_use_id": req_id,
+            "question": question_text,
+            "questions": questions,
+        }
+        if params.get("autoResolutionMs") is not None:
+            ev["auto_resolution_ms"] = params.get("autoResolutionMs")
+        self._broadcast(ev)
         self._push("confirm", "Codex waits for input - " + os.path.basename(self.cwd), question_text)
-        entry["event"].wait(timeout=600)
+        timeout = 600
+        try:
+            if params.get("autoResolutionMs"):
+                timeout = max(1, min(timeout, float(params.get("autoResolutionMs")) / 1000.0))
+        except (TypeError, ValueError):
+            pass
+        entry["event"].wait(timeout=timeout)
         with self._pending_lock:
             self._pending.pop(req_id, None)
         ans = entry.get("answer") or ""
         if method == "item/tool/requestUserInput":
-            out = {}
-            for q in questions:
-                if isinstance(q, dict) and q.get("id"):
-                    out[q["id"]] = {"answers": [ans]}
-            return {"answers": out}
+            return {"answers": _answers_for_questions(questions, ans)}
+        if isinstance(ans, dict):
+            content = {}
+            for key, value in ans.items():
+                values = _answer_list(value)
+                if values:
+                    content[key] = values[0] if len(values) == 1 else values
+            return {"action": "accept" if content else "decline", "content": content or None}
         return {"action": "accept" if ans else "decline", "content": {"answer": ans} if ans else None}
 
     def _approval_response(self, method, allow, always, params):
@@ -862,3 +1103,31 @@ class CodexSession:
             return ns
         except (OSError, ValueError):
             return None
+
+
+def list_thread_history(limit=60, archived=False, search=None):
+    if not common.CODEX_BIN:
+        return []
+    params = {
+        "limit": max(1, int(limit or 60)),
+        "archived": bool(archived),
+        "sortKey": "recency_at",
+        "sortDirection": "desc",
+    }
+    if search:
+        params["searchTerm"] = search
+    res = get_app_client().request("thread/list", params, timeout=30)
+    data = (res or {}).get("data") or (res or {}).get("threads") or []
+    out = []
+    for thread in data:
+        item = _thread_history_item(thread, archived=archived)
+        if item:
+            out.append(item)
+    return out
+
+
+def delete_thread(thread_id):
+    if not thread_id:
+        return False
+    get_app_client().request("thread/delete", {"threadId": thread_id}, timeout=30)
+    return True

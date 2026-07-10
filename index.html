@@ -297,6 +297,15 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.ask .ainp{width:100%;background:#0e0f13;border:1px solid #2e2f37;border-radius:6px;color:#e6e6e6;padding:8px;font:13px system-ui,sans-serif;resize:vertical}
         .nmsg.ask .abtns{margin-top:6px}
         .nmsg.ask .asend{padding:6px 16px}
+        .nmsg.ask .qitem{border-top:1px solid #1f4a5a;padding-top:8px;margin-top:8px}
+        .nmsg.ask .qitem:first-child{border-top:0;padding-top:0;margin-top:0}
+        .nmsg.ask .qhead{font:700 11px/1.2 system-ui,Segoe UI,"Microsoft YaHei",sans-serif;color:#7ab7ff;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+        .nmsg.ask .qopts{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+        .nmsg.ask .qopt{display:block;width:100%;text-align:left;background:#142f38;color:#e6f4ff;border:1px solid #2e6675;border-radius:8px;padding:8px 10px;cursor:pointer}
+        .nmsg.ask .qopt.selected{background:#24627a;border-color:#79c9e8;box-shadow:0 0 0 1px #79c9e8 inset}
+        .nmsg.ask .qlabel{display:block;font-weight:700}
+        .nmsg.ask .qdesc{display:block;color:#b2c7d2;font-size:12px;line-height:1.35;margin-top:2px}
+        .nmsg.ask .qfree{margin-top:6px}
         .nmsg.turn{align-self:flex-start;max-width:92%;background:#1b1d24;border:1px solid #2a2c35;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
         .nmsg.turn.done{border-color:#2f4a36}
         .nmsg.turn>.nmsg{align-self:stretch;max-width:none;border:0;background:none;padding:0;border-radius:0}
@@ -734,7 +743,7 @@ function renderConv(it){
     var resumeFn=function(){ resumeHist(h); };
     rb.addEventListener("click", function(ev){ ev.stopPropagation(); resumeFn(); });
     el.addEventListener("click", resumeFn); el.appendChild(rb);
-    var delbtn=document.createElement("button"); delbtn.className="cbtn ghost delbtn"; delbtn.textContent="删除"; delbtn.title="删除此历史(移除底层会话文件,不可恢复)";
+    var delbtn=document.createElement("button"); delbtn.className="cbtn ghost delbtn"; delbtn.textContent="删除"; delbtn.title=isCodexBackend(be)?"删除此 Codex thread(不可恢复)":"删除此历史(移除底层会话文件,不可恢复)";
     delbtn.addEventListener("click", function(ev){ ev.stopPropagation(); delHist(h, delbtn); });
     el.appendChild(delbtn);
   }
@@ -751,7 +760,8 @@ function resumeHist(h){
 }
 function delHist(h, btn){
   var be=h.backend||"codex";
-  if(!confirm("确认删除「"+(h.title||"(无标题)")+"」?将移除底层会话文件,删除后无法再恢复或续聊该对话。")) return;
+  var target=isCodexBackend(be)?"Codex thread":"底层会话文件";
+  if(!confirm("确认删除「"+(h.title||"(无标题)")+"」?将移除"+target+",删除后无法再恢复或续聊该对话。")) return;
   if(btn){ btn.disabled=true; btn.textContent="删除中"; }
   postJSON("/api/history_delete", {sid:h.session_id, backend:be}).then(function(r){
     if(r.error){ alert("删除失败："+r.error); if(btn){ btn.disabled=false; btn.textContent="删除"; } return; }
@@ -898,6 +908,7 @@ function nTurnCard(st){
 }
 function nEndTurn(st){
   nFinalizeThinking(st);
+  nStopThinking(st);
   if(st.turnCard) st.turnCard.classList.add("done");
   st.turnCard=null; st.curTxt=null; st.curThink=null;
 }
@@ -952,8 +963,9 @@ function nNewTextBubble(st){
   d.appendChild(t); nTurnCard(st).appendChild(d); st.curTxt=t; nScrollBottom();
 }
 function nStartThinking(st){
-  if(st.thinking) return;
-  st.thinking=true; st.thinkStart=Date.now();
+  if(st.thinking || st.thinkBox) return;
+  st.thinking=true;
+  if(!st.thinkStart) st.thinkStart=Date.now();
   var d=document.createElement("div"); d.className="nmsg assistant thinking-ind";
   d.innerHTML='<span class="ti-dot"></span><span class="ti-txt">思考中… 0s</span>';
   nTurnCard(st).appendChild(d); st.thinkBubble=d; nScrollBottom();
@@ -963,7 +975,6 @@ function nStartThinking(st){
   },1000);
 }
 function nStopThinking(st){
-  if(!st.thinking) return;
   st.thinking=false;
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.thinkBubble){ st.thinkBubble.remove(); st.thinkBubble=null; }
@@ -990,6 +1001,81 @@ function nEvSigPart(e){
   return (e&&e.type||"")+"|"+(m.uuid||m.id||(e&&e.uuid)||(e&&e.type==="result"?"r":"x"));
 }
 function nSigFromParts(parts){ return parts.length+"#"+parts.join(","); }
+function nAddHumanRow(st, text){
+  text=String(text==null?"":text).trim();
+  if(!text) return;
+  if(st.lastWasHumanUser && st.lastHumanText===text) return;
+  nAddRow(st,"user",nEsc(text));
+  st.lastWasHumanUser=true; st.lastHumanText=text;
+}
+function nAskQuestions(obj){
+  var qs=Array.isArray(obj.questions)?obj.questions:[];
+  return qs.filter(function(q){ return q && (q.question || q.header || q.id); });
+}
+function nFindAskItem(card, qid){
+  var items=card.querySelectorAll('.qitem');
+  for(var i=0;i<items.length;i++){ if(items[i].dataset.qid===qid) return items[i]; }
+  return null;
+}
+function nSubmitAsk(sid, obj, card){
+  var qs=nAskQuestions(obj), payload={sid:sid,tool_use_id:obj.tool_use_id};
+  if(qs.length){
+    var answers={}, fallback=[];
+    qs.forEach(function(q,idx){
+      var qid=q.id||String(idx), wrap=nFindAskItem(card, qid);
+      var vals=[], sel=wrap&&wrap.querySelector('.qopt.selected');
+      if(sel && sel.dataset.value){ vals.push(sel.dataset.value); }
+      var free=wrap&&wrap.querySelector('.ainp');
+      if(!vals.length && free && free.value.trim()){ vals.push(free.value.trim()); }
+      if(vals.length){ answers[qid]=vals; fallback.push(vals.join(", ")); }
+    });
+    payload.answers=answers; payload.answer=fallback.join("\n");
+  }else{
+    var ta=card.querySelector('.ainp');
+    payload.answer=ta?ta.value:"";
+  }
+  postJSON("/api/nanswer",payload);
+  card.remove();
+}
+function nRenderAsk(sid, st, obj){
+  var acard=document.createElement("div"); acard.className="nmsg ask"; acard.dataset.tuid=obj.tool_use_id;
+  var qs=nAskQuestions(obj);
+  if(qs.length){
+    acard.innerHTML='<div class="aq">❓ '+nEsc(obj.question||"需要你选择")+'</div>';
+    qs.forEach(function(q,idx){
+      var qid=q.id||String(idx), opts=Array.isArray(q.options)?q.options:[];
+      var item=document.createElement("div"); item.className="qitem"; item.dataset.qid=qid;
+      var html='';
+      if(q.header){ html+='<div class="qhead">'+nEsc(q.header)+'</div>'; }
+      html+='<div class="qtext">'+nEsc(q.question||q.header||"")+'</div>';
+      if(opts.length){
+        html+='<div class="qopts">'+opts.map(function(o){
+          var lab=(o&&o.label)||String(o||""), desc=(o&&o.description)||"";
+          return '<button type="button" class="qopt" data-value="'+nEscAttr(lab)+'"><span class="qlabel">'+nEsc(lab)+'</span>'+(desc?'<span class="qdesc">'+nEsc(desc)+'</span>':'')+'</button>';
+        }).join("")+'</div>';
+      }
+      html+='<textarea class="ainp qfree" rows="2" placeholder="其他 / 补充回答"></textarea>';
+      item.innerHTML=html; acard.appendChild(item);
+    });
+    var btns=document.createElement("div"); btns.className="abtns"; btns.innerHTML='<button class="asend">回答</button>'; acard.appendChild(btns);
+    acard.querySelectorAll('.qopt').forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var wrap=btn.closest('.qitem');
+        wrap.querySelectorAll('.qopt').forEach(function(x){ x.classList.toggle("selected", x===btn); });
+        var free=wrap.querySelector('.ainp'); if(free) free.value="";
+        if(qs.length===1) nSubmitAsk(sid,obj,acard);
+      });
+    });
+    acard.querySelector(".asend").addEventListener("click", function(){ nSubmitAsk(sid,obj,acard); });
+  }else{
+    acard.innerHTML='<div class="aq">❓ '+nEsc(obj.question)+'</div><textarea class="ainp" rows="2" placeholder="回答…(Ctrl+Enter 发送)"></textarea><div class="abtns"><button class="asend">回答</button></div>';
+    acard.querySelector('.asend').addEventListener("click", function(){ nSubmitAsk(sid,obj,acard); });
+  }
+  var ta=acard.querySelector('.ainp');
+  if(ta){ ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ nSubmitAsk(sid,obj,acard); } }); }
+  nTurnCard(st).appendChild(acard); st.curTxt=null; st.lastWasHumanUser=false; nScrollBottom();
+  setTimeout(function(){ var first=acard.querySelector('.qopt,.ainp'); if(first) first.focus({preventScroll:true}); }, 50);
+}
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var t=obj.type;
@@ -1014,6 +1100,7 @@ function nHandle(sid, obj){
     if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
     st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
     st.turnCard=null; st.curTxt=null; st.curThink=null;
+    st.lastWasHumanUser=false; st.lastHumanText="";
     st.todos=null; if(currentSid===sid) nRenderTasks(st);   // 清空任务面板,由重放的 TodoWrite 重建
     st.root.innerHTML="";
     if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
@@ -1034,6 +1121,11 @@ function nHandle(sid, obj){
     localStorage.setItem("acTask_"+sid, obj.task?"1":"0");
     return;
   }
+  if(t==="turn_started"){
+    nStartThinking(st);
+    var tsb=$("nativesubmit"); if(currentSid===sid && tsb){ tsb.disabled=true; tsb.textContent="\u601d\u8003\u4e2d\u2026"; }
+    return;
+  }
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};
     if(dl.type==="text_delta" && dl.text){
@@ -1043,6 +1135,7 @@ function nHandle(sid, obj){
       st.curTxt.appendChild(document.createTextNode(dl.text));
       nScrollBottom();
     } else if(dl.type==="thinking_delta" && dl.thinking){
+      if(st.thinkBubble) nStopThinking(st);
       if(!st.curThink){
         if(!st.thinkStart) st.thinkStart=Date.now();
         var _thd=document.createElement("details"); _thd.open=false;
@@ -1066,6 +1159,7 @@ function nHandle(sid, obj){
   if(t==="assistant"){
     nFinalizeThinking(st);
     nStopThinking(st);
+    st.lastWasHumanUser=false;
     var blocks=(obj.message&&obj.message.content)||[];
     blocks.forEach(function(b){
       if(b.type==="text"){
@@ -1075,6 +1169,7 @@ function nHandle(sid, obj){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
         var _inp=b.input||{};
         var _n=(b.name||"").toLowerCase();
+        if((_n==="agentmessage"||_n==="reasoning") && (_inp.type===_n || _inp.type===b.name)){ return; }
         var _cmd = _inp.command || _inp.cmd;
         var _isEdit = (_n==="edit"||_n==="str_replace_edit"||_n==="write"||_n==="write_file") && b.input;
         var _isShell = (_n==="bash"||_n==="powershell"||_n==="grep");
@@ -1175,10 +1270,13 @@ function nHandle(sid, obj){
   }
   if(t==="user"){
     var bs=((obj.message||{}).content);
-    if(typeof bs==="string"){ nAddRow(st,"user",nEsc(bs)); return; }
+    if(typeof bs==="string"){ nAddHumanRow(st,bs); return; }
     if(!Array.isArray(bs)) bs = bs?[bs]:[];
+    var humanParts=[];
     bs.forEach(function(b){
-      if(b && b.type==="tool_result"){
+      if(b && b.type==="text"){
+        humanParts.push(b.text||"");
+      } else if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
         var tu=(st.turnCard||st.root).querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
         var _nl=String.fromCharCode(10), _lines=String(txt).split(_nl).length;
@@ -1187,9 +1285,11 @@ function nHandle(sid, obj){
         else { nAddRow(st, "result", "<details><summary>"+nEsc(_resSum)+"</summary><pre>"+nEsc(txt)+"</pre></details>"); }
       }
     });
+    if(humanParts.length){ nAddHumanRow(st,humanParts.join("\n")); }
     return;
   }
   if(t==="pending_approval"){
+    nFinalizeThinking(st); nStopThinking(st);
     // ExitPlanMode(计划模式提交计划)→ 计划审批卡:markdown 计划 + 批准/拒绝。
     // 批准后后端自动退出计划模式并广播 mode_state(同步前端开关),与 claude cli 行为一致。
     if(obj.name==="ExitPlanMode"){
@@ -1216,16 +1316,8 @@ function nHandle(sid, obj){
     nTurnCard(st).appendChild(card); st.curTxt=null; nScrollBottom(); return;
   }
   if(t==="pending_ask"){
-    var acard=document.createElement("div"); acard.className="nmsg ask"; acard.dataset.tuid=obj.tool_use_id;
-    acard.innerHTML='<div class="aq">❓ '+nEsc(obj.question)+'</div><textarea class="ainp" rows="2" placeholder="回答…(Ctrl+Enter 发送)"></textarea><div class="abtns"><button class="asend">回答</button></div>';
-    var ta=acard.querySelector('.ainp');
-    acard.querySelector('.asend').addEventListener("click", function(){
-      postJSON("/api/nanswer",{sid:sid,tool_use_id:obj.tool_use_id,answer:ta.value});
-      acard.remove();
-    });
-    ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ acard.querySelector('.asend').click(); } });
-    nTurnCard(st).appendChild(acard); st.curTxt=null; nScrollBottom();
-    setTimeout(function(){ ta.focus({preventScroll:true}); }, 50);
+    nFinalizeThinking(st); nStopThinking(st);
+    nRenderAsk(sid, st, obj);
     return;
   }
   if(t==="approval_decision"){
@@ -1248,13 +1340,17 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="codex_notice"){
-    nAddRow(st, "sys", "Codex: "+nEsc(obj.message||"notice"));
+    var cmsg="Codex: "+nEsc(obj.message||"notice");
+    if(obj.method){ cmsg+=' <span class="tcdesc">'+nEsc(obj.method)+'</span>'; }
+    if(obj.detail){ cmsg+='<details><summary>详情</summary><pre>'+nEsc(obj.detail)+'</pre></details>'; }
+    nAddRow(st, "sys", cmsg);
     return;
   }
   if(t==="codex_usage"){
     return;
   }
   if(t==="result"){
+    st.lastWasHumanUser=false;
     if(obj.error) nAddRow(st, "sys", "⚠️ "+nEsc(obj.error));
     nMetaRow(st, obj);
     nEndTurn(st);
@@ -1276,7 +1372,7 @@ function nApprove(sid, tuid, allow, always){ postJSON("/api/napprove", {sid:sid,
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.curTxt=null; st.curThink=null; st.turnCard=null; }
+  if(st){ nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null; }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;
@@ -1325,11 +1421,12 @@ function nativeSend(){
   if(!p || !currentSid) return;
   var st=nativeStage(currentSid); if(!st) return;
   nHandle(currentSid, {type:"user", message:{role:"user", content:p}});   // 渲染用户气泡,并计入「已渲染指纹」(与服务端 replay 的合成 user 事件同形 → 重连可命中跳过)
+  nStartThinking(st);
   inp.value="";
   var sb=$("nativesubmit"); if(sb){ sb.disabled=true; sb.textContent="思考中…"; }
   postJSON("/api/nsend", {sid:currentSid, prompt:p, plan:!!st.planMode, task:!!st.taskMode}).then(function(r){
-    if(r && r.error){ nAddRow(st, "sys", "⚠️ 发送失败: "+nEsc(r.error)+"（若刚更新代码,请「设置 → 重启后端层」加载 native.py 后刷新页面）"); if(sb){ sb.disabled=false; sb.textContent="发送"; } }
-  }).catch(function(e){ nAddRow(st, "sys", "⚠️ 网络错误: "+nEsc(e&&e.message||e)); if(sb){ sb.disabled=false; sb.textContent="发送"; } });
+    if(r && r.error){ nFinalizeThinking(st); nStopThinking(st); nAddRow(st, "sys", "\u26a0\ufe0f \u53d1\u9001\u5931\u8d25: "+nEsc(r.error)+"\uff08\u82e5\u521a\u66f4\u65b0\u4ee3\u7801,\u8bf7\u300c\u8bbe\u7f6e \u2192 \u91cd\u542f\u540e\u7aef\u5c42\u300d\u52a0\u8f7d native.py \u540e\u5237\u65b0\u9875\u9762\uff09"); nEndTurn(st); if(sb){ sb.disabled=false; sb.textContent="\u53d1\u9001"; } }
+  }).catch(function(e){ nFinalizeThinking(st); nStopThinking(st); nAddRow(st, "sys", "\u26a0\ufe0f \u7f51\u7edc\u9519\u8bef: "+nEsc(e&&e.message||e)); nEndTurn(st); if(sb){ sb.disabled=false; sb.textContent="\u53d1\u9001"; } });
 }
 $("nativeback").addEventListener("click", hideNative);
 $("nativestop").addEventListener("click", function(){ if(currentSid){ postJSON("/api/stop",{sid:currentSid}); dropNativeStage(currentSid); pollSessionSignals(); } });

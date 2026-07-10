@@ -1053,6 +1053,12 @@ def load_claude_history():
 
 def load_history(limit=60):
     out = load_claude_history()
+    if CODEX_BIN:
+        try:
+            from codex_native import list_thread_history
+            out.extend(list_thread_history(limit=limit, archived=False))
+        except Exception as e:
+            print("WARN: failed to load Codex history: %s" % e)
     out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
     return out[:limit]
 
@@ -1062,6 +1068,14 @@ def delete_history(sid, backend=None):
     sid = (sid or "").strip()
     res = {"deleted": False, "session_file": None}
     if is_codex_backend(backend):
+        if not sid:
+            return res
+        try:
+            from codex_native import delete_thread
+            res["deleted"] = bool(delete_thread(sid))
+            res["session_file"] = sid
+        except Exception:
+            pass
         return res
     if not sid or not os.path.isdir(CLAUDE_PROJECTS_DIR):
         return res

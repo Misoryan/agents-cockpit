@@ -8,8 +8,8 @@
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;overflow:hidden;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:#15161a;color:#e6e6e6;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{margin:0;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:#15161a;color:#e6e6e6;-webkit-tap-highlight-color:transparent}
 
 button{padding:10px 12px;font-size:13px;border:0;border-radius:8px;background:#2a5bd7;color:#fff;font-weight:600;cursor:pointer}
 button.ghost{background:#2e2f37;color:#d6d6d6}
@@ -20,11 +20,11 @@ button:disabled{opacity:.45;cursor:default}
 .empty{color:#7f8691;font-size:13px;padding:18px;text-align:center}
 
 /* ---- app shell ---- */
-#mobilebar{display:none;height:44px;align-items:center;gap:10px;padding:0 8px;background:#1f2026;border-bottom:1px solid #2e2f37;position:relative;z-index:62}
+#mobilebar{display:flex;height:44px;align-items:center;gap:10px;padding:0 8px;background:#1f2026;border-bottom:1px solid #2e2f37;position:sticky;top:0;z-index:62}
 #mobilebar .mbttl{flex:1;font-size:14px;font-weight:700}
 #mobilebar .mbttl small{color:#8b91a0;font-weight:400;font-size:12px}
 #mobilebar .mbbtn{padding:8px 11px;background:none;color:#d6d6d6;font-size:18px;line-height:1}
-#app{display:flex;height:100vh}
+#app{display:flex;height:calc(100vh - 44px);height:calc(100dvh - 44px)}
 #sidebar{flex:0 0 auto;width:290px;display:flex;flex-direction:column;background:#1a1b21;border-right:1px solid #2e2f37;min-height:0}
 #main{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;background:#0f1014}
 
@@ -125,7 +125,7 @@ button:disabled{opacity:.45;cursor:default}
 
 /* mobile sidebar shade + reopen strip */
 #shade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:none}
-#sbreopen{display:none;position:fixed;left:0;top:0;bottom:0;width:20px;align-items:center;justify-content:center;background:#1f2026;border-right:1px solid #2e2f37;color:#8b91a0;cursor:pointer;z-index:30;font-size:13px}
+#sbreopen{display:none;position:fixed;left:0;top:44px;bottom:0;width:20px;align-items:center;justify-content:center;background:#1f2026;border-right:1px solid #2e2f37;color:#8b91a0;cursor:pointer;z-index:30;font-size:13px}
 body.sb-collapsed #sbreopen{display:flex}
 body.sb-collapsed #sidebar{display:none}
 
@@ -179,12 +179,13 @@ body.sb-collapsed #sidebar{display:none}
 /* responsive: narrow -> sidebar becomes a drawer */
 @media (max-width:860px){
   #mobilebar{display:flex}
-  #app{height:calc(100vh - 44px)}
+  #app{height:calc(100vh - 44px);height:calc(100dvh - 44px)}
   #sidebar{position:fixed;top:44px;left:0;bottom:0;width:84%;max-width:330px;transform:translateX(-100%);transition:transform .18s;z-index:61;box-shadow:0 0 40px rgba(0,0,0,.5)}
   body.sb-open #sidebar{transform:translateX(0)}
   body.sb-open #shade{display:block}
   #sbreopen{display:none!important}
   body.sb-collapsed #sidebar{display:flex}
+  .nathead .nmodel{display:none!important}
 }
 </style>
 </head>
@@ -257,6 +258,7 @@ body.sb-collapsed #sidebar{display:none}
         #nativestage{flex-direction:column;flex:1 1 auto;min-height:0}
         .nathead{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#15161a;border-bottom:1px solid #2e2f37}
         .nathead .nt{flex:1;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .nathead .nmodel{flex:0 0 auto;font:11px/1.4 ui-monospace,Consolas,monospace;color:#8b91a0;background:#1b1d24;border:1px solid #2e2f37;padding:3px 8px;border-radius:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         #nativemsgs{flex:1 1 auto;overflow-y:auto;padding:14px;max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px}
         .nmsg{padding:10px 12px;border-radius:10px;word-break:break-word;line-height:1.55;animation:nfade .12s ease}
         @keyframes nfade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
@@ -269,20 +271,50 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.assistant .ntxt code{background:#0b0c10;padding:2px 5px;border-radius:4px;font:12px ui-monospace,Consolas,monospace;color:#e6c07b}
         .nmsg.assistant .ntxt pre{background:#0b0c10;padding:10px;border-radius:8px;overflow:auto;margin:8px 0;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre}
         .nmsg.assistant .ntxt pre code{background:none;padding:0;color:#cdd2dc;font:inherit}
+.nmsg.assistant .ntxt pre code.hljs{background:none;padding:0;color:inherit;display:inline}
+.nmsg.assistant .ntxt .codebar{display:flex;align-items:center;justify-content:space-between;background:#1a1b22;border:1px solid #2a2c35;border-bottom:0;border-radius:8px 8px 0 0;padding:2px 8px;margin:8px 0 0;font:11px system-ui,sans-serif}
+.nmsg.assistant .ntxt .codebar .codelang{color:#6a6f7d}
+.nmsg.assistant .ntxt .codebar .codecopy{background:#2a2c35;border:0;color:#cdd2dc;border-radius:4px;padding:1px 9px;cursor:pointer;font:11px system-ui,sans-serif}
+.nmsg.assistant .ntxt .codebar .codecopy:active{background:#3a3b45}
+.nmsg.assistant .ntxt .codebar+pre{margin-top:0;border-radius:0 0 8px 8px}
         .nmsg.assistant .ntxt ul,.nmsg.assistant .ntxt ol{margin:8px 0;padding-left:22px}
         .nmsg.assistant .ntxt li{margin:3px 0}
         .nmsg.assistant .ntxt strong{color:#fff;font-weight:700}
         .nmsg.assistant .ntxt a{color:#7ab7ff}
         .nmsg.assistant .ntxt blockquote{border-left:3px solid #2e2f37;margin:8px 0;padding:4px 12px;color:#9aa0aa}
         .nmsg.sys{align-self:center;background:#171821;border:1px dashed #333443;color:#9aa0aa;font-size:12px}
+.nmsg.meta{align-self:flex-start;max-width:92%;background:#16181f;border:1px solid #262830;border-radius:8px;padding:5px 10px;font:11px/1.5 ui-monospace,Consolas,monospace;color:#8b909c;display:flex;flex-wrap:wrap;align-items:center;gap:0}
+.nmsg.meta.warn{border-color:#5a3a24;color:#e0a060;background:#211810}
+.nmsg.meta .msep{color:#3a3b45;margin:0 6px}
+.nmsg.meta .merr{color:#e07060}
         .nmsg.tool,.nmsg.result,.nmsg.think{align-self:flex-start;max-width:92%;background:#16181f;border:1px solid #262830;font-size:12px}
         .nmsg.tool .tcmd{font:13px ui-monospace,Consolas,monospace;color:#9fd0ff;padding:6px 8px;background:#0b0c10;border-radius:6px;margin:6px 0;white-space:pre-wrap;word-break:break-all}
         .nmsg.tool .tres{margin-top:6px}
         .nmsg.tool .tres pre{margin:0}
+        .nmsg.tool .tcdesc{color:#9aa0aa;font-weight:400;font-size:11px;margin-left:6px;white-space:normal;word-break:break-word}
+        .nmsg.tool details.tres-det{margin-top:2px}
+        .nmsg.tool details.tres-det>summary{color:#8b909c;font-weight:500;font-size:11px}
+        .nmsg.tool details.tres-det>pre{margin-top:4px}
         .nmsg.tool .diff{font:12px/1.5 ui-monospace,Consolas,monospace}
         .nmsg.tool .diff-file{color:#7ab7ff;margin-bottom:4px;font-weight:600}
         .nmsg.tool .diff-del{background:#2a1414;border-left:3px solid #d35050;color:#ff9a9a;padding:6px 8px;margin:0 0 2px;border-radius:4px;white-space:pre-wrap;word-break:break-all}
         .nmsg.tool .diff-add{background:#142a14;border-left:3px solid #50d370;color:#9aff9a;padding:6px 8px;margin:0;border-radius:4px;white-space:pre-wrap;word-break:break-all}
+        .nmsg.tool .diff-cnt{color:#8b91a0;font-weight:400;font-size:11px}
+        .nmsg.tool .diff-sec{margin-top:6px;padding-top:6px;border-top:1px dashed #2e2f37}
+        .nmsg.tool .diff-sec:first-child{border-top:0;margin-top:0;padding-top:0}
+        .nmsg.tool .diff-idx{display:inline-block;color:#7ab7ff;font-size:11px;font-weight:600;margin-bottom:2px}
+        .nmsg.tool .web-card{font:12px/1.5 ui-monospace,Consolas,monospace}
+        .nmsg.tool .web-url{color:#7ab7ff;word-break:break-all;text-decoration:none}
+        .nmsg.tool .web-url:hover{text-decoration:underline}
+        .nmsg.tool .web-q{color:#cdd2dc;margin-top:4px;font-family:system-ui,Segoe UI,"Microsoft YaHei",sans-serif}
+        .nmsg.tool .glob-card{font:12px/1.5 ui-monospace,Consolas,monospace;color:#9fd0ff;word-break:break-all}
+        .nmsg.tool .todo{margin:2px 0;display:flex;flex-direction:column;gap:2px}
+        .nmsg.tool .todo-item{display:flex;align-items:flex-start;gap:8px;font:13px/1.4 system-ui,Segoe UI,"Microsoft YaHei",sans-serif;padding:2px 0}
+        .nmsg.tool .todo-item .todo-ic{flex:0 0 auto;width:15px;text-align:center}
+        .nmsg.tool .todo-item.pending{color:#8b91a0}
+        .nmsg.tool .todo-item.in_progress{color:#9fd0ff}
+        .nmsg.tool .todo-item.in_progress .todo-ic{color:#7ab7ff;font-weight:700}
+        .nmsg.tool .todo-item.completed{color:#7ad7a0;text-decoration:line-through;opacity:.65}
         .nmsg.thinking-ind{display:flex;align-items:center;gap:8px;color:#9aa0aa;font-style:italic;padding:10px 12px}
         .ti-dot{width:8px;height:8px;border-radius:50%;background:#7ab7ff;animation:pulse 1.4s infinite}
         .nmsg.ask{align-self:flex-start;max-width:92%;background:#10242a;border:1px solid #1f4a5a}
@@ -300,12 +332,41 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg pre{margin:6px 0 0;background:#0b0c10;padding:8px;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.4 ui-monospace,Consolas,monospace;color:#cdd2dc;white-space:pre-wrap}
         .nmsg.approval{align-self:flex-start;max-width:92%;background:#2a2410;border:1px solid #6a5320}
         .nmsg.approval.danger{background:#2a1414;border-color:#5a2424}
-        .nmsg.approval .abtns{display:flex;gap:8px;margin-top:8px}
+        .nmsg.approval .abtns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
         .nmsg.approval button{padding:5px 12px;border-radius:6px;border:0;cursor:pointer;font-weight:600}
         .nmsg.approval .allow{background:#3a8a60;color:#fff}
+        .nmsg.approval .always{background:#3a5a2a;color:#fff}
         .nmsg.approval .deny{background:#5a2424;color:#fff}
-        #nativesend{display:flex;gap:8px;padding:10px;background:#15161a;border-top:1px solid #2e2f37}
+        #nativetasks{max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;background:#16181f;border:1px solid #2a2c35;border-radius:10px;padding:8px 12px}
+        #nativetasks .nt-head{display:flex;align-items:center;gap:10px;font:600 13px/1 system-ui,sans-serif;color:#cdd2dc}
+        #nativetasks .nt-toggle{cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;min-width:0}
+        #nativetasks .nt-bar{flex:1;max-width:180px;height:6px;background:#0e0f13;border-radius:3px;overflow:hidden}
+        #nativetasks .nt-fill{height:100%;background:#3a8a60;width:0;transition:width .3s}
+        #nativetasks .nt-cnt{font:11px/1 ui-monospace,Consolas,monospace;color:#8b91a0;flex:0 0 auto}
+        #nativetasks .nt-list{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+        #nativetasks .nt-item{display:flex;gap:8px;font:13px/1.4 system-ui,Segoe UI,"Microsoft YaHei",sans-serif}
+        #nativetasks .nt-item .todo-ic{flex:0 0 auto;width:15px;text-align:center}
+        #nativetasks .nt-item.pending{color:#8b91a0}
+        #nativetasks .nt-item.in_progress{color:#9fd0ff}
+        #nativetasks .nt-item.in_progress .todo-ic{color:#7ab7ff;font-weight:700}
+        #nativetasks .nt-item.completed{color:#7ad7a0;text-decoration:line-through;opacity:.65}
+        .nmsg.plan{align-self:flex-start;max-width:94%;background:#11233a;border:1px solid #1f3a5a;border-radius:12px;padding:12px}
+        .nmsg.plan .plan-head{font:600 13px/1 system-ui,sans-serif;color:#9fd0ff;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+        .nmsg.plan .plan-body{font:13px/1.55 system-ui,Segoe UI,"Microsoft YaHei",sans-serif;color:#d6dbe6}
+        .nmsg.plan .plan-body p{margin:6px 0}
+        .nmsg.plan .plan-body pre{margin:6px 0;background:#0b0c10;padding:8px;border-radius:6px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace}
+        .nmsg.plan .plan-body code{font:12px ui-monospace,Consolas,monospace}
+        .nmsg.plan .plan-body ul,.nmsg.plan .plan-body ol{margin:6px 0;padding-left:22px}
+        .nmsg.plan .abtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+        .nmsg.plan .abtns button{padding:6px 14px;border-radius:6px;border:0;cursor:pointer;font:600 13px/1 system-ui,sans-serif}
+        .nmsg.plan .allow{background:#2a5bd7;color:#fff}
+        .nmsg.plan .deny{background:#3a3d48;color:#cdd2dc}
+        #nativesend{display:flex;flex-direction:column;gap:6px;padding:10px;background:#15161a;border-top:1px solid #2e2f37}
+        #nativesend .nbar{max-width:920px;width:100%;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
         #nativesend .nwrap{max-width:920px;width:100%;margin:0 auto;display:flex;gap:8px}
+        #nativesend .nmode{padding:4px 11px;font:12px/1.4 system-ui,sans-serif;background:#1b1d24;color:#9aa0aa;border:1px solid #2e2f37;border-radius:14px;cursor:pointer}
+        #nativesend .nmode:hover{border-color:#3a3d48}
+        #nativesend .nmode.active{background:#2a5bd7;color:#fff;border-color:#2a5bd7}
         #nativeinput{flex:1;resize:none;height:52px;padding:8px 10px;background:#0e0f13;border:1px solid #2e2f37;border-radius:8px;color:#e6e6e6;font:14px/1.4 system-ui,sans-serif}
         #nativesend button{padding:0 18px;font-weight:600;background:#2a5bd7;color:#fff;border:0;border-radius:8px;cursor:pointer}
         #nativesend button:disabled{opacity:.5}
@@ -313,10 +374,17 @@ body.sb-collapsed #sidebar{display:none}
       <div class="nathead">
         <button class="ghost" id="nativeback">‹ 返回</button>
         <span class="nt" id="nativettl">原生会话</span>
-        <button class="danger" id="nativestop">停止</button>
+        <span class="nmodel" id="nativemodel" title="当前模型" style="display:none"></span>
+        <button class="ghost" id="nativeintr" title="打断当前轮(保留会话与历史)">打断</button>
+        <button class="danger" id="nativestop" title="停止并删除整个会话">停止</button>
       </div>
+      <div id="nativetasks" style="display:none"></div>
       <div id="nativemsgs"></div>
       <form id="nativesend">
+        <div class="nbar">
+          <button type="button" class="nmode" id="nmode-plan" aria-pressed="false" title="开启后 agent 先只读调研并出计划,你批准后再执行(安全)">📋 计划模式</button>
+          <button type="button" class="nmode" id="nmode-task" aria-pressed="false" title="开启后 agent 用任务清单跟踪多步骤工作并实时显示进度">✅ 任务模式</button>
+        </div>
         <div class="nwrap">
           <textarea id="nativeinput" placeholder="给 agent 发消息…(Enter 发送)"></textarea>
           <button type="submit" id="nativesubmit">发送</button>
@@ -405,6 +473,9 @@ body.sb-collapsed #sidebar{display:none}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/styles/atom-one-dark.min.css">
 <script>
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
@@ -495,9 +566,12 @@ function stateTag(st){
   if(st==="new") return '<span class="tag new">新窗口</span>';
   return '<span class="tag idle">空闲</span>';
 }
-function backendLabel(b){ return b==="native"?"原生 Agent":(b==="claude"?"Claude":"Codex"); }
-function backendTag(b){ return b==="claude"?'<span class="tag be-claude">Claude</span>':'<span class="tag be-codex">Codex</span>'; }
-function backendShort(b){ return b==="native"?"原生":(b==="claude"?"Claude":"Codex"); }
+function isCodexBackend(b){ return b==="codex" || b==="codex_native"; }
+function isClaudeBackend(b){ return b==="claude" || b==="native" || b==="claude_native"; }
+function isNativeBackend(b){ return isCodexBackend(b) || isClaudeBackend(b); }
+function backendLabel(b){ return isCodexBackend(b)?"Codex":"Claude"; }
+function backendTag(b){ return isClaudeBackend(b)?'<span class="tag be-claude">Claude</span>':'<span class="tag be-codex">Codex</span>'; }
+function backendShort(b){ return isCodexBackend(b)?"Codex":"Claude"; }
 
 /* ---- restart ---- */
 function restartWebOnly(){
@@ -532,8 +606,8 @@ function restartManagerOnly(){
 }
 
 /* ---- backends ---- */
-var availBackends=["codex","claude"];
-api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ availBackends=r.backends; renderBackend("lm-backend"); } });
+var availBackends=["codex_native","claude_native"];
+api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ availBackends=r.backends; if(availBackends.indexOf(lmBackend)<0){ lmBackend=availBackends[0]; acPrefSet("acBackend", lmBackend, "acBackend"); } renderBackend("lm-backend"); } });
 
 /* ---- notifications (in-site only) ---- */
 var noticeTimers={};
@@ -682,7 +756,7 @@ function renderConv(it){
     el.innerHTML='<span class="dot '+dot+'"></span><span class="ct">'+esc(s.title||basename(s.dir))+'</span><span class="cm">'+esc(meta)+'</span>';
     var b=document.createElement("button"); b.className="cbtn"; b.textContent="打开";
     var openFn=function(){
-      if(s.backend==="native" || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
+      if(isNativeBackend(s.backend) || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
       else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
     };
     b.addEventListener("click", function(ev){ ev.stopPropagation(); openFn(); });
@@ -704,7 +778,12 @@ function resumeHist(h){
   var be=h.backend||"codex";
   postJSON("/api/resume", {session_id:h.session_id, dir:h.cwd, title:h.title, backend:be}).then(function(r){
     if(r.error){ alert("恢复失败："+r.error); return; }
-    showTerminal(r.sid, r.term_path, (h.title||"恢复会话")+" · "+backendLabel(be));
+    var title=(h.title||"恢复会话")+" · "+backendLabel(be);
+    // 原生(native)会话必须走 WS 结构化渲染(showNativeSession),不能进 ttyd iframe ——
+    // 否则 iframe GET /t/<sid>/ 会拿到 manager _serve_native_page 的 "Open it from console"
+    // 占位页,点链接还会在 iframe 内套娃加载整个主站。与 launchDir/openSessionBySid 一致。
+    if(isNativeBackend(be) || isNativeBackend(r.backend)){ showNativeSession(r.sid, title); }
+    else { showTerminal(r.sid, r.term_path, title); }
     loadSidebarData();
   });
 }
@@ -730,18 +809,18 @@ function setMainView(view){
 /* ---- terminal ---- */
 var iframes={}, currentSid=null;
 var nativeStages={}, nativeWs={};
-var lmDir="", lmTitle="", lmBackend="codex", lmYolo=true, lmArgs="", lmMode="terminal";
+var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true, lmArgs="", lmMode="native";
 /* 设置读取:cookie 优先(localStorage 回退并自动迁入 cookie)—— 穿透下每个访问者各自独立 */
 (function(){
   var b = acPrefGetRaw("acBackend", "acBackend");
-  lmBackend = b.val || "codex";
+  lmBackend = b.val || "codex_native";
   if(b.src === "none") acSetCookie("acBackend", lmBackend, 3650);
   var y = acPrefGetRaw("acYolo", "acYolo");
   lmYolo = (y.val === "") ? true : (y.val !== "0");
   if(y.src === "none") acSetCookie("acYolo", lmYolo ? "1" : "0", 3650);
   lmArgs = acPrefGetRaw("acArgs", "acArgs").val || "";
   var _m = acPrefGetRaw("acMode", "acMode");
-  lmMode = (_m.val === "native") ? "native" : "terminal";
+  lmMode = (_m.val === "terminal") ? "terminal" : "native";
   if(_m.src === "none") acSetCookie("acMode", lmMode, 3650);
 })();
 
@@ -757,14 +836,113 @@ function showTerminal(sid, path, title){
   setMainView("term"); closeSidebar();
   setTimeout(function(){ try{ iframes[sid].contentWindow.focus(); }catch(e){} }, 50);
 }
-function hideTerminal(){ currentSid=null; setMainView("landing"); }
+function hideTerminal(){ currentSid=null; setMainView("landing"); if(isNarrow()) openSidebar(); }
 function dropIframe(sid){ if(iframes[sid]){ iframes[sid].remove(); delete iframes[sid]; } if(currentSid===sid) hideTerminal(); }
 
 /* ---- native agent session (WS, 结构化渲染, 类 claude.ai) ---- */
 function nEsc(s){ s=String(s==null?"":s); return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+/* 属性值转义:在 nEsc(&<>) 基础上再封掉引号,供 href= 等属性上下文用,防属性注入。纯字符码,无反斜杠。 */
+function nEscAttr(s){ s=String(s==null?"":s); s=nEsc(s); return s.split(String.fromCharCode(34)).join("&quot;").split(String.fromCharCode(39)).join("&#39;"); }
 function renderMd(s){
-  if(window.marked){ try{ return marked.parse(String(s==null?"":s)); }catch(e){} }
+  s=String(s==null?"":s);
+  // assistant 文本会复述 WebFetch 抓到的网页/用户代码,内含任意 HTML → 必须经 DOMPurify 过滤再注入。
+  // 若 marked 或 DOMPurify 任一未就绪,绝不注入原始 HTML,回退到转义(宁可丢格式不可丢安全)。
+  if(window.marked && window.DOMPurify){
+    try{ return DOMPurify.sanitize(marked.parse(s)); }catch(e){}
+  }
   return nEsc(s).replace(/\n/g,"<br>");
+}
+/* 从 code.className 里取语言标识(marked 给带围栏语言的代码块加 language-xxx)。
+   纯字符遍历,不用正则反斜杠(本文件编辑时反斜杠会被翻倍,故规避)。 */
+function nCodeLang(className){
+  var s=String(className||""), j=s.indexOf("language-");
+  if(j<0) return "";
+  s=s.slice(j+9);
+  for(var k=0;k<s.length;k++){
+    var c=s.charCodeAt(k);
+    var letter=(c>=65&&c<=90)||(c>=97&&c<=122)||(c>=48&&c<=57)||c===95||c===43||c===35||c===45;
+    if(!letter) return s.slice(0,k);
+  }
+  return s;
+}
+/* 给容器内每个 pre>code 上语法高亮 + 工具条(语言标签 / 复制按钮)。
+   流式期间 assistant 文本是裸文本节点,真正 markdown 化发生在 assistant 终态事件
+   (st.curTxt.innerHTML=renderMd),只在那里调一次,避免逐帧重算高亮。hljs 未就绪则
+   只补复制/语言条,不高亮(降级,不报错)。 */
+function nHljs(root){
+  if(!root) return;
+  var pres=root.querySelectorAll("pre");
+  for(var i=0;i<pres.length;i++){
+    var pre=pres[i];
+    if(pre.dataset.hlenabled) continue;
+    pre.dataset.hlenabled="1";
+    var code=pre.querySelector("code");
+    var lang="";
+    if(code){
+      lang=nCodeLang(code.className);
+      if(window.hljs){ try{ hljs.highlightElement(code); }catch(e){} }
+    }
+    var bar=document.createElement("div"); bar.className="codebar";
+    var lab=document.createElement("span"); lab.className="codelang"; lab.textContent=lang||"text";
+    var cp=document.createElement("button"); cp.type="button"; cp.className="codecopy"; cp.textContent="复制";
+    (function(thePre,theBtn){
+      theBtn.addEventListener("click",function(e){
+        e.preventDefault();
+        var txt=(thePre.innerText||thePre.textContent||"");
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+          var oldt=theBtn.textContent; theBtn.disabled=true; theBtn.textContent="…";
+          navigator.clipboard.writeText(txt).then(function(){ theBtn.textContent="已复制 ✓"; setTimeout(function(){theBtn.disabled=false;theBtn.textContent=oldt;},1100); },function(){ theBtn.textContent="复制失败"; setTimeout(function(){theBtn.disabled=false;theBtn.textContent=oldt;},1100); });
+        } else { theBtn.textContent="不支持"; setTimeout(function(){theBtn.textContent="复制";},1100); }
+      });
+    })(pre,cp);
+    bar.appendChild(lab); bar.appendChild(cp);
+    pre.parentNode.insertBefore(bar,pre);
+  }
+}
+/* token / cost 数字格式化(供 result 元信息条用)。无反斜杠。 */
+function nFmtTok(n){ n=Number(n)||0; if(n>=1000) return (n/1000).toFixed(n>=10000?0:1)+"k"; return ""+n; }
+function nFmtCost(v){ v=Number(v); if(!(v>0)) return "0"; var s=v.toFixed(4); while(s.length>1&&s.slice(-1)==="0") s=s.slice(0,-1); if(s.slice(-1)===".") s=s.slice(0,-1); return s; }
+/* 把模型 id 精简成徽标用短名:去掉尾部日期快照(如 -20250929)。纯字符码判断数字,无反斜杠。 */
+function nShortModel(m){
+  m=String(m||""); var dash=m.lastIndexOf("-");
+  if(dash>4){
+    var tail=m.slice(dash+1), allnum=tail.length===8;
+    for(var k=0; allnum && k<8;k++){ var c=tail.charCodeAt(k); if(c<48||c>57) allnum=false; }
+    if(allnum) m=m.slice(0,dash);
+  }
+  return m;
+}
+/* 顶栏模型徽标:写文本 + title 挂完整模型/版本;空则隐藏。 */
+function nRenderModelBadge(m, ver){
+  var el=$("nativemodel"); if(!el) return;
+  m=String(m||"");
+  if(!m){ el.style.display="none"; el.textContent=""; el.title="当前模型"; return; }
+  el.textContent=nShortModel(m);
+  el.title="当前模型: "+m+(ver?(" (CLI "+ver+")"):"");
+  el.style.display="";
+}
+/* 计划/任务模式开关 UI 同步:按 st.planMode / st.taskMode 点亮对应按钮。 */
+function nSyncModes(st){
+  var bp=$("nmode-plan"), bt=$("nmode-task");
+  if(bp){ bp.classList.toggle("active", !!st.planMode); bp.setAttribute("aria-pressed", st.planMode?"true":"false"); }
+  if(bt){ bt.classList.toggle("active", !!st.taskMode); bt.setAttribute("aria-pressed", st.taskMode?"true":"false"); }
+}
+/* 持久任务进度面板:从 st.todos(最新 TodoWrite 快照)重建,显示进度条 + 实时清单。空则隐藏。 */
+function nRenderTasks(st){
+  var el=$("nativetasks"); if(!el) return;
+  var todos=st.todos||[];
+  if(!todos.length){ el.style.display="none"; el.innerHTML=""; return; }
+  var done=0; todos.forEach(function(x){ if((x.status||"")==="completed") done++; });
+  var pct=todos.length?Math.round(done*100/todos.length):0;
+  el.style.display="";
+  el.innerHTML='<div class="nt-head"><div class="nt-toggle"><span>✅ 任务进度</span><div class="nt-bar"><div class="nt-fill" style="width:'+pct+'%"></div></div></div><span class="nt-cnt">'+done+'/'+todos.length+'</span></div>'+
+    (st.tasksCollapsed?'':'<div class="nt-list">'+todos.map(function(x){
+      var _st=x.status||"pending", _ic=_st==="completed"?"☑":(_st==="in_progress"?"◐":"☐");
+      return '<div class="nt-item '+_st+'"><span class="todo-ic">'+_ic+'</span><span>'+nEsc(x.content||x.activeForm||"")+'</span></div>';
+    }).join("")+'</div>');
+  el.querySelector(".nt-toggle").addEventListener("click", function(){
+    st.tasksCollapsed=!st.tasksCollapsed; nRenderTasks(st);
+  });
 }
 function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;
   requestAnimationFrame(function(){ if(m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight; }); }
@@ -775,15 +953,45 @@ function nTurnCard(st){
   return d;
 }
 function nEndTurn(st){
+  nFinalizeThinking(st);
   if(st.turnCard) st.turnCard.classList.add("done");
   st.turnCard=null; st.curTxt=null; st.curThink=null;
+}
+/* result 事件的轻量元信息条:补齐 CLI 底栏的「用量/收尾」层。
+   显示:收尾图标(随 stop_reason / is_error 变化)、轮数、token 用量(入/出/缓存)、花费、耗时。
+   stop_reason 异常(max_tokens / refusal)或 is_error → 红框警示,补 CLI 里限流/拒绝/截断的感知。
+   必须在 nEndTurn 之前调用(此时 turnCard 还在,信息条挂在 turn 卡尾部)。 */
+function nMetaRow(st,obj){
+  var sr=String(obj.stop_reason||""), isErr=obj.is_error||obj.error;
+  var ic="✅", title="完成";
+  if(isErr){ ic="⚠️"; title="出错"; }
+  else if(sr==="max_tokens"){ ic="✂️"; title="已达输出上限"; }
+  else if(sr==="refusal"){ ic="⛔"; title="拒绝回答"; }
+  else if(sr==="pause_turn"){ ic="⏸"; title="已暂停"; }
+  else if(sr==="tool_use"){ ic="🔧"; title="工具调用收尾"; }
+  var warn=!!(isErr||sr==="max_tokens"||sr==="refusal");
+  var parts=[];
+  parts.push(ic+" "+nEsc(title));
+  if(obj.num_turns!=null) parts.push(nEsc(String(obj.num_turns)+" 轮"));
+  var u=obj.usage||{}, tk=[];
+  if(u.input_tokens) tk.push("入 "+nFmtTok(u.input_tokens));
+  if(u.output_tokens) tk.push("出 "+nFmtTok(u.output_tokens));
+  var cache=(Number(u.cache_read_input_tokens)||0)+(Number(u.cache_creation_input_tokens)||0);
+  if(cache) tk.push("缓存 "+nFmtTok(cache));
+  if(tk.length) parts.push(nEsc(tk.join(" / ")));
+  if(obj.total_cost_usd!=null) parts.push("$"+nEsc(nFmtCost(obj.total_cost_usd)));
+  if(obj.duration_ms!=null) parts.push(nEsc(Math.round(Number(obj.duration_ms)/1000)+"s"));
+  var d=document.createElement("div"); d.className="nmsg meta"+(warn?" warn":"");
+  d.innerHTML=parts.join('<span class="msep">·</span>');
+  (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }
 function nativeStage(sid){
   if(nativeStages[sid]) return nativeStages[sid];
   var d=document.createElement("div");
   d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
-  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0};
+  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"",
+                      planMode:null, taskMode:null, todos:null, tasksCollapsed:false};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -793,7 +1001,7 @@ function dropNativeStage(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} delete nativeWs[sid]; }
   if(currentSid===sid) hideNative();
 }
-function hideNative(){ currentSid=null; setMainView("landing"); }
+function hideNative(){ currentSid=null; setMainView("landing"); if(isNarrow()) openSidebar(); }
 function nNewTextBubble(st){
   var d=document.createElement("div"); d.className="nmsg assistant";
   var t=document.createElement("div"); t.className="ntxt";
@@ -816,37 +1024,95 @@ function nStopThinking(st){
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.thinkBubble){ st.thinkBubble.remove(); st.thinkBubble=null; }
 }
+/* 收束思考框:停止计时、摘要显示耗时、默认折叠;清空引用以便下一轮思考重建 */
+function nFinalizeThinking(st){
+  if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  if(st.thinkBox){
+    var dur=st.thinkStart?Math.max(0,Math.round((Date.now()-st.thinkStart)/1000)):0;
+    if(st.thinkSum) st.thinkSum.textContent = st.thinkStart?('💭 思考 ('+dur+'s)'):'💭 思考';
+    st.thinkBox.open=false;
+  }
+  st.curThink=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
+}
 function nAddRow(st, cls, html){
   st.curTxt=null;
   var d=document.createElement("div"); d.className="nmsg "+cls;
   d.innerHTML=html; (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }
+/* 事件指纹:用 type+uuid 序列 + 数量签名(不 stringify 正文,免得大对话卡顿)。
+   同一份事件流 → 同一指纹;新增/裁剪事件 → 指纹变。用于「内容没变就跳过重放」杜绝闪屏。 */
+function nEvSigPart(e){
+  var m=(e&&e.message)||{};
+  return (e&&e.type||"")+"|"+(m.uuid||m.id||(e&&e.uuid)||(e&&e.type==="result"?"r":"x"));
+}
+function nSigFromParts(parts){ return parts.length+"#"+parts.join(","); }
 function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var t=obj.type;
   var st=nativeStages[sid]; if(!st) return;
+  // 实时事件(非 replay)也计入「已渲染指纹」,这样切后台重连时能识别「内容没变」→ 跳过闪屏重放。
+  // replay 的事件由 replay_batch 统一建指纹,这里不重复计。
+  if(!obj.replay && (t==="assistant"||t==="user"||t==="result")){
+    st.sigParts=(st.sigParts||[]); st.sigParts.push(nEvSigPart(obj));
+    st.lastBatchSig=nSigFromParts(st.sigParts);
+  }
   if(t==="replay_batch"){
-    console.log("[N] replay_batch events=", (obj.events||[]).length, "rootKids=", st.root.children.length, "display=", st.root.style.display);
-    (obj.events||[]).forEach(function(e){ e.replay=true; nHandle(sid, e); });
-    console.log("[N] replay_batch DONE rootKids=", st.root.children.length);
+    var _evs=obj.events||[];
+    var _sig=nSigFromParts(_evs.map(nEvSigPart));
+    if(_sig && _sig===st.lastBatchSig){
+      // 同一份历史(最常见:切后台→浏览器杀 WS→回来重连,期间 agent 没动;实时会话也会命中,
+      // 因为实时事件已计入 st.sigParts)。完全不动 DOM,杜绝「清空重建」造成的整屏闪动。
+      return;
+    }
+    st.sigParts=_evs.map(nEvSigPart);
+    st.lastBatchSig=_sig;
+    // 内容确实变了(首次加载 / 后台期间 agent 产生了新输出):清空重建一份权威快照。
+    if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+    st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
+    st.turnCard=null; st.curTxt=null; st.curThink=null;
+    st.todos=null; if(currentSid===sid) nRenderTasks(st);   // 清空任务面板,由重放的 TodoWrite 重建
+    st.root.innerHTML="";
+    if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
+    _evs.forEach(function(e){ e.replay=true; nHandle(sid, e); });
     return;
   }
-  if(obj.replay && !st.replayDone){ st.replayDone=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
-  if(t==="system"){ return; }
+  if(t==="system"){
+    // system 初始事件含 model(及 version 等)。把模型写到顶栏徽标,让用户知道当前跑的是哪个模型。
+    // 存进 st.model:切会话时 showNativeSession 据此刷新徽标(重连/恢复时不重发 system)。
+    if(obj.model){ st.model=obj.model; if(currentSid===sid){ nRenderModelBadge(obj.model, obj.version); } }
+    return;
+  }
+  if(t==="mode_state"){
+    // 后端计划/任务模式变更(自己切换 / 批准计划后自动退出 / 多端同步)→ 更新 stage + 开关 UI + 持久化
+    st.planMode=!!obj.plan; st.taskMode=!!obj.task;
+    if(currentSid===sid){ nSyncModes(st); }
+    localStorage.setItem("acPlan_"+sid, obj.plan?"1":"0");
+    localStorage.setItem("acTask_"+sid, obj.task?"1":"0");
+    return;
+  }
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};
     if(dl.type==="text_delta" && dl.text){
+      nFinalizeThinking(st);
       nStopThinking(st);
       if(!st.curTxt) nNewTextBubble(st);
       st.curTxt.appendChild(document.createTextNode(dl.text));
       nScrollBottom();
     } else if(dl.type==="thinking_delta" && dl.thinking){
       if(!st.curThink){
-        var _thd=document.createElement("details"); _thd.open=true;
-        var _sum=document.createElement("summary"); _sum.textContent="💭 思考中…";
+        if(!st.thinkStart) st.thinkStart=Date.now();
+        var _thd=document.createElement("details"); _thd.open=false;
+        var _sum=document.createElement("summary"); _sum.textContent="💭 思考中… 0s";
         var _pre=document.createElement("pre");
         _thd.appendChild(_sum); _thd.appendChild(_pre);
-        nTurnCard(st).appendChild(_thd); st.curThink=_pre;
+        nTurnCard(st).appendChild(_thd);
+        st.curThink=_pre; st.thinkBox=_thd; st.thinkSum=_sum;
+        if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+        st.thinkTimer=setInterval(function(){
+          if(!st.thinkSum||!st.thinkStart) return;
+          var s=Math.floor((Date.now()-st.thinkStart)/1000);
+          st.thinkSum.textContent='💭 思考中… '+s+'s';
+        },1000);
       }
       st.curThink.appendChild(document.createTextNode(dl.thinking));
       nScrollBottom();
@@ -854,37 +1120,110 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="assistant"){
+    nFinalizeThinking(st);
     nStopThinking(st);
     var blocks=(obj.message&&obj.message.content)||[];
     blocks.forEach(function(b){
       if(b.type==="text"){
         if(!st.curTxt) nNewTextBubble(st);
-        st.curTxt.innerHTML=renderMd(b.text);
+        st.curTxt.innerHTML=renderMd(b.text); nHljs(st.curTxt);
       } else if(b.type==="tool_use"){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
-        var _cmd = b.input && (b.input.command || b.input.cmd);
-        var _isEdit = (b.name==="Edit"||b.name==="str_replace_edit"||b.name==="edit"||b.name==="Write"||b.name==="write_file"||b.name==="write") && b.input;
+        var _inp=b.input||{};
+        var _n=(b.name||"").toLowerCase();
+        var _cmd = _inp.command || _inp.cmd;
+        var _isEdit = (_n==="edit"||_n==="str_replace_edit"||_n==="write"||_n==="write_file") && b.input;
+        var _isShell = (_n==="bash"||_n==="powershell"||_n==="grep");
+        var _isTodo = (_n==="todo_write"||_n==="todowrite");
+        var _todoList = _isTodo ? (_inp.todos||[]) : [];
+        var _todoDone = _todoList.filter(function(x){ return (x.status||"")==="completed"; }).length;
+        // 任务模式:TodoWrite 每次更新都刷新顶栏持久进度面板(最新快照)。仅当前可见会话渲染。
+        if(_isTodo && _todoList.length){ st.todos=_todoList; if(currentSid===sid) nRenderTasks(st); }
         var _body;
-        if(b.name==="bash"||b.name==="PowerShell"){
+        if(_n==="bash"||_n==="powershell"){
           _body='<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>';
+        } else if(_isTodo){
+          _body='<div class="todo">'+_todoList.map(function(x){
+            var _st=x.status||"pending", _ic=_st==="completed"?"☑":(_st==="in_progress"?"◐":"☐");
+            return '<div class="todo-item '+_st+'"><span class="todo-ic">'+_ic+'</span><span>'+nEsc(x.content||x.activeForm||"")+'</span></div>';
+          }).join("")+'</div>';
         } else if(_isEdit){
-          _body='<div class="diff"><div class="diff-file">'+nEsc(b.input.file_path||b.input.path||"")+'</div>';
-          if(b.input.old_str||b.input.old_string){
-            _body+='<pre class="diff-del">'+nEsc("- "+(b.input.old_str||b.input.old_string||""))+'</pre>';
+          _body='<div class="diff"><div class="diff-file">'+nEsc(_inp.file_path||_inp.path||"")+'</div>';
+          if(_inp.old_str||_inp.old_string){
+            _body+='<pre class="diff-del">'+nEsc("- "+(_inp.old_str||_inp.old_string||""))+'</pre>';
           }
-          if(b.input.new_str||b.input.new_string||b.input.content){
-            _body+='<pre class="diff-add">'+nEsc("+ "+(b.input.new_str||b.input.new_string||b.input.content||""))+'</pre>';
+          if(_inp.new_str||_inp.new_string||_inp.content){
+            _body+='<pre class="diff-add">'+nEsc("+ "+(_inp.new_str||_inp.new_string||_inp.content||""))+'</pre>';
           }
           _body+='</div>';
+        } else if(_n==="multiedit"){
+          // MultiEdit:edits[] 多段替换 → 逐段红绿 diff + 处数,替代原先整块 JSON
+          var _medits=_inp.edits||[];
+          _body='<div class="diff"><div class="diff-file">'+nEsc(_inp.file_path||_inp.path||"")+
+                ' <span class="diff-cnt">'+_medits.length+' 处</span></div>';
+          _medits.forEach(function(ed,i){
+            _body+='<div class="diff-sec"><span class="diff-idx">#'+(i+1)+(ed.replace_all?' 全部':'')+'</span>';
+            if(ed.old_string){ _body+='<pre class="diff-del">'+nEsc("- "+ed.old_string)+'</pre>'; }
+            _body+='<pre class="diff-add">'+nEsc("+ "+(ed.new_string||""))+'</pre></div>';
+          });
+          _body+='</div>';
+        } else if(_n==="webfetch"){
+          // WebFetch:url + 抓取目的 → 链接卡(仅 http(s) 可点,杜绝 javascript: 等协议注入)
+          var _wurl=_inp.url||"";
+          var _wsafe=(_wurl.indexOf("http://")===0||_wurl.indexOf("https://")===0);
+          _body='<div class="web-card">'+(_wsafe
+                  ? '<a class="web-url" href="'+nEscAttr(_wurl)+'" target="_blank" rel="noopener">'+nEsc(_wurl)+'</a>'
+                  : '<div class="web-url">'+nEsc(_wurl)+'</div>');
+          if(_inp.prompt){ _body+='<div class="web-q">“'+nEsc(_inp.prompt)+'”</div>'; }
+          _body+='</div>';
+        } else if(_n==="websearch"){
+          // WebSearch:查询词卡
+          _body='<div class="web-card"><div class="web-q">🔍 '+nEsc(_inp.query||"")+'</div></div>';
+        } else if(_n==="glob"){
+          // Glob:pattern(+可选 path)
+          _body='<div class="glob-card">📂 '+nEsc(_inp.pattern||"")+(_inp.path?' <span class="tcdesc">in '+nEsc(_inp.path)+'</span>':'')+'</div>';
+        } else if(_n==="exitplanmode"){
+          // ExitPlanMode(非门控路径,如未走 gate)→ 计划展示卡(markdown)
+          _body='<div class="plan-body">'+renderMd(_inp.plan||"")+'</div>';
+        } else if(_n==="read"){
+          _body='';  // 路径/范围已在摘要灰色提示展示,不再重复输出 JSON
         } else {
-          _body='<pre>'+nEsc(JSON.stringify(b.input,null,2))+'</pre>';
+          _body='<pre>'+nEsc(JSON.stringify(_inp,null,2))+'</pre>';
         }
-        _tu.innerHTML='<details open><summary>🔧 '+nEsc(b.name)+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
+        var _icons={bash:"💻",powershell:"💻",read:"📖",edit:"✏️",str_replace_edit:"✏️",
+                    write:"📝",write_file:"📝",multiedit:"✏️",webfetch:"🌐",websearch:"🔍",
+                    glob:"📂",grep:"🔎",todowrite:"📋",todo_write:"📋",exitplanmode:"📋"};
+        var _ic=_icons[_n]||"🔧";
+        var _sum=_isTodo?('📋 待办 ('+_todoDone+'/'+_todoList.length+')'):(_ic+' '+nEsc(b.name||""));
+        var _hint=_inp.description||"";
+        if(!_hint){
+          if(_n==="grep" && _inp.pattern){ _hint='/'+_inp.pattern+'/'; }
+          else if(_n==="read" && _inp.file_path){
+            _hint=_inp.file_path;
+            var _ro=_inp.offset, _rl=_inp.limit;
+            if(_ro!=null && _rl!=null){ _hint+=' (第 '+_ro+'-'+(Number(_ro)+Number(_rl)-1)+' 行)'; }
+            else if(_ro!=null){ _hint+=' (从第 '+_ro+' 行)'; }
+            else if(_rl!=null){ _hint+=' (前 '+_rl+' 行)'; }
+          }
+          else if(_n==="multiedit" && (_inp.file_path||_inp.path)){ _hint=_inp.file_path||_inp.path; }
+          else if(_n==="websearch" && _inp.query){ _hint=_inp.query; }
+          else if(_n==="glob" && _inp.pattern){ _hint=_inp.pattern; }
+        }
+        if(_hint){ _sum+=' <span class="tcdesc">'+nEsc(_hint)+'</span>'; }
+        if(_isTodo){
+          // 折叠本 turn 内上一版待办快照,只展开最新一版(避免历史快照刷屏)
+          var _pv=(st.turnCard||st.root).querySelectorAll('details.todo-det');
+          for(var _i=0;_i<_pv.length;_i++){ _pv[_i].open=false; }
+        }
+        var _detAttr=(_isShell?"":" open")+(_isTodo?' class="todo-det"':'');
+        _tu.innerHTML='<details'+_detAttr+'><summary>'+_sum+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
         nTurnCard(st).appendChild(_tu); st.curTxt=null; nScrollBottom();
       } else if(b.type==="thinking"){
-        var _th=document.createElement("details"); _th.open=true;
-        _th.innerHTML='<summary>💭 思考</summary><pre>'+nEsc(b.thinking||"")+'</pre>';
-        nTurnCard(st).appendChild(_th); nScrollBottom();
+        if(obj.replay){
+          var _th=document.createElement("details");
+          _th.innerHTML='<summary>💭 思考</summary><pre>'+nEsc(b.thinking||"")+'</pre>';
+          nTurnCard(st).appendChild(_th); nScrollBottom();
+        }
       }
     });
     st.curThink=null; st.curTxt=null;
@@ -898,18 +1237,37 @@ function nHandle(sid, obj){
       if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
         var tu=(st.turnCard||st.root).querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
-        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML='<pre>'+nEsc(txt)+'</pre>'; } }
-        else { nAddRow(st, "result", "<details open><summary>↩ 工具结果</summary><pre>"+nEsc(txt)+"</pre></details>"); }
+        var _nl=String.fromCharCode(10), _lines=String(txt).split(_nl).length;
+        var _resSum='↩ 执行结果 ('+_lines+' 行)';
+        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML='<details class="tres-det"><summary>'+nEsc(_resSum)+'</summary><pre>'+nEsc(txt)+'</pre></details>'; } }
+        else { nAddRow(st, "result", "<details><summary>"+nEsc(_resSum)+"</summary><pre>"+nEsc(txt)+"</pre></details>"); }
       }
     });
     return;
   }
   if(t==="pending_approval"){
+    // ExitPlanMode(计划模式提交计划)→ 计划审批卡:markdown 计划 + 批准/拒绝。
+    // 批准后后端自动退出计划模式并广播 mode_state(同步前端开关),与 claude cli 行为一致。
+    if(obj.name==="ExitPlanMode"){
+      var pcard=document.createElement("div"); pcard.className="nmsg plan"; pcard.dataset.tuid=obj.tool_use_id;
+      var _planMd=(obj.input&&obj.input.plan)||"";
+      pcard.innerHTML='<div class="plan-head">📋 计划方案 · 请审阅后决定</div><div class="plan-body">'+renderMd(_planMd)+'</div>'+
+        '<div class="abtns"><button class="allow">✅ 批准并执行</button><button class="deny">✏️ 让它继续完善</button></div>';
+      nHljs(pcard.querySelector(".plan-body"));
+      pcard.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); pcard.remove(); });
+      pcard.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); pcard.remove(); });
+      nTurnCard(st).appendChild(pcard); st.curTxt=null; nScrollBottom(); return;
+    }
     var dng=obj.danger?" danger":"";
     var card=document.createElement("div"); card.className="nmsg approval"+dng; card.dataset.tuid=obj.tool_use_id;
-    card.innerHTML=(obj.danger?"⚠️ <b>高危命令,请仔细确认</b> ":"")+nEsc(obj.name||"")+"<pre>"+nEsc(obj.preview||JSON.stringify(obj.input||{}))+"</pre>"+
-      '<div class="abtns"><button class="allow">允许</button><button class="deny">拒绝</button></div>';
+    var _btns='<div class="abtns"><button class="allow">允许</button>';
+    // 高危命令不能被「不再询问」(后端对高危仍强制审批,按钮也无意义),故高危卡不显示此项
+    if(!obj.danger){ _btns+='<button class="always" title="本会话内同类操作自动放行(高危命令仍会确认)">允许并不再询问</button>'; }
+    _btns+='<button class="deny">拒绝</button></div>';
+    card.innerHTML=(obj.danger?"⚠️ <b>高危命令,请仔细确认</b> ":"")+nEsc(obj.name||"")+"<pre>"+nEsc(obj.preview||JSON.stringify(obj.input||{}))+"</pre>"+_btns;
     card.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); card.remove(); });
+    var _al=card.querySelector(".always");
+    if(_al){ _al.addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true, true); card.remove(); }); }
     card.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); card.remove(); });
     nTurnCard(st).appendChild(card); st.curTxt=null; nScrollBottom(); return;
   }
@@ -923,7 +1281,7 @@ function nHandle(sid, obj){
     });
     ta.addEventListener("keydown", function(e){ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ acard.querySelector('.asend').click(); } });
     nTurnCard(st).appendChild(acard); st.curTxt=null; nScrollBottom();
-    setTimeout(function(){ ta.focus(); }, 50);
+    setTimeout(function(){ ta.focus({preventScroll:true}); }, 50);
     return;
   }
   if(t==="approval_decision"){
@@ -936,22 +1294,45 @@ function nHandle(sid, obj){
     if(a2) a2.remove();
     return;
   }
+  if(t==="auto_allow_added"){
+    // 用户点了「允许并不再询问」→ 该工具已加入本会话允许集,后续同类门控自动放行。给条反馈确认生效。
+    nAddRow(st, "sys", "🔒 本会话不再询问 "+nEsc(obj.tool||"")+" 类操作(同类自动放行,高危命令仍会确认)");
+    return;
+  }
   if(t==="compacted"){
     nAddRow(st, "sys", "🗂 对话历史已压缩(早期摘要、近期保留,可继续长任务)");
     return;
   }
+  if(t==="codex_notice"){
+    nAddRow(st, "sys", "Codex: "+nEsc(obj.message||"notice"));
+    return;
+  }
+  if(t==="codex_usage"){
+    return;
+  }
   if(t==="result"){
     if(obj.error) nAddRow(st, "sys", "⚠️ "+nEsc(obj.error));
+    nMetaRow(st, obj);
     nEndTurn(st);
     var sb=$("nativesubmit"); if(sb){ sb.disabled=false; sb.textContent="发送"; }
     return;
   }
+  if(t==="interrupted"){
+    // 用户点了「打断」→ 后端 kill 当前 claude 子进程但保留会话/历史。收尾这一轮:
+    // 停思考计时、补一条系统提示、复位发送按钮。(result 不会来,所以这里手动收尾)
+    nFinalizeThinking(st); nStopThinking(st);
+    nAddRow(st, "sys", "⏹ 已打断本轮 · agent 停止生成,会话与历史保留,可继续发送(下次自动 --resume)");
+    nEndTurn(st);
+    var sbi=$("nativesubmit"); if(sbi){ sbi.disabled=false; sbi.textContent="发送"; }
+    var ibi=$("nativeintr"); if(ibi){ ibi.disabled=false; ibi.textContent="打断"; }
+    return;
+  }
 }
-function nApprove(sid, tuid, allow){ postJSON("/api/napprove", {sid:sid, tool_use_id:tuid, allow:allow}); }
+function nApprove(sid, tuid, allow, always){ postJSON("/api/napprove", {sid:sid, tool_use_id:tuid, allow:allow, always:!!always}); }
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.curTxt=null; st.curThink=null; st.turnCard=null; st.replayDone=false; }
+  if(st){ if(st.thinkTimer){clearInterval(st.thinkTimer);st.thinkTimer=null;} st.thinking=false; st.curTxt=null; st.curThink=null; st.turnCard=null; }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;
@@ -967,23 +1348,42 @@ function nativeConnect(sid){
   ws.onerror=function(){ console.log("[N] ws error", sid); };
   ws._ka=setInterval(function(){ if(ws.readyState===1){ try{ ws.send("ping"); }catch(e){} } }, 20000);
 }
+/* 标签页切回前台:后台时浏览器(尤其手机)常会杀掉空闲 WS。与其干等 onclose 的 1.5s 重试,
+   不如可见时立刻检查当前原生会话的 WS —— 不健康(无 / closing / closed)就连,健康就不动(避免无谓闪屏);
+   顺手刷一下侧边栏状态(后台期间运行/需确认可能已变化)。 */
+document.addEventListener("visibilitychange", function(){
+  if(document.visibilityState !== "visible") return;
+  var sid=currentSid;
+  if(sid && nativeStages[sid]){
+    var ws=nativeWs[sid];
+    if(!ws || ws.readyState>1){ nativeConnect(sid); }
+  }
+  pollSessionSignals();
+});
 function showNativeSession(sid, title){
   currentSid=sid; $("nativettl").textContent=title||sid;
+  nRenderModelBadge((nativeStages[sid]||{}).model||"");
   Object.keys(nativeStages).forEach(function(k){ nativeStages[k].root.style.display=(k===sid)?"flex":"none"; });
   var st=nativeStage(sid);
+  // 恢复计划/任务模式开关:优先 stage 内存(切会话保持),首次加载从 localStorage 读
+  if(st.planMode==null){ st.planMode = localStorage.getItem("acPlan_"+sid)==="1"; }
+  if(st.taskMode==null){ st.taskMode = localStorage.getItem("acTask_"+sid)==="1"; }
+  nSyncModes(st); nRenderTasks(st);
+  // 后端(尤其重启后)模式可能已丢,把当前开关推回去重同步
+  postJSON("/api/nmode",{sid:sid, plan:st.planMode, task:st.taskMode});
   st.root.style.display="flex";
   if(!nativeWs[sid] || nativeWs[sid].readyState===3) nativeConnect(sid);
   setMainView("native"); closeSidebar();
-  setTimeout(function(){ $("nativeinput").focus(); }, 60);
+  setTimeout(function(){ $("nativeinput").focus({preventScroll:true}); }, 60);
 }
 function nativeSend(){
   var inp=$("nativeinput"), p=inp.value.trim();
   if(!p || !currentSid) return;
   var st=nativeStage(currentSid); if(!st) return;
-  var ud=document.createElement("div"); ud.className="nmsg user"; ud.textContent=p; st.root.appendChild(ud); nScrollBottom();
+  nHandle(currentSid, {type:"user", message:{role:"user", content:p}});   // 渲染用户气泡,并计入「已渲染指纹」(与服务端 replay 的合成 user 事件同形 → 重连可命中跳过)
   inp.value="";
   var sb=$("nativesubmit"); if(sb){ sb.disabled=true; sb.textContent="思考中…"; }
-  postJSON("/api/nsend", {sid:currentSid, prompt:p}).then(function(r){
+  postJSON("/api/nsend", {sid:currentSid, prompt:p, plan:!!st.planMode, task:!!st.taskMode}).then(function(r){
     if(r && r.error){ nAddRow(st, "sys", "⚠️ 发送失败: "+nEsc(r.error)+"（若刚更新代码,请「设置 → 重启后端层」加载 native.py 后刷新页面）"); if(sb){ sb.disabled=false; sb.textContent="发送"; } }
   }).catch(function(e){ nAddRow(st, "sys", "⚠️ 网络错误: "+nEsc(e&&e.message||e)); if(sb){ sb.disabled=false; sb.textContent="发送"; } });
 }
@@ -995,19 +1395,46 @@ function renderMode(boxId){
     btn.addEventListener("click", function(){ lmMode=m[0]; acPrefSet("acMode", lmMode, "acMode"); renderMode(boxId); });
     box.appendChild(btn);
   });
-  var f=$("lm-backend-field"); if(f) f.style.display=(lmMode==="native")?"none":"";
+  var f=$("lm-backend-field"); if(f) f.style.display="";
   var h=$("lm-mode-hint");
-  if(h) h.textContent=(lmMode==="native")?"自建 agent harness 直接打 Anthropic 兼容端点(GLM/Claude),bash 需审批":"ttyd 驱动 codex/claude CLI(原有终端)";
+  if(h) h.textContent=(lmMode==="native")?"结构化 Web 渲染 Codex/Claude CLI，会话内显示工具、审批和结果":"兼容旧终端入口；当前后端会优先创建结构化会话";
 }
 $("nativeback").addEventListener("click", hideNative);
 $("nativestop").addEventListener("click", function(){ if(currentSid){ postJSON("/api/stop",{sid:currentSid}); dropNativeStage(currentSid); pollSessionSignals(); } });
+/* 「打断」:只 kill 当前正在跑的 claude 子进程,保留 sid / 历史 / WS。区别于「停止」(杀整个会话)。
+   后端 interrupt() 返回 ok=true 表示确有子进程被杀;随后 _run_cli 广播 interrupted → nHandle 收尾。
+   ok=false(没在跑/没找到)→ 复位按钮,不报错。 */
+$("nativeintr").addEventListener("click", function(){
+  if(!currentSid) return;
+  var btn=this, old=btn.textContent;
+  btn.disabled=true; btn.textContent="打断中…";
+  postJSON("/api/ninterrupt",{sid:currentSid}).then(function(r){
+    if(!r||!r.ok){ btn.disabled=false; btn.textContent=old; }   // 没在跑,静默复位(等 interrupted 事件来再复位)
+  }).catch(function(){ btn.disabled=false; btn.textContent=old; });
+  setTimeout(function(){ if(btn.disabled){ btn.disabled=false; btn.textContent=old; } }, 5000);  // 兜底:子进程没回 interrupted 也复位
+});
 $("nativesend").addEventListener("submit", function(e){ e.preventDefault(); nativeSend(); });
+/* 计划/任务模式开关:点击翻转 stage 状态 + 即时同步 UI + 推后端(/api/nmode 广播 mode_state 回环确认)。
+   plan/task 两键独立,可同时开(先计划后任务跟踪)。持久化进 localStorage,跨刷新保留。 */
+function nToggleMode(which){
+  if(!currentSid) return;
+  var st=nativeStage(currentSid); if(!st) return;
+  var key = which==="plan"?"planMode":"taskMode";
+  st[key]=!st[key];
+  if(which==="plan"){ localStorage.setItem("acPlan_"+currentSid, st.planMode?"1":"0"); }
+  else { localStorage.setItem("acTask_"+currentSid, st.taskMode?"1":"0"); }
+  nSyncModes(st);
+  var payload={sid:currentSid}; payload[which]=st[key];
+  postJSON("/api/nmode", payload);
+}
+$("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
+$("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
 $("nativeinput").addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); nativeSend(); } });
 function openSessionBySid(sid, skipFetch){
   if(!sid) return false;
   var i, s; for(i=0;i<runSessions.length;i+=1){ if(runSessions[i].sid===sid){ s=runSessions[i]; break; } }
   if(s){
-    if(s.backend==="native" || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
+    if(isNativeBackend(s.backend) || s.native){ showNativeSession(s.sid, s.title||basename(s.dir)); }
     else { showTerminal(s.sid, s.term_path, s.title||basename(s.dir)); }
     return true;
   }
@@ -1102,13 +1529,12 @@ $("termstop").addEventListener("click", function(){
 
 /* ---- launch ---- */
 function launchDir(dir, title, backend, yolo, args, mode){
-  mode=mode||lmMode||"terminal";
-  backend=backend||"codex";
-  if(mode==="native") backend="native";
+  mode=mode||lmMode||"native";
+  backend=backend||lmBackend||"codex_native";
   postJSON("/api/launch", {dir:dir, backend:backend, yolo:!!yolo, args:args||""}).then(function(r){
     if(r.error){ alert("启动失败："+r.error); return; }
-    if(r.backend==="native"){
-      showNativeSession(r.sid, (title||basename(r.dir))+" · 原生 Agent");
+    if(isNativeBackend(r.backend)){
+      showNativeSession(r.sid, (title||basename(r.dir))+" · "+backendLabel(r.backend));
     } else {
       if(mode==="native"){ alert("后端把「原生模式」当成了 "+backendLabel(r.backend||backend)+" 终端会话。\n\n说明 manager 还在跑旧代码。请先「设置 → 重启后端层」加载 native.py,刷新页面后再新建原生会话。"); }
       showTerminal(r.sid, r.term_path, (title||basename(r.dir))+" · "+backendLabel(r.backend||backend));
@@ -1119,7 +1545,7 @@ function launchDir(dir, title, backend, yolo, args, mode){
 function renderBackend(boxId){
   var box=$(boxId); if(!box) return; box.innerHTML="";
   availBackends.forEach(function(b){
-    var btn=document.createElement("button"); btn.textContent=b==="claude"?"🟣 Claude":"🟠 Codex";
+    var btn=document.createElement("button"); btn.textContent=isClaudeBackend(b)?"🟣 Claude":"🟠 Codex";
     if(b===lmBackend) btn.classList.add("active");
     btn.addEventListener("click", function(){ lmBackend=b; acPrefSet("acBackend", b, "acBackend"); renderBackend("lm-backend"); });
     box.appendChild(btn);
@@ -1239,7 +1665,7 @@ function refreshCC(){
 function isNarrow(){ return window.matchMedia("(max-width:860px)").matches; }
 function openSidebar(){ if(isNarrow()){ document.body.classList.add("sb-open"); } else { document.body.classList.remove("sb-collapsed"); } }
 function closeSidebar(){ document.body.classList.remove("sb-open"); }
-$("menubtn").addEventListener("click", function(){ document.body.classList.toggle("sb-open"); });
+$("menubtn").addEventListener("click", function(){ if(isNarrow()){ document.body.classList.toggle("sb-open"); } else { document.body.classList.toggle("sb-collapsed"); } });
 $("sb-close").addEventListener("click", function(){ if(isNarrow()) closeSidebar(); else document.body.classList.add("sb-collapsed"); });
 $("sbreopen").addEventListener("click", function(){ document.body.classList.remove("sb-collapsed"); });
 $("shade").addEventListener("click", closeSidebar);
@@ -1271,7 +1697,7 @@ setInterval(refreshCC, 30000);
 // 会话化登录门禁:启动探测 /api/whoami,未登录则弹登录框,登录成功后刷新页面。
 (function(){
   function $(id){ return document.getElementById(id); }
-  function showLogin(){ $("loginmodal").classList.add("open"); setTimeout(function(){ var u=$("lg-user"); if(u) u.focus(); }, 60); }
+  function showLogin(){ $("loginmodal").classList.add("open"); setTimeout(function(){ var u=$("lg-user"); if(u) u.focus({preventScroll:true}); }, 60); }
   function hideLogin(){ $("loginmodal").classList.remove("open"); }
   function doLogin(){
     var u = $("lg-user").value, p = $("lg-pass").value;
@@ -1288,7 +1714,7 @@ setInterval(refreshCC, 30000);
   }
   $("lg-btn").addEventListener("click", doLogin);
   $("lg-pass").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
-  $("lg-user").addEventListener("keydown", function(e){ if(e.key==="Enter") $("lg-pass").focus(); });
+  $("lg-user").addEventListener("keydown", function(e){ if(e.key==="Enter") $("lg-pass").focus({preventScroll:true}); });
   fetch("/api/whoami").then(function(r){ if(r.ok) hideLogin(); else showLogin(); }).catch(function(){ showLogin(); });
 })();
 </script>

@@ -6,13 +6,13 @@ Single launcher kept for compatibility with start.cmd (`python app.py`). It just
 picks web vs manager mode from argv and delegates:
 
   python app.py            -> web.py     (serves index.html + proxies to manager)
-  python app.py --manager  -> manager.py (owns the codex/claude ttyd sessions)
+  python app.py --manager  -> manager.py (owns web-rendered agent sessions)
   python app.py --stop     -> common.perform_shutdown()
                                 (fully stop a running Cockpit: web + manager +
                                  every session; tells the supervisor to stop too)
   python app.py --help     -> this text
 
-All shared infra lives in common.py; the terminal multiplexer in hub.py.
+All shared infra lives in common.py.
 importing common runs env/bin/auth resolution (and may sys.exit on misconfig —
 except in --stop / --help mode, which must work even on a broken install).
 """
@@ -26,7 +26,7 @@ def main():
         print("Agents Cockpit")
         print("Usage: python app.py [--manager | --stop | --help]")
         print("  (no flag)  web layer — serves the console and proxies to the manager")
-        print("  --manager  manager layer — owns the ttyd + codex/claude sessions")
+        print("  --manager  manager layer — owns web-rendered agent sessions")
         print("  --stop     fully stop a running Agents Cockpit (web + manager + all")
         print("             sessions); also signals the supervisor to stop relaunching")
         return
@@ -46,7 +46,7 @@ def main():
             print("[stop] Agents Cockpit 已完全停止。")
         else:
             print("[stop] 仍有端口被占用 —— 可能有残留进程。请关闭 start.cmd 窗口,")
-            print("       或在任务管理器里结束 python.exe / ttyd.exe。")
+            print("       或在任务管理器里结束 python.exe。")
         return
     if common.RUN_MODE == "manager":
         import manager

@@ -23,6 +23,7 @@ import time
 import threading
 import subprocess
 import traceback
+import re
 
 import common
 from common import ws_send, ws_recv, STATE_DIR, CLAUDE_BIN, MANAGER_PORT
@@ -43,6 +44,33 @@ _PLAN_SYSTEM = ("【计划模式】你只能使用只读工具(Read / Grep / Glo
 # 任务模式:多步骤工作用 TodoWrite 跟踪并实时更新状态
 _TASK_SYSTEM = ("【任务模式】对多步骤工作,请先用 TodoWrite 工具建立任务清单,并在推进过程中实时更新"
                 "每项状态(pending → in_progress → completed),让用户随时看到进度。")
+
+
+# ---------- 529/1305 限流检测 ----------
+# z.ai 网关对 glm-5.2 账号有速率限制:请求速率/并发突增会把账号推进限流冷却期(cooldown),冷却期内
+# 对该账号的所有请求(哪怕一句 hi)一律返回 529/1305。这跟"瞬时过载"不同 —— 重试只会延长冷却期,
+# 所以检测到限流就停止本轮、提示用户稍候,而不是硬重试。触发主因是 web 多会话并发 + send 无 busy
+# 保护(CLI 单会话低频够不到限流线)。冷却期/Retry-After 的原始证据由 _dump_failure 打进 manager 日志。
+_OVERLOAD_RE = re.compile(r"\b529\b|overload", re.I)
+
+
+def _is_overloaded(result_ev, stderr_text):
+    """本轮是否 529/限流。看 result 事件文本字段 + 累积 stderr ——
+    z.ai 的 529 既有体现在 result.result("API Error: 529 [1305]..."),也可能只印在 stderr。"""
+    parts = []
+    if result_ev:
+        parts.append(str(result_ev.get("result") or ""))
+        parts.append(str(result_ev.get("error") or ""))
+        parts.append(str(result_ev.get("subtype") or ""))
+    if stderr_text:
+        parts.append(stderr_text)
+    return any(_OVERLOAD_RE.search(p) for p in parts)
+
+
+def _short_err(result_ev):
+    if not result_ev:
+        return ""
+    return str(result_ev.get("result") or result_ev.get("error") or "")[:200]
 
 
 def _push_notify_worker(title, body, event):
@@ -375,50 +403,105 @@ class NativeSession:
         return argv
 
     # ---------- claude cli ----------
+    def _run_one_round(self, prompt):
+        """Spawn claude CLI 一次。实时广播 result 以外的所有事件;result 事件暂存返回,由 _run_cli
+        据其判断 529 过载后重试或正常收尾。返回 (result_ev, ran_clean, stderr_text)。
+
+        result 不在此广播/入 events —— 因为前端 result 分支会复位发送按钮并判定本轮结束(native.py
+        顶部契约);529 的 error result 必须由外层拦下重试,不能提前推给前端。"""
+        argv = self._build_argv(prompt)
+        proc = subprocess.Popen(
+            argv, cwd=self.cwd,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", bufsize=1)
+        self._proc = proc   # interrupt() 据此 kill 当前轮子进程
+
+        stderr_buf = []
+        threading.Thread(target=self._drain_stderr, args=(proc, stderr_buf), daemon=True).start()
+
+        result_ev = None
+        for line in proc.stdout:
+            line = line.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            with self._lock:
+                if ev.get("session_id"):
+                    self.claude_sid = ev["session_id"]
+            if ev.get("type") == "result":
+                result_ev = ev   # 暂存,不广播不入 events
+                continue
+            # 只存终态(replay 用),不存 stream_event 中间帧
+            if ev.get("type") in ("assistant", "user"):
+                with self._lock:
+                    self.events.append(ev)
+                    if len(self.events) > 200:
+                        self.events = self.events[-200:]
+            self._broadcast(ev)
+            self.last_activity = time.time()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            try: proc.kill()
+            except OSError: pass
+        return result_ev, True, "".join(stderr_buf)
+
+    @staticmethod
+    def _drain_stderr(proc, buf):
+        """读 claude CLI 的 stderr 到 buf(诊断用)。原先直接 for+pass 吞掉,连 CLI 的「正在重试/
+        过载」提示都看不到;现在累积起来,失败时由 _run_cli 打印,便于定位网关问题。"""
+        try:
+            for line in proc.stderr:
+                buf.append(line)
+        except Exception:
+            pass
+
+    def _dump_failure(self, tag, result_ev, stderr_text):
+        """失败时把完整 result + stderr 打进 manager 日志。z.ai 的 529/1305 里藏着 request-id、
+        错误码、可能的 Retry-After(冷却剩余秒)—— 这是坐实"限流冷却期"假设的关键证据,不截断。"""
+        try:
+            print("[native %s] === %s ===" % (self.sid, tag))
+            if result_ev:
+                print("[native %s] result: %s"
+                      % (self.sid, json.dumps(result_ev, ensure_ascii=False)))
+            if stderr_text and stderr_text.strip():
+                print("[native %s] stderr:\n%s" % (self.sid, stderr_text))
+        except Exception:
+            pass
+
     def _run_cli(self, prompt):
         self._busy = True
         self.last_activity = time.time()
-        completed = False
+        success = False
         try:
-            argv = self._build_argv(prompt)
-            proc = subprocess.Popen(
-                argv, cwd=self.cwd,
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding="utf-8", errors="replace", bufsize=1)
-            self._proc = proc   # interrupt() 据此 kill 当前轮子进程
-
-            def drain():
-                try:
-                    for _ in proc.stderr:
-                        pass
-                except Exception:
-                    pass
-            threading.Thread(target=drain, daemon=True).start()
-
-            for line in proc.stdout:
-                line = line.strip()
-                if not line or not line.startswith("{"):
-                    continue
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
+            result_ev, _ran_clean, stderr_text = self._run_one_round(prompt)
+            if self._interrupted or self._closed:
+                pass   # 用户打断/会话关闭 → finally 里 interrupted 分支收尾
+            elif result_ev is not None:
+                # 529/1305 限流:不重试(冷却期内重试只会延长冷却)。改广播专门的 rate_limited 提示,
+                # 让用户知道是账号被限速、稍候再发,而非当成普通报错。
+                if _is_overloaded(result_ev, stderr_text):
+                    self._dump_failure("rate-limit/overload (1305/529)", result_ev, stderr_text)
+                    self._broadcast({"type": "rate_limited",
+                                     "detail": _short_err(result_ev)})
+                else:
+                    self._broadcast(result_ev)
+                    success = not (result_ev.get("is_error") or result_ev.get("error"))
                 with self._lock:
-                    if ev.get("session_id"):
-                        self.claude_sid = ev["session_id"]
-                    # 只存终态(replay 用),不存 stream_event 中间帧
-                    if ev.get("type") in ("assistant", "user", "result"):
-                        self.events.append(ev)
-                        if len(self.events) > 200:
-                            self.events = self.events[-200:]
-                self._broadcast(ev)
-                self.last_activity = time.time()
-            completed = True   # stdout 走完(result 已收)= 这一轮 agent 工作结束
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                try: proc.kill()
-                except OSError: pass
+                    self.events.append(result_ev)
+                    if len(self.events) > 200:
+                        self.events = self.events[-200:]
+            elif stderr_text.strip():
+                # 没拿到 result 事件却有 stderr(进程级崩溃):dump 诊断 + 广播错误 result
+                self._dump_failure("process crash (no result event)", None, stderr_text)
+                self._broadcast({"type": "result",
+                                 "error": "claude CLI 异常退出,见 manager 日志"})
+            else:
+                # 极端:stdout 无 result 事件、stderr 也空(不应发生)→ 仍给前端收尾,避免卡住
+                self._broadcast({"type": "result", "error": "未收到 claude 结果事件"})
         except Exception:
             traceback.print_exc()
             self._broadcast({"type": "result", "error": "claude CLI 执行异常,见 manager 日志"})
@@ -427,11 +510,11 @@ class NativeSession:
             self._proc = None
             self._persist()
             # 用户点了「打断」:本轮按打断收尾(前端 interrupted 分支补系统提示 + 复位按钮),
-            # 不发「已完成」推送。否则正常完成 → 推手机。
+            # 不发「已完成」推送。否则真正成功完成 → 推手机(限流/失败不推,避免误导)。
             if self._interrupted and not self._closed:
                 self._interrupted = False
                 self._broadcast({"type": "interrupted"})
-            elif completed and not self._closed:
+            elif success and not self._closed:
                 self._push("done", "✅ 已完成 · " + os.path.basename(self.cwd),
                            self.cwd + " · 等待下一条指令")
 

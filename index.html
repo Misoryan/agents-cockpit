@@ -1349,6 +1349,15 @@ function nHandle(sid, obj){
   if(t==="codex_usage"){
     return;
   }
+  if(t==="rate_limited"){
+    // 账号被 z.ai 限流(529/1305):冷却期内重发只会延长冷却,后端已停止重试。提示用户稍候,
+    // 并把"同账号 CLI 是否也失败"的对照实验交给用户(判定账号级冷却 vs web 独有特征)。
+    nFinalizeThinking(st); nStopThinking(st);
+    nAddRow(st, "sys", "🔴 账号被限流(529/1305),冷却期内重发只会延长冷却 → 请稍候片刻(约半分钟~几分钟)再试。同时段用同账号 CLI 发一条:也失败=账号级冷却(需压低 web 并发);正常=web 独有特征待查。详情见 manager 日志。");
+    nEndTurn(st);
+    var sbr=$("nativesubmit"); if(sbr){ sbr.disabled=false; sbr.textContent="发送"; }
+    return;
+  }
   if(t==="result"){
     st.lastWasHumanUser=false;
     if(obj.error) nAddRow(st, "sys", "⚠️ "+nEsc(obj.error));

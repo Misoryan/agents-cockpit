@@ -691,7 +691,7 @@ function renderDirRow(d, q){
     (d.running?'<span class="badge">●'+d.running+'</span>':'')+
     '<span class="chev">'+(open?'▼':'▶')+'</span>';
   var plus=document.createElement("button"); plus.className="plus"; plus.textContent="＋"; plus.title="在此目录发起新对话";
-  plus.addEventListener("click", function(ev){ ev.stopPropagation(); launchDir(d.cwd, basename(d.cwd), lmBackend, lmYolo, lmArgs); });
+  plus.addEventListener("click", function(ev){ ev.stopPropagation(); openLaunchForDir(d.cwd, basename(d.cwd)); });
   head.appendChild(plus);
   head.addEventListener("click", function(){ expanded[d.cwd]=!expanded[d.cwd]; renderSidebar(); });
   row.appendChild(head);

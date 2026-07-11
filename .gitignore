@@ -7,11 +7,11 @@ auth.txt
 config.ini
 
 
-# 二进制(需自行下载,不入库)
-ttyd
-ttyd.exe
+# local binaries
 codex
 codex.exe
+
+# 二进制(需自行下载,不入库)
 
 # Python
 __pycache__/
@@ -21,8 +21,9 @@ __pycache__/
 .sid
 *.log
 .tmp*
-.ttyd.html
-.term.html
+_shots/
+_repro/
+_probe_*.py
 
 # 运行时会话状态(注册表 + scrollback,软重启重连用)
 .agent-cockpit/

@@ -24,7 +24,7 @@ Lifecycle:
   * cleanup lock/pid in finally.
 
 Deliberately does NOT import common: common.py sys.exit(1)s at import time on a
-broken install (missing codex/claude/ttyd or empty auth.txt). The supervisor is
+broken install (missing claude or empty auth.txt). The supervisor is
 the bootstrap layer and must be the most robust file in the project -- it must
 never die from a broken install. It hardcodes the handful of constants it needs
 and reads [server] port from config.ini directly.

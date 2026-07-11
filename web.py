@@ -2,12 +2,12 @@
 """
 Agents Cockpit — web process (the "后端接入层" facing the browser).
 
-Serves index.html, enforces basic-auth, and reverse-proxies every /api/* and /t/*
+Serves index.html, enforces basic-auth, and proxies /api/* plus session paths
 to the manager over plain TCP (HTTP + raw websocket bytes). The web process is
 DISPOSABLE: it can be restarted (restart_web) without touching the manager or
 any CLI session. It also supervises the manager: a heartbeat thread respawns the
 manager if it dies (crash or soft restart), so editing manager logic and applying
-it no longer kills the running codex/claude processes.
+it no longer kills the running Claude sessions.
 """
 import sys
 import time
@@ -376,7 +376,7 @@ class WebHandler(BaseHandler):
 
 def run():
     # Win32: bind a KILL_ON_JOB_CLOSE job object BEFORE spawning the manager, so
-    # the whole tree (manager -> ttyd -> codex/claude) dies with us if we crash
+    # the whole tree (web -> manager -> claude) dies with us if we crash
     # or the console window is closed. No-op + fallback on POSIX / old hosts.
     common.bind_to_kill_on_close_job()
     if os.name == "posix":
@@ -395,8 +395,7 @@ def run():
         print(" 经 tcp 隧道(openfrp 等)暴露时,穿透商看不到明文,口令/Cookie 端到端加密。")
     print(" Manager(本机): http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     print(" 账号: %s  密码: ***" % common.CRED.split(":", 1)[0])
-    print(" codex : %s" % (common.CODEX_BIN or "(未找到)"))
-    print(" claude: %s" % (common.CLAUDE_BIN or "(未找到)"))
+    print(" claude: %s" % (common.CLAUDE_BIN or "(not found)"))
     print(" 重启网站/后端层不影响运行中的会话;完全重启才会重载全部代码")
     print("=" * 56)
     try:

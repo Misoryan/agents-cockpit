@@ -1,107 +1,68 @@
-# Agents Cockpit 配置文件。
-#
-# 用法: 复制本文件为 config.ini,按需修改后重启即可生效。
-# 留空或删掉某行 = 用下面注释里写的默认值;完全没有 config.ini 也能跑(全部走默认)。
-# config.ini 已在 .gitignore 中,不会被上传。
+# Agents Cockpit configuration (Codex/Claude web-rendered sessions).
+# Copy this file to config.ini and restart the service. Missing keys use defaults.
 
 [server]
-# 对外监听地址(局域网访问用 0.0.0.0)
+# Browser-facing host/port.
 host = 0.0.0.0
-# 控制台端口(浏览器打开的那个)
 port = 7682
-# 每个会话占用的 ttyd 端口起始值;0 = port + 1
-port_base = 0
-# ttyd 绑定的本机网卡(仅本机访问保持 127.0.0.1;Linux 想走 lo 就填 lo)
-bind = 127.0.0.1
 
-# 应用层 HTTPS(可选;配合 openfrp/frp 的 tcp 隧道做端到端加密,穿透商看不到明文)。
-# 1=启用,浏览器走 https://,首次启动自动生成自签证书(需 pip install cryptography),
-# 浏览器首次访问需手动「继续」(自签证书);有正式证书可填下面 cert_file/key_file 免警告。
+# Optional HTTPS for browser access. Leave disabled for trusted LAN HTTP.
 use_https = 0
-# 自签证书 CN/域名(留空默认 agents-cockpit)。想匹配隧道域名以减少警告就填该域名。
 cert_cn = agents-cockpit
-# 已有正式证书(如 Let's Encrypt)填这两个绝对路径;留空 = 自签证书。
 cert_file =
 key_file =
-# 局域网明文入口(仅 use_https=1 时生效)。开 HTTPS 后 http://<局域网IP>:port 会失效,
-# 这里再开一个明文 HTTP 端口方便本机/局域网访问(无证书警告)。0=不开。⚠️ 明文,仅限可信局域网。
+# Optional extra plain HTTP port when use_https=1; 0 disables it.
 http_port = 0
 
 [manager]
-# manager 进程端口(web 与它通信,仅本机);0 = server.port + 1000
+# Local-only manager port; 0 = server.port + 1000.
 port = 0
-# 心跳探测间隔(秒)与连续失败几次后自动重生 manager
 heartbeat = 2
 heartbeat_grace = 3
 
 [approval]
-# 1 = codex --yolo / claude --dangerously-skip-permissions(跳过审批、无沙箱);0 = 逐项审批
+# 1 = pass --dangerously-skip-permissions to Claude; 0 = use web approval gates.
 auto_approve = 1
-# 1 = 给 codex 加 --no-alt-screen;0 = 不加
-codex_no_alt_screen = 1
 
 [binaries]
-# 留空 = 自动探测。填绝对路径可强制指定。
-codex =
+# Leave empty for auto-detect, or set an absolute path to a CLI shim.
 claude =
-ttyd =
+codex =
 
 [paths]
-# 登录口令文件(格式 用户名:密码);相对路径以本目录为基准
+# Login credential file, relative to this directory unless absolute.
 auth_file = auth.txt
-# codex / claude 配置目录;留空 = ~/.codex / ~/.claude
-codex_home =
+# Leave empty for ~/.claude.
 claude_home =
 
 [ccswitch]
-# CC Switch 用量数据库(只读);留空 = ~/.cc-switch/cc-switch.db
+# Optional read-only CC Switch usage database.
 db =
-# 用量/额度缓存秒数
 usage_ttl = 15
 balance_ttl = 300
 
 [limits]
-# 单会话 replay buffer / scrollback 上限(字节)
 buf_cap = 262144
-# 扫描单个 claude 会话文件的最大行数(取标题用)
+# Max lines to scan per Claude transcript when listing history.
 claude_scan_cap = 6000
 
 [detect]
-# 状态识别调参。codex 思考停顿较久、claude spinner 高频,故宽容期不同。
-# 实质输出(非 spinner 重绘)停止多少秒后,从「执行中」转为「空闲/需确认」。
-run_grace_codex = 8
-run_grace_claude = 4
-# 「完成」通知去抖:会话从执行中停下来多久后才算真正完成、发完成通知(防抖动误报)。
 idle_debounce = 8
-# Plan 模式得分阈值(命中强信号短语 +2、出现 plan/计划 +1;达阈值才算 Plan 待确认)。
 plan_threshold = 3
 
 [notify]
-# 外部推送(手机收到 codex/claude 的状态变化)。0 = 关闭(默认)。
-# 启用后,manager 每 4 秒检测一次各会话状态,在「需确认/Plan/完成」时推送。
 enabled = 0
-# Telegram Bot:在 @BotFather 建机器人拿到的 token,以及你的 chat_id(给 @userinfobot 发消息可查)。
 telegram_token =
 telegram_chat_id =
-# Bark(iOS):填完整推送地址 https://api.day.app/XXXX ,或只填 key(走官方 api.day.app)。
 bark_key =
-# Webhook:飞书 / Lark 机器人地址会自动识别(按 msg_type/content 格式发);其它地址发 {title, body, event}。
-# 飞书机器人若开了「自定义签名」校验,把签名密钥填到下面这行(非飞书时它放进 X-Notify-Secret 头)。
 webhook_url =
 webhook_secret =
-# 推送哪些事件(逗号分隔):confirm 需确认 / plan Plan待确认 / done 完成。
 events = confirm,done
-# 同一会话同一事件最小重复推送间隔(秒),防抖动刷屏。
 min_interval = 30
 
 [security]
-# 会话化登录:登录成功后用 HttpOnly Cookie 存登录态(口令不再每次明文传)。
-# 登录会话有效期(秒);默认 86400 = 1 天,过期需重新登录。
 session_ttl = 86400
-# 同一 IP 连续登录失败 N 次后,临时锁定该 IP(防暴力破解)。
 max_fail = 5
-# 锁定时长(秒)。
 lockout_secs = 300
-# Cookie 是否带 Secure。走 HTTPS 入口(frp/ngrok/Caddy/Cloudflare 等)填 1 更安全;
-# 纯 HTTP 直连(如本机调试 http://ip:port)必须填 0,否则登录后浏览器不回传 Cookie 又被踢回登录页。
+# Set to 1 only when the browser talks to this app over HTTPS.
 cookie_secure = 0

@@ -3,11 +3,11 @@
 Agents Cockpit — shared infrastructure (used by both web and manager processes).
 
 Constants/paths, env, binary discovery, auth, websocket frame helpers, history
-loaders, CC-Switch read-only integration, folder browse, the session registry +
-scrollback readers (Phase B), port/PID helpers, and the manager-spawn helpers.
+loaders, CC-Switch read-only integration, folder browse, the session registry,
+port/PID helpers, and the manager-spawn helpers.
 
-This module must NOT import web.py / manager.py / hub.py (keeps the dependency
-graph acyclic: app -> {web, manager} -> common; manager -> hub -> common).
+This module must NOT import web.py / manager.py (keeps the dependency graph
+acyclic: app -> {web, manager} -> common).
 """
 import http.server
 import socketserver
@@ -25,7 +25,6 @@ import http.client
 import hashlib
 import hmac
 import re
-import shlex
 import secrets
 import sqlite3
 from datetime import datetime
@@ -38,8 +37,6 @@ _CONFIG_DEFAULTS = """
 [server]
 host = 0.0.0.0
 port = 7682
-port_base = 0
-bind = 127.0.0.1
 use_https = 0
 cert_file =
 key_file =
@@ -51,14 +48,11 @@ heartbeat = 2
 heartbeat_grace = 3
 [approval]
 auto_approve = 1
-codex_no_alt_screen = 1
 [binaries]
-codex =
 claude =
-ttyd =
+codex =
 [paths]
 auth_file = auth.txt
-codex_home =
 claude_home =
 [ccswitch]
 db =
@@ -68,8 +62,6 @@ balance_ttl = 300
 buf_cap = 262144
 claude_scan_cap = 6000
 [detect]
-run_grace_codex = 8
-run_grace_claude = 4
 idle_debounce = 8
 plan_threshold = 3
 [notify]
@@ -112,16 +104,11 @@ def _cfg_get(section, key, fallback=""):
 
 HOST = (_CFG.get("server", "host") or "0.0.0.0").strip()
 PICKER_PORT = _CFG.getint("server", "port") or 7682
-_pb = _CFG.getint("server", "port_base")
-PORT_BASE = _pb if _pb > 0 else PICKER_PORT + 1
-PORT_SKIP = {PICKER_PORT}
 INDEX = os.path.join(HERE, "index.html")
-BIND_IFACE = (_CFG.get("server", "bind") or "127.0.0.1").strip()  # ttyd loopback iface (Windows: 127.0.0.1)
 CREATE_NO_WINDOW = 0x08000000
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-BUF_CAP = _CFG.getint("limits", "buf_cap") or 262144  # max replay buffer per session (~256KB)
-AUTO_APPROVE = _CFG.getboolean("approval", "auto_approve")        # codex --yolo / claude --dangerously-skip-permissions
-CODEX_NO_ALT_SCREEN = _CFG.getboolean("approval", "codex_no_alt_screen")
+BUF_CAP = _CFG.getint("limits", "buf_cap") or 262144
+AUTO_APPROVE = _CFG.getboolean("approval", "auto_approve")  # Claude --dangerously-skip-permissions
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
 # --stop / --help must work even with a broken/empty config (no bins, no auth.txt),
 # so we skip the startup sanity checks (which sys.exit) in those modes.
@@ -130,10 +117,10 @@ MANAGER_HOST = "127.0.0.1"
 _mp = _CFG.getint("manager", "port")
 MANAGER_PORT = _mp if _mp > 0 else PICKER_PORT + 1000
 
-# ---- persisted-state dirs (registry + scrollback for soft-restart reattach) ----
+# ---- persisted-state dirs (native session registry + replay state) ----
 STATE_DIR = os.path.join(HERE, ".agent-cockpit")
 REGISTRY_PATH = os.path.join(STATE_DIR, "sessions.json")
-SCROLLBACK_DIR = os.path.join(STATE_DIR, "scrollback")
+SCROLLBACK_DIR = os.path.join(STATE_DIR, "scrollback")  # legacy cleanup only
 STOP_SENTINEL = "stop.sentinel"   # written by app.py --stop when the web layer is unreachable
 REG_LOCK = threading.Lock()                       # only guards disk writes; never nest under manager._lock
 STOPPING = False   # set True by web /api/_stop to freeze the watchdog + ensure_manager respawn
@@ -149,7 +136,7 @@ AUTH_FILE = (_cfg_get("paths", "auth_file") or os.path.join(HERE, "auth.txt")).s
 if not os.path.isabs(AUTH_FILE):
     AUTH_FILE = os.path.join(HERE, AUTH_FILE)
 
-# ---- 应用层 HTTPS(可选;配合 tcp 隧道做端到端加密,穿透商看不到明文) ----
+# ---- optional HTTPS for the browser-facing web server ----
 USE_HTTPS = _CFG.getboolean("server", "use_https")
 _cf = (_cfg_get("server", "cert_file")).strip()
 _kf = (_cfg_get("server", "key_file")).strip()
@@ -158,22 +145,14 @@ CERT_FILE = (os.path.join(HERE, _cf) if (_cf and not os.path.isabs(_cf))
 KEY_FILE = (os.path.join(HERE, _kf) if (_kf and not os.path.isabs(_kf))
             else (_kf or os.path.join(STATE_DIR, "web_key.pem")))
 CERT_CN = (_cfg_get("server", "cert_cn") or "agents-cockpit").strip() or "agents-cockpit"
-LAN_HTTP_PORT = _CFG.getint("server", "http_port")              # >0=额外开一个明文 HTTP 端口(局域网方便访问),0=关
-
-CODEX_HOME = (_cfg_get("paths", "codex_home") or os.path.join(os.path.expanduser("~"), ".codex")).strip()
-SESSIONS_DIR = os.path.join(CODEX_HOME, "sessions")
-HISTORY_JSONL = os.path.join(CODEX_HOME, "history.jsonl")
+LAN_HTTP_PORT = _CFG.getint("server", "http_port")
 CLAUDE_HOME = (_cfg_get("paths", "claude_home") or os.path.join(os.path.expanduser("~"), ".claude")).strip()
 CLAUDE_PROJECTS_DIR = os.path.join(CLAUDE_HOME, "projects")
-# 扫描单个 claude 会话文件的最大行数(标题/ai-title 通常在前若干行;超大转录用此封顶)
 CLAUDE_SCAN_CAP = _CFG.getint("limits", "claude_scan_cap") or 6000
 
-# ---- state detection tuning (hub.state) ----
-RUN_GRACE_CODEX = _CFG.getfloat("detect", "run_grace_codex") or 8.0   # codex 思考停顿宽容期(s)
-RUN_GRACE_CLAUDE = _CFG.getfloat("detect", "run_grace_claude") or 4.0 # claude spinner 高频,收紧
-IDLE_DEBOUNCE = _CFG.getfloat("detect", "idle_debounce") or 8.0       # 完成事件去抖:离开 active 后多久才算 idle
-PLAN_THRESHOLD = _CFG.getint("detect", "plan_threshold") or 3         # plan 得分阈值
-
+# ---- native session state detection / notifications ----
+IDLE_DEBOUNCE = _CFG.getfloat("detect", "idle_debounce") or 8.0
+PLAN_THRESHOLD = _CFG.getint("detect", "plan_threshold") or 3
 # ---- external push notify ----
 NOTIFY_ENABLED = _CFG.getboolean("notify", "enabled")
 NOTIFY_TG_TOKEN = (_cfg_get("notify", "telegram_token")).strip()
@@ -195,62 +174,27 @@ COOKIE_SECURE = _CFG.getboolean("security", "cookie_secure")    # 1=带 Secure(�
 
 
 # ---------- binary discovery ----------
-def _find_codex_under(root):
-    want = "codex.exe" if os.name == "nt" else "codex"
-    if not os.path.isdir(root):
-        return None
-    for dp, _d, fs in os.walk(root):
-        if dp.endswith(os.sep + "bin") and want in fs:
-            return os.path.join(dp, want)
-    return None
+def _prefer_windows_cmd(path):
+    if os.name != "nt" or not path:
+        return path
+    root, ext = os.path.splitext(path)
+    if ext.lower() in (".cmd", ".bat", ".exe"):
+        return path
+    for suffix in (".cmd", ".exe", ".bat", ".ps1"):
+        cand = path + suffix
+        if os.path.isfile(cand):
+            return cand
+    return path
 
 
-def resolve_codex_bin(override=None):
+def resolve_cli_bin(name, override=None):
     if override and os.path.isfile(override):
-        return override
+        return _prefer_windows_cmd(override)
     try:
-        cmd = "where codex" if os.name == "nt" else "command -v codex"
+        cmd = ("where %s" % name) if os.name == "nt" else ("command -v %s" % name)
         out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
         for line in out.splitlines():
-            shim = line.strip()
-            if not shim:
-                continue
-            prefix = os.path.dirname(os.path.abspath(shim))
-            for nm in (os.path.join(prefix, "node_modules"), os.path.join(os.path.dirname(prefix), "node_modules")):
-                found = _find_codex_under(os.path.join(nm, "@openai"))
-                if found:
-                    return found
-    except Exception:
-        pass
-    try:
-        out = subprocess.check_output("npm root -g", shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace").strip()
-        if out:
-            found = _find_codex_under(os.path.join(out, "@openai"))
-            if found:
-                return found
-    except Exception:
-        pass
-    return None
-
-
-def resolve_ttyd(override=None):
-    if override and os.path.isfile(override):
-        return override
-    for c in (os.path.join(HERE, "ttyd.exe"), os.path.join(HERE, "ttyd")):
-        if os.path.isfile(c):
-            return c
-    from shutil import which
-    return which("ttyd")
-
-
-def resolve_claude_bin(override=None):
-    if override and os.path.isfile(override):
-        return override
-    try:
-        cmd = "where claude" if os.name == "nt" else "command -v claude"
-        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
-        for line in out.splitlines():
-            shim = line.strip()
+            shim = _prefer_windows_cmd(line.strip())
             if shim and os.path.isfile(shim):
                 return shim
     except Exception:
@@ -258,28 +202,73 @@ def resolve_claude_bin(override=None):
     return None
 
 
+def resolve_claude_bin(override=None):
+    return resolve_cli_bin("claude", override)
+
+
+def resolve_codex_bin(override=None):
+    return resolve_cli_bin("codex", override)
+
+
+def _script_argv(path, *args):
+    if not path:
+        return []
+    ext = os.path.splitext(path)[1].lower()
+    if os.name == "nt" and ext == ".ps1":
+        return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path] + list(args)
+    return [path] + list(args)
+
+
+def codex_argv(*args):
+    if CODEX_BIN:
+        base = os.path.dirname(CODEX_BIN)
+        js = os.path.join(base, "node_modules", "@openai", "codex", "bin", "codex.js")
+        if os.path.isfile(js):
+            node = os.path.join(base, "node.exe") if os.name == "nt" else os.path.join(base, "node")
+            if not os.path.isfile(node):
+                node = "node"
+            return [node, js] + list(args)
+    return _script_argv(CODEX_BIN, *args)
+
+
+def is_codex_backend(backend):
+    return backend in ("codex", "codex_native")
+
+
+def is_claude_backend(backend):
+    return backend in ("claude", "native", "claude_native")
+
+
+def normalize_backend(backend):
+    if is_codex_backend(backend):
+        return "codex_native"
+    if is_claude_backend(backend):
+        return "claude_native"
+    if CODEX_BIN:
+        return "codex_native"
+    return "claude_native"
+
+
 if _STOP_OR_HELP:
     # stop/help must not require a working install (bins are irrelevant there)
-    CODEX_BIN = CLAUDE_BIN = TTYD = None
+    CLAUDE_BIN = None
+    CODEX_BIN = None
     BACKENDS = {}
 else:
-    CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
     CLAUDE_BIN = resolve_claude_bin(_cfg_get("binaries", "claude").strip() or None)
-    TTYD = resolve_ttyd(_cfg_get("binaries", "ttyd").strip() or None)
-    BACKENDS = {
-        "codex": {"bin": CODEX_BIN, "yolo": ["--yolo"], "label": "Codex"},
-        "claude": {"bin": CLAUDE_BIN, "yolo": ["--dangerously-skip-permissions"], "label": "Claude Code"},
-    }
-    if not (CODEX_BIN or CLAUDE_BIN):
-        print("ERROR: 未找到 codex 或 claude。请至少安装一个 CLI。")
-        sys.exit(1)
-    if not TTYD or not os.path.isfile(TTYD):
-        print("ERROR: 未找到 ttyd。请把 ttyd(.exe) 放在本目录,或设置 TTYD 环境变量。")
+    CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
+    BACKENDS = {}
+    if CLAUDE_BIN and os.path.isfile(CLAUDE_BIN):
+        BACKENDS["claude_native"] = {"bin": CLAUDE_BIN, "label": "Claude"}
+    if CODEX_BIN and os.path.isfile(CODEX_BIN):
+        BACKENDS["codex_native"] = {"bin": CODEX_BIN, "label": "Codex"}
+    if not BACKENDS:
+        print("ERROR: Neither Claude CLI nor Codex CLI was found. Install one or set [binaries] in config.ini.")
         sys.exit(1)
 
 # ---------- auth: users, password hashing, session tokens ----------
 # auth.txt 每行一个用户 "用户名:凭证"。凭证可以是:
-#   * 明文(兼容旧版,如 codex:password123)
+#   * 明文(兼容旧版,如 claude:password123)
 #   * 哈希 "$pbkdf2$<iters>$<salt_b64>$<hash_b64>"(推荐;用 hash_password() 生成)
 # 行首 # 视为注释,空行忽略;多行 = 多用户。
 USERS = {}
@@ -509,7 +498,7 @@ def _port_alive(port, timeout=0.5):
 
 def _kill_pid(pid):
     """Kill a process by PID (used for re-attached sessions with no Popen handle).
-    Windows: taskkill /F /T also reaps the ttyd's codex/claude child. POSIX: SIGTERM->SIGKILL."""
+    Windows: taskkill /F /T reaps a whole process tree. POSIX: SIGTERM->SIGKILL."""
     if not pid:
         return
     try:
@@ -564,7 +553,7 @@ def _pid_alive(pid):
 
 # ---------- Win32 Job Object: kill the whole tree when this process dies ----------
 # The web process binds itself into a Job Object flagged KILL_ON_JOB_CLOSE. Every
-# child it then spawns (manager -> ttyd -> codex/claude) inherits job membership,
+# child it then spawns (web -> manager -> claude) inherits job membership,
 # so if the web process dies for ANY reason (crash, window close, TerminateProcess)
 # the kernel terminates the entire job and nothing is orphaned. Without this those
 # children are detached (CREATE_NO_WINDOW, no console) and survive a web death.
@@ -716,7 +705,7 @@ def perform_shutdown():
                                  exits code 42 (supervisor stops relaunching).
          (web unreachable)     -> write stop.sentinel so the supervisor still stops.
       2. POST manager /api/_exit -> kill_all() + manager exit (manager trusts localhost).
-      3. kill_registry_sessions  -> taskkill any recorded ttyd tree still alive
+      3. kill_registry_sessions  -> taskkill any recorded legacy session pid still alive
                                     (soft-exit orphans / manager already dead).
     Returns a port-free report."""
     web_ok = _http_post(PICKER_PORT, "/api/_stop", EXPECTED_AUTH)
@@ -896,61 +885,28 @@ def registry_clear():
 
 
 def _registry_safe_entry(sid, s):
-    """Project a live session dict onto the JSON-serializable registry shape."""
-    proc = s.get("proc")
-    pid = proc.pid if proc is not None else s.get("pid")
-    hub = s.get("hub")
+    """Project a live native session dict onto the JSON-serializable registry shape."""
+    ns = s.get("native")
+    backend = s.get("backend") or normalize_backend("")
+    provider = s.get("provider") or ("codex" if is_codex_backend(backend) else "claude")
     return {
-        "port": s.get("port"),
-        "pid": pid,
+        "port": None,
+        "pid": None,
         "dir": s.get("dir", ""),
-        "backend": s.get("backend", "codex"),
+        "backend": backend,
+        "provider": provider,
         "title": s.get("title", ""),
         "started": s.get("started", time.time()),
         "mode": s.get("mode", "new"),
-        "session_id": s.get("session_id"),
-        "cols": getattr(hub, "cols", 0) if hub else 0,
-        "rows": getattr(hub, "rows", 0) if hub else 0,
+        "session_id": getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id"),
+        "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
+        "cols": 0,
+        "rows": 0,
     }
 
 
-def read_scrollback(sid, cap=BUF_CAP):
-    """Parse a length-prefixed scrollback log; return up to the last `cap` bytes of frames.
-    Resyncs past a truncated leading frame (we may have seeked mid-frame)."""
-    path = os.path.join(SCROLLBACK_DIR, "%s.log" % sid)
-    try:
-        size = os.path.getsize(path)
-    except OSError:
-        return []
-    try:
-        with open(path, "rb") as f:
-            if size > cap:
-                f.seek(size - cap)
-            data = f.read()
-    except OSError:
-        return []
-    frames = []
-    i, n = 0, len(data)
-    resync = size > cap   # only the leading frame can be partial
-    while i + 4 <= n:
-        ln = int.from_bytes(data[i:i + 4], "big")
-        if resync:
-            if 0 < ln <= 1048576 and i + 4 + ln <= n:
-                resync = False
-                frames.append(data[i + 4:i + 4 + ln])
-                i += 4 + ln
-            else:
-                i += 1
-            continue
-        if i + 4 + ln > n:
-            break  # truncated tail
-        frames.append(data[i + 4:i + 4 + ln])
-        i += 4 + ln
-    return frames
-
-
 def kill_registry_sessions():
-    """Best-effort sweep: tree-kill every ttyd pid recorded in the registry.
+    """Best-effort sweep: tree-kill every legacy pid recorded in the registry.
     Used by `app.py --stop` to reap sessions the manager can no longer reach (it
     already died) or that a soft-exit deliberately orphaned. Safe on already-dead
     pids (taskkill/kill just no-op). Returns the list of pids it attempted."""
@@ -976,7 +932,7 @@ def iso_to_epoch(s):
 
 
 def _claude_user_text(o):
-    """Pull the human-typed text out of a claude 'user' record (str or content blocks)."""
+    """Pull the human-typed text out of a Claude 'user' record."""
     msg = o.get("message") or {}
     content = msg.get("content")
     if isinstance(content, str):
@@ -990,8 +946,57 @@ def _claude_user_text(o):
     return ""
 
 
+def load_claude_transcript_events(claude_sid, cap=100):
+    """Reconstruct native replay events from ~/.claude/projects/*/<session>.jsonl."""
+    out = []
+    target = (claude_sid or "").strip() + ".jsonl"
+    if not target or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+        return out
+    path = None
+    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+        if target in fs:
+            path = os.path.join(dp, target)
+            break
+    if not path:
+        return out
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        t = o.get("type")
+        if t not in ("user", "assistant"):
+            continue
+        if t == "user" and _transcript_is_human_turn(o) and out:
+            out.append({"type": "result"})
+        out.append(o)
+    if out:
+        out.append({"type": "result"})
+    return out[-cap:] if cap else out
+
+
+def _transcript_is_human_turn(o):
+    """True if a Claude transcript 'user' record is a human message, not tool_result."""
+    c = (o.get("message") or {}).get("content")
+    if isinstance(c, str):
+        return True
+    if isinstance(c, list):
+        has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in c)
+        has_result = any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c)
+        return has_text and not has_result
+    return False
+
+
 def load_claude_history():
-    """Scan ~/.claude/projects/*/<uuid>.jsonl into the same shape as codex history."""
+    """Scan Claude transcripts and mark every restorable item as a native web session."""
     out = []
     if not os.path.isdir(CLAUDE_PROJECTS_DIR):
         return out
@@ -999,11 +1004,9 @@ def load_claude_history():
         for fn in fs:
             if not fn.endswith(".jsonl"):
                 continue
-            # 跳过子代理(sidechain)转写:它们躺在 <session-uuid>/subagents/ 下,
-            # 文件名以 agent- 开头,不是可独立 --resume 的会话。
             if os.path.basename(dp) == "subagents" or fn.startswith("agent-"):
                 continue
-            sid = fn[:-6]  # strip .jsonl → 即 sessionId(== 文件名)
+            sid = fn[:-6]
             cwd = ts_str = first_user = ai_title = ""
             try:
                 with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
@@ -1036,149 +1039,57 @@ def load_claude_history():
                 continue
             if not cwd:
                 continue
-            title = (ai_title or first_user or "(无标题)").strip()
+            title = (ai_title or first_user or "(Untitled)").strip()
             out.append({
-                "session_id": sid, "cwd": cwd,
+                "session_id": sid,
+                "cwd": cwd,
                 "ts": iso_to_epoch(ts_str),
-                "title": title, "originator": "", "backend": "claude",
+                "title": title,
+                "originator": "",
+                "backend": "claude_native",
             })
     return out
 
 
 def load_history(limit=60):
-    titles = {}
-    try:
-        with open(HISTORY_JSONL, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    o = json.loads(line)
-                except ValueError:
-                    continue
-                sid = o.get("session_id")
-                if sid:
-                    titles[sid] = {"ts": o.get("ts"), "title": (o.get("text") or "").strip()}
-    except OSError:
-        pass
-    out = []
-    if os.path.isdir(SESSIONS_DIR):
-        for dp, _dirs, fs in os.walk(SESSIONS_DIR):
-            for fn in fs:
-                if not fn.endswith(".jsonl"):
-                    continue
-                try:
-                    with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
-                        meta = json.loads(f.readline())
-                except (OSError, ValueError):
-                    continue
-                if meta.get("type") != "session_meta":
-                    continue
-                p = meta.get("payload", {})
-                sid = p.get("session_id")
-                if not sid:
-                    continue
-                t = titles.get(sid, {})
-                out.append({
-                    "session_id": sid, "cwd": p.get("cwd", ""),
-                    "ts": t.get("ts") or iso_to_epoch(p.get("timestamp", "")),
-                    "title": t.get("title") or "(无标题)", "originator": p.get("originator", ""),
-                    "backend": "codex",
-                })
-    out.extend(load_claude_history())
+    out = load_claude_history()
+    if CODEX_BIN:
+        try:
+            from codex_native import list_thread_history
+            out.extend(list_thread_history(limit=limit, archived=False))
+        except Exception as e:
+            print("WARN: failed to load Codex history: %s" % e)
     out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
     return out[:limit]
 
 
-def _strip_history_title_lines(drop_sid):
-    """原子地从 history.jsonl 移除某 session_id 的所有标题行(tmp + os.replace)。"""
-    if not drop_sid or not os.path.isfile(HISTORY_JSONL):
-        return
-    kept, changed = [], False
-    try:
-        with open(HISTORY_JSONL, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s:
-                    continue
-                try:
-                    o = json.loads(s)
-                except ValueError:
-                    kept.append(line)
-                    continue
-                if o.get("session_id") == drop_sid:
-                    changed = True
-                    continue
-                kept.append(line)
-    except OSError:
-        return
-    if not changed:
-        return
-    tmp = HISTORY_JSONL + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.writelines(kept)
-        os.replace(tmp, HISTORY_JSONL)
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-
-
-def delete_history(sid, backend):
-    """删除一条历史会话的底层转写文件(只删磁盘文件,不影响运行中的会话)。
-
-    codex : session_id 藏在每个 .jsonl 首行 session_meta.payload.session_id,
-            需遍历 sessions 目录匹配;命中后另从 history.jsonl 移除其标题行。
-    claude: <uuid>.jsonl 文件名即 session_id,直接定位删除(原生模式会话同此)。
-    返回 {"deleted": bool, "session_file": <path 或 None>}。"""
+def delete_history(sid, backend=None):
+    """Delete one Claude transcript by session id. Running sessions are not touched."""
     sid = (sid or "").strip()
     res = {"deleted": False, "session_file": None}
-    if not sid:
-        return res
-
-    def _unlink(p):
+    if is_codex_backend(backend):
+        if not sid:
+            return res
         try:
-            os.unlink(p)
-            return True
-        except OSError:
-            return False
-
-    if backend == "claude":
-        if os.path.isdir(CLAUDE_PROJECTS_DIR):
-            target = sid + ".jsonl"
-            for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
-                if target in fs:
-                    p = os.path.join(dp, target)
-                    if _unlink(p):
-                        res["deleted"] = True
-                        res["session_file"] = p
-                    break
+            from codex_native import delete_thread
+            res["deleted"] = bool(delete_thread(sid))
+            res["session_file"] = sid
+        except Exception:
+            pass
         return res
-
-    # ---- codex:按首行 session_meta.session_id 匹配 ----
-    if os.path.isdir(SESSIONS_DIR):
-        for dp, _dirs, fs in os.walk(SESSIONS_DIR):
-            for f in fs:
-                if not f.endswith(".jsonl"):
-                    continue
-                p = os.path.join(dp, f)
-                try:
-                    with open(p, "r", encoding="utf-8") as fh:
-                        meta = json.loads(fh.readline())
-                except (OSError, ValueError):
-                    continue
-                if meta.get("type") == "session_meta" and \
-                        (meta.get("payload") or {}).get("session_id") == sid:
-                    if _unlink(p):
-                        res["deleted"] = True
-                        res["session_file"] = p
-                    break
-            if res["deleted"]:
-                break
-    _strip_history_title_lines(sid)
+    if not sid or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+        return res
+    target = sid + ".jsonl"
+    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+        if target in fs:
+            p = os.path.join(dp, target)
+            try:
+                os.unlink(p)
+                res["deleted"] = True
+                res["session_file"] = p
+            except OSError:
+                pass
+            break
     return res
 
 
@@ -1215,7 +1126,7 @@ def _ccswitch_provider_meta(sc_json, app_type):
         model = env.get("ANTHROPIC_MODEL") or env.get("ANTHROPIC_DEFAULT_SONNET_MODEL_NAME") or ""
         base_url = env.get("ANTHROPIC_BASE_URL") or ""
         api_key = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY") or ""
-    else:  # codex etc: config is a TOML string; auth may hold the key
+    else:  # Other providers may store config as TOML and auth separately.
         cfg = sc.get("config") or ""
         model = _toml_first(cfg, "model") or ""
         base_url = _toml_first(cfg, "base_url") or ""
@@ -1429,150 +1340,18 @@ def browse(path):
 
 
 def session_obj(sid, s, host):
-    if s.get("backend") == "native":
-        ns = s.get("native")
-        return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
-                "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,
-                "backend": "native", "native": True,
-                "state": ns.state() if ns else "idle",
-                "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
-                "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
-                "cols": 0, "rows": 0}
-    hub = s["hub"]; now = time.time()
+    ns = s.get("native")
+    backend = s.get("backend") or normalize_backend("")
+    provider = s.get("provider") or ("codex" if is_codex_backend(backend) else "claude")
+    session_id = getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id")
     return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
-            "session_id": s["session_id"], "started": s["started"], "term_path": "/t/%s/" % sid,
-            "backend": s.get("backend", "codex"),
-            "state": hub.state(now), "last_input_ts": hub.last_input_ts,
-            "last_output_ts": hub.last_output_ts, "cols": hub.cols, "rows": hub.rows}
-
-
-# ---- terminal-page injection: "适配本屏" button + scale-to-fit (multi-device) ----
-# Injected into the ttyd page served at /t/<sid>/. The button POSTs /api/adapt so
-# any device can claim the optimal PTY size; the page also polls /api/sessions and
-# forces its local xterm to the shared PTY cols/rows, then CSS-scales it to fit the
-# viewport. Combined with hub's sticky-PTY policy this means a phone joining/leaving
-# never resizes the PC, yet every device sees a non-garbled, full terminal.
-# NOTE: keep this backslash-free and quote-simple — it is spliced into HTML as-is.
-TTY_INJECT_STYLE = (
-    "#acadapt{position:fixed;top:6px;right:6px;z-index:99999;background:rgba(42,91,215,.92);"
-    "color:#fff;border:0;border-radius:8px;padding:7px 11px;"
-    "font:600 12px/1 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45)}"
-    "#acadapt.on{background:rgba(58,138,96,.95)}"
-    "#acadapt:active{transform:scale(.95)}"
-    "html,body{overflow:hidden}"
-)
-
-TTY_INJECT_SCRIPT = """(function(){
-  function sidFromPath(){
-    var p = location.pathname.split('/');
-    for (var i = 0; i < p.length - 1; i++) { if (p[i] === 't') { return p[i + 1] || ''; } }
-    return '';
-  }
-  var SID = sidFromPath();
-  if (!SID) { return; }
-  var btn = document.createElement('button');
-  btn.id = 'acadapt'; btn.type = 'button';
-  btn.textContent = '📺 适配本屏';
-  btn.title = '把终端尺寸切到当前屏幕(其他端会等比缩放看全,不会互相挤压)';
-  document.body.appendChild(btn);
-  function waitTerm(cb){
-    var n = 0;
-    var t = setInterval(function(){
-      if (window.term && window.term.element) { clearInterval(t); cb(window.term); }
-      else if (++n > 120) { clearInterval(t); }
-    }, 120);
-  }
-  waitTerm(function(term){
-    var PC = 0, PR = 0;
-    btn.addEventListener('click', function(){
-      // 不能直接用 term.cols/rows:reassert 已把本地 xterm 对齐到共享 PTY
-      // 尺寸(可能是 PC 端首次 fit 的大尺寸),那样 POST 出去等于"不变" →
-      // adapt 判定尺寸未变而不改 PTY,按钮表现为"无效"。改为按本屏视口像素
-      // ÷ 当前单字符像素反推本屏 1:1 能放下的 cols/rows(offsetWidth 是 layout
-      // 尺寸,不受 CSS transform 影响,且恒与 term.cols 匹配)。
-      var e = termEl();
-      var c = 0, r = 0;
-      if (e && term.cols > 0 && term.rows > 0) {
-        var cw = (e.offsetWidth || e.scrollWidth || 0) / term.cols;
-        var ch = (e.offsetHeight || e.scrollHeight || 0) / term.rows;
-        var vw = document.documentElement.clientWidth || window.innerWidth || 0;
-        var vh = document.documentElement.clientHeight || window.innerHeight || 0;
-        if (cw > 2 && ch > 2 && vw > 0 && vh > 0) {
-          c = Math.max(20, Math.floor(vw / cw));
-          r = Math.max(8, Math.floor(vh / ch));
-        }
-      }
-      if (!c || !r) { return; }
-      fetch('/api/adapt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sid: SID, cols: c, rows: r })
-      }).then(function(x){ return x.json(); }).then(function(d){
-        if (d && d.ok) {
-          btn.classList.add('on'); PC = c; PR = r;
-          try { term.resize(c, r); } catch (_) {}   // 立即切到本屏尺寸,不等下次 tick
-          applyFit();
-        }
-      }).catch(function(){});
-    });
-    function termEl(){ return term.element || document.querySelector('.xterm'); }
-    function applyFit(){
-      var e = termEl(); if (!e) { return; }
-      e.style.transform = 'none';
-      var w = e.offsetWidth || e.scrollWidth || 1;
-      var h = e.offsetHeight || e.scrollHeight || 1;
-      var vw = document.documentElement.clientWidth || window.innerWidth || 1;
-      var vh = document.documentElement.clientHeight || window.innerHeight || 1;
-      var s = Math.min(1, vw / w, vh / h);
-      e.style.transformOrigin = 'top left';
-      e.style.transform = (s < 1) ? ('scale(' + s + ')') : 'none';
-    }
-    function reassert(){
-      if (PC && PR && (term.cols !== PC || term.rows !== PR)) {
-        try { term.resize(PC, PR); } catch (_) {}
-      }
-      applyFit();
-    }
-    function tick(){
-      fetch('/api/sessions').then(function(x){ return x.json(); }).then(function(d){
-        var arr = (d && d.sessions) || [];
-        var me = null;
-        for (var i = 0; i < arr.length; i++) { if (arr[i].sid === SID) { me = arr[i]; break; } }
-        if (!me) { return; }
-        var pc = me.cols || 0, pr = me.rows || 0;
-        if (pc && pr) { PC = pc; PR = pr; reassert(); }
-      }).catch(function(){});
-    }
-    setInterval(tick, 1500);
-    window.addEventListener('resize', function(){ setTimeout(reassert, 120); });
-    setTimeout(tick, 500);
-    setTimeout(applyFit, 800);
-  });
-})();"""
-
-
-def _inject_terminal_controls(html_bytes):
-    """Splice the 适配本屏 button + scale-to-fit script into a ttyd page."""
-    try:
-        html = html_bytes.decode("utf-8", "replace")
-    except Exception:
-        return html_bytes
-    blob = "<style>" + TTY_INJECT_STYLE + "</style><script>" + TTY_INJECT_SCRIPT + "</script>"
-    if "</body>" in html:
-        html = html.replace("</body>", blob + "</body>", 1)
-    else:
-        html = html + blob
-    return html.encode("utf-8")
-
-
-def fetch_ttyd_html(port):
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    try:
-        conn.request("GET", "/")
-        resp = conn.getresponse()
-        return _inject_terminal_controls(resp.read())
-    finally:
-        conn.close()
+            "session_id": session_id, "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
+            "started": s["started"], "session_path": "/t/%s/" % sid,
+            "backend": backend, "provider": provider, "native": True,
+            "state": ns.state() if ns else "idle",
+            "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
+            "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
+            "cols": 0, "rows": 0}
 
 
 # ---------- external push notifications (Telegram / Bark / webhook) ----------
@@ -1580,7 +1359,30 @@ def _notify_enabled_for(event):
     return NOTIFY_ENABLED and event in NOTIFY_EVENTS
 
 
-def push_notify(title, body, event):
+def notify_result_text(events, limit=3500):
+    """Return the latest assistant text message, excluding thinking/tool process."""
+    for ev in reversed(events or []):
+        if not isinstance(ev, dict) or ev.get("type") != "assistant":
+            continue
+        msg = ev.get("message") or {}
+        content = msg.get("content")
+        parts = []
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text") or "")
+        text = "\n".join(p for p in parts if p).strip()
+        if text:
+            if limit and len(text) > limit:
+                suffix = "\n\n...(result text truncated)"
+                text = text[:max(0, limit - len(suffix))].rstrip() + suffix
+            return text
+    return ""
+
+
+def push_notify(title, body, event, webhook_body=None):
     """Fire-and-forget external push over every configured channel. Blocking HTTP — the
     caller (manager._notify_sender worker) is expected to run this off the main loop.
     Returns True if at least one channel returned 2xx. Silent on error (prints a line)."""
@@ -1625,7 +1427,8 @@ def push_notify(title, body, event):
     # --- webhook (auto-detects Feishu/Lark schema vs generic JSON) ---
     if NOTIFY_WEBHOOK_URL:
         try:
-            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET, title, body, event):
+            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET,
+                             title, body, event, webhook_body=webhook_body):
                 ok = True
         except Exception as e:
             print("notify webhook failed: %s" % e)
@@ -1637,7 +1440,7 @@ def _webhook_is_feishu(url):
     return "feishu.cn" in u or "larksuite" in u or "open-apis/bot" in u
 
 
-def _webhook_send(url, secret, title, body, event):
+def _webhook_send(url, secret, title, body, event, webhook_body=None):
     """POST a notification to a webhook. Auto-detects Feishu/Lark custom-bot schema
     ({msg_type, content}) vs a generic {title, body, event} JSON. For Feishu, `secret`
     is used as the signing key (enable "自定义签名" on the bot); for generic webhooks it
@@ -1646,8 +1449,9 @@ def _webhook_send(url, secret, title, body, event):
     pr = urllib.parse.urlsplit(url)
     path_q = (pr.path or "/") + (("?" + pr.query) if pr.query else "")
     cls = http.client.HTTPSConnection if pr.scheme == "https" else http.client.HTTPConnection
+    webhook_text = body if webhook_body is None else webhook_body
     if _webhook_is_feishu(url):
-        text = (str(title) + "\n" + str(body)).strip()
+        text = (str(title) + "\n" + str(webhook_text)).strip()
         data = {"msg_type": "text", "content": {"text": text}}
         if secret:   # Feishu signature: HMAC-SHA256 over "{ts}\n{secret}"
             ts = str(int(time.time()))
@@ -1658,7 +1462,7 @@ def _webhook_send(url, secret, title, body, event):
             data["sign"] = sign
         payload = json.dumps(data).encode()
     else:
-        payload = json.dumps({"title": str(title), "body": str(body), "event": event}).encode()
+        payload = json.dumps({"title": str(title), "body": str(webhook_text), "event": event}).encode()
     conn = cls(pr.netloc, timeout=NOTIFY_TIMEOUT)
     try:
         conn.request("POST", path_q, body=payload, headers={"Content-Type": "application/json"})
@@ -1703,6 +1507,10 @@ class BaseHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": str(e)}, 500); return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        # index.html 在开发期经常改动,且每次请求都重新读盘;禁用浏览器缓存,
+        # 避免用户看到旧页面(如顶部栏样式不生效)。文件很小,no-store 无副作用。
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
 

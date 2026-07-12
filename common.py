@@ -1344,7 +1344,7 @@ def session_obj(sid, s, host):
     backend = s.get("backend") or normalize_backend("")
     provider = s.get("provider") or ("codex" if is_codex_backend(backend) else "claude")
     session_id = getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id")
-    return {"sid": sid, "dir": s["dir"], "title": s["title"], "mode": s["mode"],
+    return {"sid": sid, "dir": s["dir"], "title": getattr(ns, "convo_title", None) or s["title"], "mode": s["mode"],
             "session_id": session_id, "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
             "started": s["started"], "session_path": "/t/%s/" % sid,
             "backend": backend, "provider": provider, "native": True,

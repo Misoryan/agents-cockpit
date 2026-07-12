@@ -6,11 +6,13 @@ Agents Cockpit — 原生 Agent 会话 (native.py) — cli 路线
 JSONL 事件流,经 WS 文本帧广播给前端渲染。直接获得 claude code 的全部能力
 (20+ 工具 / 精细 system / 内置 compaction / thinking / skills)。
 
-工具执行分两种模式:
-  yolo(auto_approve):--dangerously-skip-permissions,工具自动执行。
-  非 yolo:挂 gate_mcp.py 当 --permission-prompt-tool + ask 权限规则,Bash /
-    PowerShell / Edit / Write 等工具调用经门控阻塞,网页审批(pending_approval)
-    后才执行;另暴露 ask_user 工具让 agent 中途问用户(pending_ask)。
+工具执行 = 权限 × 规划 两个正交维度:
+  规划:plan_mode=True → --permission-mode plan,提供 ExitPlanMode;agent 先只读调研 → 提交计划
+    → 经 gate_mcp 门控让用户审批(pending_approval)→ 批准后退出 plan 继续执行。plan 优先于 yolo,
+    不被 yolo 屏蔽(yolo+plan:批准计划后普通工具 allow 自动放行,不再逐项审批)。
+  权限:yolo(auto_approve)→ 普通工具自动放行(plan 轮用 settings.allow;非 plan 轮用
+    --dangerously-skip-permissions)。非 yolo → 挂 gate_mcp 当 --permission-prompt-tool + ask
+    规则,Bash/PowerShell/Edit/Write 等逐项网页审批;另暴露 ask_user 工具让 agent 中途问用户(pending_ask)。
 前端把每个工具调用 / 结果透明展示出来。多轮靠 claude --resume <session_id>。
 
 认证 / 模型走 claude 自己的 ~/.claude/settings.json(cc-switch 写入),所以
@@ -169,8 +171,16 @@ class NativeSession:
         return "new" if not self.events else "idle"
 
     def _mode_system(self):
-        """拼装本轮的 --append-system-prompt:基础 ask_user 提示 + 计划/任务模式提示(按开关)。"""
-        parts = [_ASK_SYSTEM]
+        """拼装本轮的 --append-system-prompt。提示必须与 _build_argv 实际挂载的能力一致:
+          ask_user 由 gate_mcp 提供 → 仅在挂 gate_mcp 时注入 _ASK_SYSTEM(=plan_mode 或 非 yolo)。
+          ExitPlanMode 由 --permission-mode plan 自带 → 仅 plan_mode 时注入 _PLAN_SYSTEM。
+          yolo 且非 plan:不挂 gate_mcp(--dangerously-skip-permissions)→ 无 ask_user;又无 plan →
+            无 ExitPlanMode;只保留 TodoWrite(claude 自带)的 _TASK_SYSTEM。
+        """
+        gated = self.plan_mode or (not self.yolo)   # 挂 gate_mcp ⟺ 有 ask_user
+        parts = []
+        if gated:
+            parts.append(_ASK_SYSTEM)
         if self.plan_mode:
             parts.append(_PLAN_SYSTEM)
         if self.task_mode:
@@ -368,11 +378,14 @@ class NativeSession:
     def _mcp_config_path(self):
         return os.path.join(STATE_DIR, "gate_mcp_%s.json" % self.sid)
 
-    def _write_gate_configs(self):
-        """写 per-session 的 --settings(ask 规则)与 --mcp-config(网关服务器)。"""
+    def _write_gate_configs(self, allow_tools=False):
+        """写 per-session 的 --settings 与 --mcp-config(网关服务器)。
+        allow_tools=True(yolo+plan):普通工具进 allow 自动放行,只有 ExitPlanMode 走门控审批计划。
+        allow_tools=False(非 yolo):普通工具进 ask → 走 gate_mcp 逐项审批。"""
         os.makedirs(STATE_DIR, exist_ok=True)
+        key = "allow" if allow_tools else "ask"
         with open(self._settings_path(), "w", encoding="utf-8") as f:
-            json.dump({"permissions": {"ask": list(_ASK_TOOLS)}}, f, ensure_ascii=False)
+            json.dump({"permissions": {key: list(_ASK_TOOLS)}}, f, ensure_ascii=False)
         mcp = {"mcpServers": {"cockpit": {
             "command": sys.executable,
             "args": [_GATE_BIN, self.sid, str(MANAGER_PORT)]}}}
@@ -384,18 +397,34 @@ class NativeSession:
         if self.claude_sid:
             argv += ["--resume", self.claude_sid]
         sys_prompt = self._mode_system()
+        # 计划模式优先于 yolo:plan 用于"先规划后执行",不应被 yolo 屏蔽。无论 yolo 与否,plan_mode
+        # 都挂 --permission-mode plan(提供 ExitPlanMode)+ gate_mcp(ExitPlanMode 经
+        # --permission-prompt-tool 让用户审批计划)。yolo 只决定普通工具:allow 自动放行 vs ask 逐项审批。
+        # 注意 plan 轮不能加 --dangerously-skip-permissions,否则 ExitPlanMode 也被 bypass、跳过计划审批。
+        if self.plan_mode:
+            try:
+                self._write_gate_configs(allow_tools=self.yolo)
+            except OSError:
+                traceback.print_exc()
+            argv += ["--permission-mode", "plan",
+                     "--settings", self._settings_path(),
+                     "--mcp-config", self._mcp_config_path(),
+                     "--permission-prompt-tool", "mcp__cockpit__approve",
+                     "--strict-mcp-config"]
+            if sys_prompt:
+                argv += ["--append-system-prompt", sys_prompt]
+            return argv
         if self.yolo:
             argv += ["--dangerously-skip-permissions"]
             if sys_prompt:
                 argv += ["--append-system-prompt", sys_prompt]
             return argv
-        # 非 yolo:挂门控 —— ask 规则 + 网关 MCP + 指定网关为 permission prompter。
-        # plan_mode=True → --permission-mode plan(只读调研 + ExitPlanMode 提交计划,门控审批后才执行)
+        # 非 yolo 非 plan:default + 门控逐项审批
         try:
-            self._write_gate_configs()
+            self._write_gate_configs(allow_tools=False)
         except OSError:
             traceback.print_exc()
-        argv += ["--permission-mode", ("plan" if self.plan_mode else "default"),
+        argv += ["--permission-mode", "default",
                  "--settings", self._settings_path(),
                  "--mcp-config", self._mcp_config_path(),
                  "--permission-prompt-tool", "mcp__cockpit__approve",

@@ -266,6 +266,10 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.tool .tcmd{font:13px ui-monospace,Consolas,monospace;color:#9fd0ff;padding:6px 8px;background:#0b0c10;border-radius:6px;margin:6px 0;white-space:pre-wrap;word-break:break-all}
         .nmsg.tool .tres{margin-top:6px}
         .nmsg.tool .tres pre{margin:0}
+        .nmsg.tool.tool-group .tool-group-body{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+        .nmsg.tool.tool-group .tool-entry{border-top:1px dashed #2e2f37;padding-top:8px}
+        .nmsg.tool.tool-group .tool-entry:first-child{border-top:0;padding-top:0}
+        .nmsg.tool.tool-group .tool-entry-idx{color:#8b909c;font:11px ui-monospace,Consolas,monospace;margin-bottom:2px}
         .nmsg.tool .tcdesc{color:#9aa0aa;font-weight:400;font-size:11px;margin-left:6px;white-space:normal;word-break:break-word}
         .nmsg.tool details.tres-det{margin-top:2px}
         .nmsg.tool details.tres-det>summary{color:#8b909c;font-weight:500;font-size:11px}
@@ -928,7 +932,7 @@ function nEndTurn(st){
   nFinalizeThinking(st);
   nStopThinking(st);
   if(st.turnCard) st.turnCard.classList.add("done");
-  st.turnCard=null; st.curTxt=null; st.curThink=null;
+  st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
 }
 /* result 事件的轻量元信息条:补齐 CLI 底栏的「用量/收尾」层。
    显示:收尾图标(随 stop_reason / is_error 变化)、轮数、token 用量(入/出/缓存)、花费、耗时。
@@ -963,7 +967,7 @@ function nativeStage(sid){
   var d=document.createElement("div");
   d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
-  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"",
+  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false};
   return nativeStages[sid];
 }
@@ -1008,9 +1012,43 @@ function nFinalizeThinking(st){
   st.curThink=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
 }
 function nAddRow(st, cls, html){
+  if(cls!=="result") st.lastToolGroup=null;
   st.curTxt=null;
   var d=document.createElement("div"); d.className="nmsg "+cls;
   d.innerHTML=html; (st.turnCard||st.root).appendChild(d); nScrollBottom();
+}
+function nToolResultHtml(txt){
+  var _nl=String.fromCharCode(10), _lines=String(txt).split(_nl).length;
+  var _resSum='Result ('+_lines+' lines)';
+  return '<details class="tres-det"><summary>'+nEsc(_resSum)+'</summary><pre>'+nEsc(txt)+'</pre></details>';
+}
+function nShellGroupKey(name){
+  name=String(name||"").toLowerCase();
+  return (name==="bash"||name==="powershell")?name:"";
+}
+function nAppendShellGroupEntry(st, b, summaryHtml, bodyHtml){
+  var key=nShellGroupKey(b.name), g=st.lastToolGroup, host=nTurnCard(st);
+  if(!g || g.key!==key || !g.el || !g.el.parentNode){
+    var card=document.createElement("div");
+    card.className="nmsg tool tool-group";
+    card.innerHTML='<details><summary class="tool-group-summary"></summary><div class="tool-group-body"></div></details>';
+    host.appendChild(card);
+    g={key:key, el:card, count:0, summary:card.querySelector(".tool-group-summary"), body:card.querySelector(".tool-group-body"), baseSummary:summaryHtml};
+    st.lastToolGroup=g;
+  }
+  g.count++;
+  g.summary.innerHTML=g.baseSummary+' <span class="tcdesc">(x'+g.count+')</span>';
+  var entry=document.createElement("div");
+  entry.className="tool-entry";
+  entry.dataset.tuid=b.id||"";
+  entry.innerHTML='<div class="tool-entry-idx">#'+g.count+'</div>'+bodyHtml+'<div class="tres">Running...</div>';
+  g.body.appendChild(entry);
+  st.curTxt=null; nScrollBottom();
+}
+function nFindToolResultHost(st, tuid){
+  var root=st.turnCard||st.root, nodes=root.querySelectorAll('.tool-entry,.nmsg.tool');
+  for(var i=0;i<nodes.length;i++){ if(nodes[i].dataset && nodes[i].dataset.tuid===String(tuid||"")) return nodes[i]; }
+  return null;
 }
 function nExtractProposedPlan(text){
   text=String(text==null?"":text);
@@ -1043,6 +1081,7 @@ function nKeepPlanning(st){
   if(currentSid){ nSetPromptIfEmpty("请继续完善上面的计划："); }
 }
 function nRenderAssistantText(sid, st, text){
+  st.lastToolGroup=null;
   var pp=nExtractProposedPlan(text);
   if(!pp){
     if(!st.curTxt) nNewTextBubble(st);
@@ -1260,7 +1299,7 @@ function nHandle(sid, obj){
     // 内容确实变了(首次加载 / 后台期间 agent 产生了新输出):清空重建一份权威快照。
     if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
     st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
-    st.turnCard=null; st.curTxt=null; st.curThink=null;
+    st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
     st.lastWasHumanUser=false; st.lastHumanText="";
     st.todos=null; if(currentSid===sid) nRenderTasks(st);   // 清空任务面板,由重放的 TodoWrite 重建
     st.root.innerHTML="";
@@ -1290,12 +1329,14 @@ function nHandle(sid, obj){
   if(t==="stream_event"){
     var dl=(obj.event||{}).delta||{};
     if(dl.type==="text_delta" && dl.text){
+      st.lastToolGroup=null;
       nFinalizeThinking(st);
       nStopThinking(st);
       if(!st.curTxt) nNewTextBubble(st);
       st.curTxt.appendChild(document.createTextNode(dl.text));
       nScrollBottom();
     } else if(dl.type==="thinking_delta" && dl.thinking){
+      st.lastToolGroup=null;
       if(st.thinkBubble) nStopThinking(st);
       if(!st.curThink){
         if(!st.thinkStart) st.thinkStart=Date.now();
@@ -1414,10 +1455,13 @@ function nHandle(sid, obj){
           var _pv=(st.turnCard||st.root).querySelectorAll('details.todo-det');
           for(var _i=0;_i<_pv.length;_i++){ _pv[_i].open=false; }
         }
+        if(nShellGroupKey(b.name)){ nAppendShellGroupEntry(st, b, _sum, _body); return; }
+        st.lastToolGroup=null;
         var _detAttr=(_isShell?"":" open")+(_isTodo?' class="todo-det"':'');
         _tu.innerHTML='<details'+_detAttr+'><summary>'+_sum+'</summary>'+_body+'<div class="tres">⏳ 运行中…</div></details>';
         nTurnCard(st).appendChild(_tu); st.curTxt=null; nScrollBottom();
       } else if(b.type==="thinking"){
+        st.lastToolGroup=null;
         if(obj.replay){
           var _th=document.createElement("details");
           _th.innerHTML='<summary>💭 思考</summary><pre>'+nEsc(b.thinking||"")+'</pre>';
@@ -1438,11 +1482,9 @@ function nHandle(sid, obj){
         humanParts.push(b.text||"");
       } else if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
-        var tu=(st.turnCard||st.root).querySelector('.nmsg.tool[data-tuid="'+b.tool_use_id+'"]');
-        var _nl=String.fromCharCode(10), _lines=String(txt).split(_nl).length;
-        var _resSum='↩ 执行结果 ('+_lines+' 行)';
-        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML='<details class="tres-det"><summary>'+nEsc(_resSum)+'</summary><pre>'+nEsc(txt)+'</pre></details>'; } }
-        else { nAddRow(st, "result", "<details><summary>"+nEsc(_resSum)+"</summary><pre>"+nEsc(txt)+"</pre></details>"); }
+        var tu=nFindToolResultHost(st, b.tool_use_id);
+        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML=nToolResultHtml(txt); } }
+        else { nAddRow(st, "result", nToolResultHtml(txt)); }
       }
     });
     if(humanParts.length){ nAddHumanRow(st,humanParts.join("\n")); }
@@ -1510,6 +1552,11 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="codex_notice"){
+    if(obj.silent){ return; }
+    if(obj.level==="debug"){
+      try{ console.debug("[Codex notice]", obj.method||"", obj.message||"", obj.detail||""); }catch(e){}
+      return;
+    }
     var cmsg="Codex: "+nEsc(obj.message||"notice");
     if(obj.method){ cmsg+=' <span class="tcdesc">'+nEsc(obj.method)+'</span>'; }
     if(obj.detail){ cmsg+='<details><summary>详情</summary><pre>'+nEsc(obj.detail)+'</pre></details>'; }

@@ -15,7 +15,7 @@ import urllib.parse
 import common
 from common import BaseHandler, ThreadingServer
 from native import NativeSession
-from codex_native import CodexSession, shutdown_app_server
+from codex_native import CodexSession, get_app_client, shutdown_app_server
 
 # sid -> {dir, title, started, mode, session_id, backend, provider, native}
 sessions = {}
@@ -112,6 +112,8 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
             ns.events = list(events)
         if provider == "codex" and not session_id:
             ns.start()
+        elif provider == "codex" and getattr(ns, "thread_id", None):
+            get_app_client().register(ns.thread_id, ns)
         sessions[sid] = {
             "dir": cwd,
             "backend": backend,
@@ -154,7 +156,7 @@ def reattach_sessions():
         backend = common.normalize_backend(e.get("backend") or ("codex_native" if e.get("provider") == "codex" else "claude_native"))
         provider = "codex" if common.is_codex_backend(backend) else "claude"
         if provider == "codex":
-            ns = CodexSession.recover(sid, e.get("dir", ""))
+            ns = CodexSession.recover(sid, e.get("dir", ""), e.get("thread_id") or e.get("session_id"))
         else:
             ns = NativeSession.recover(sid, e.get("dir", ""))
         if not ns:

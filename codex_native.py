@@ -204,6 +204,22 @@ def _extract_proposed_plan(text):
     return text[start + len(start_tag):end].strip()
 
 
+def _as_proposed_plan(text):
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    if _extract_proposed_plan(text):
+        return text
+    return "<proposed_plan>\n%s\n</proposed_plan>" % text
+
+
+def _plan_text_event(text):
+    text = _as_proposed_plan(text)
+    if not text:
+        return None
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
 class AppServerRequestError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -338,6 +354,8 @@ class CodexAppServerClient:
         self.next_id = 1
         self.pending = {}
         self.sessions = {}
+        self.turn_sessions = {}
+        self.item_sessions = {}
         self.stderr_tail = []
         self.initialized = False
         self.dead = False
@@ -446,18 +464,17 @@ class CodexAppServerClient:
             return
         method = msg.get("method")
         params = msg.get("params") or {}
-        thread_id = self._thread_id_from_params(params)
-        if thread_id:
-            session = self.sessions.get(thread_id)
-            if session:
-                session.handle_notification(method, params)
-                return
-        if method:
-            for session in list(self.sessions.values()):
-                try:
-                    session.handle_notification(method, params)
-                except Exception:
-                    pass
+        session = self._session_from_params(params)
+        if session:
+            self._remember_item_route(params, session)
+            session.handle_notification(method, params)
+            return
+        # Many Codex notifications are scoped only by turnId/itemId. If we
+        # cannot prove ownership, dropping is safer than leaking one thread's
+        # deltas into every open browser session.
+        if method and not method.endswith("/updated"):
+            self.stderr_tail.append("unrouted notification: %s %s" % (method, _compact_json(params)[:500]))
+            self.stderr_tail = self.stderr_tail[-40:]
 
     @staticmethod
     def _thread_id_from_params(params):
@@ -468,26 +485,80 @@ class CodexAppServerClient:
         thread = params.get("thread")
         if isinstance(thread, dict):
             return thread.get("id") or thread.get("sessionId")
+        turn = params.get("turn")
+        if isinstance(turn, dict):
+            if turn.get("threadId"):
+                return turn.get("threadId")
+            thread = turn.get("thread")
+            if isinstance(thread, dict):
+                return thread.get("id") or thread.get("sessionId")
+        item = params.get("item")
+        if isinstance(item, dict):
+            if item.get("threadId"):
+                return item.get("threadId")
+            turn = item.get("turn")
+            if isinstance(turn, dict):
+                return turn.get("threadId")
         return None
+
+    @staticmethod
+    def _turn_id_from_params(params):
+        if not isinstance(params, dict):
+            return None
+        if params.get("turnId"):
+            return params.get("turnId")
+        turn = params.get("turn")
+        if isinstance(turn, dict):
+            return turn.get("id") or turn.get("turnId")
+        item = params.get("item")
+        if isinstance(item, dict):
+            return item.get("turnId")
+        return None
+
+    @staticmethod
+    def _item_id_from_params(params):
+        if not isinstance(params, dict):
+            return None
+        if params.get("itemId"):
+            return params.get("itemId")
+        item = params.get("item")
+        if isinstance(item, dict):
+            return item.get("id") or item.get("itemId")
+        return None
+
+    def _session_from_params(self, params):
+        thread_id = self._thread_id_from_params(params)
+        if thread_id and thread_id in self.sessions:
+            return self.sessions.get(thread_id)
+        turn_id = self._turn_id_from_params(params)
+        if turn_id and turn_id in self.turn_sessions:
+            return self.turn_sessions.get(turn_id)
+        item_id = self._item_id_from_params(params)
+        if item_id and item_id in self.item_sessions:
+            return self.item_sessions.get(item_id)
+        return None
+
+    def _remember_item_route(self, params, session):
+        turn_id = self._turn_id_from_params(params)
+        if turn_id:
+            self.turn_sessions[turn_id] = session
+        item_id = self._item_id_from_params(params)
+        if item_id:
+            self.item_sessions[item_id] = session
 
     def _handle_server_request(self, msg):
         req_id = msg.get("id")
         method = msg.get("method")
         params = msg.get("params") or {}
-        thread_id = self._thread_id_from_params(params)
-        session = self.sessions.get(thread_id) if thread_id else None
+        session = self._session_from_params(params)
         try:
             if session:
+                self._remember_item_route(params, session)
                 result = session.handle_server_request(str(req_id), method, params)
                 self.respond(req_id, result)
             elif method == "currentTime/read":
                 self.respond(req_id, {"utcTimestampMs": int(time.time() * 1000)})
             else:
-                for s in list(self.sessions.values()):
-                    try:
-                        s._codex_notice("Unsupported app-server request", method, params)
-                    except Exception:
-                        pass
                 self.respond_error(req_id, -32601, "unsupported app-server request: %s" % method)
         except AppServerRequestError as e:
             self.respond_error(req_id, e.code, e.message)
@@ -534,10 +605,20 @@ class CodexAppServerClient:
         if thread_id:
             self.sessions[thread_id] = session
 
+    def register_turn(self, turn_id, session):
+        if turn_id:
+            self.turn_sessions[turn_id] = session
+
     def unregister(self, session):
         for thread_id, existing in list(self.sessions.items()):
             if existing is session:
                 self.sessions.pop(thread_id, None)
+        for turn_id, existing in list(self.turn_sessions.items()):
+            if existing is session:
+                self.turn_sessions.pop(turn_id, None)
+        for item_id, existing in list(self.item_sessions.items()):
+            if existing is session:
+                self.item_sessions.pop(item_id, None)
 
     def shutdown(self):
         proc = self.proc
@@ -598,6 +679,8 @@ class CodexSession:
         self._thread_ready = False
         self._item_output = {}
         self._item_changes = {}
+        self._plan_output = {}
+        self._codex_debug_notices = []
         self._last_usage = None
         self.plan_mode = False
         self.task_mode = False
@@ -730,7 +813,17 @@ class CodexSession:
         if not isinstance(res, dict):
             return
         thread = res.get("thread") or {}
-        self.thread_id = thread.get("id") or thread.get("sessionId") or self.thread_id
+        new_thread_id = thread.get("id") or thread.get("sessionId")
+        if self.thread_id and new_thread_id and new_thread_id != self.thread_id:
+            self._codex_notice(
+                "Ignored Codex thread update for a different thread",
+                "thread/started",
+                {"currentThreadId": self.thread_id, "incomingThreadId": new_thread_id},
+                level="debug",
+                silent=True,
+            )
+            return
+        self.thread_id = new_thread_id or self.thread_id
         self.model = res.get("model") or self.model
         self.model_provider = res.get("modelProvider") or self.model_provider
         self.service_tier = res.get("serviceTier") or self.service_tier
@@ -766,19 +859,55 @@ class CodexSession:
             res = get_app_client().request("turn/start", self._turn_params(prompt), timeout=30)
             turn = (res or {}).get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
+            if self.last_turn_id:
+                get_app_client().register_turn(self.last_turn_id, self)
             self._persist()
         except Exception as e:
             self._busy = False
             self._record_and_broadcast({"type": "result", "error": "Codex turn failed: %s" % e})
             self._persist()
 
-    def _codex_notice(self, message, method=None, params=None):
+    def _remember_codex_debug_notice(self, message, method=None, params=None):
+        self._codex_debug_notices.append({
+            "ts": time.time(),
+            "message": str(message or ""),
+            "method": method,
+            "detail": _compact_json(params) if params is not None else None,
+        })
+        self._codex_debug_notices = self._codex_debug_notices[-50:]
+
+    def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
+        if silent:
+            self._remember_codex_debug_notice(message, method, params)
+            return
         ev = {"type": "codex_notice", "message": message}
         if method:
             ev["method"] = method
         if params is not None:
             ev["detail"] = _compact_json(params)
+        if level:
+            ev["level"] = level
         self._broadcast(ev)
+
+    def _updated_event_notice_message(self, params):
+        if not isinstance(params, dict):
+            return ""
+        for key in ("message", "text", "error"):
+            value = params.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, dict):
+                nested = value.get("message") or value.get("text")
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+        return ""
+
+    def _handle_updated_event(self, method, params):
+        msg = self._updated_event_notice_message(params)
+        if msg:
+            self._codex_notice(msg, method, params)
+        else:
+            self._codex_notice("Codex status updated", method, params, level="debug", silent=True)
 
     def handle_notification(self, method, params):
         if not method:
@@ -789,6 +918,8 @@ class CodexSession:
         elif method == "turn/started":
             turn = params.get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
+            if self.last_turn_id:
+                get_app_client().register_turn(self.last_turn_id, self)
             self._busy = True
             self._broadcast({"type": "turn_started", "provider": "codex", "turn_id": self.last_turn_id})
             self._persist()
@@ -847,19 +978,23 @@ class CodexSession:
         elif method == "item/plan/delta":
             text = params.get("delta") or _extract_text(params)
             if text:
+                item_id = params.get("itemId") or params.get("id") or "turn-plan"
+                self._plan_output[item_id] = self._plan_output.get(item_id, "") + text
                 self._broadcast({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": text}}})
         elif method == "model/rerouted":
             self._codex_notice("Model rerouted", method, params)
         elif method == "model/safetyBuffering/updated":
-            self._codex_notice("Safety buffering state updated", method, params)
+            self._handle_updated_event(method, params)
         elif method == "account/rateLimits/updated":
-            self._codex_notice("Rate limits updated", method, params)
+            self._handle_updated_event(method, params)
         elif method == "mcpServer/startupStatus/updated":
-            self._codex_notice("MCP server startup status updated", method, params)
+            self._handle_updated_event(method, params)
         elif method == "turn/moderationMetadata":
-            self._codex_notice("Moderation metadata updated", method, params)
+            self._handle_updated_event(method, params)
         elif method == "error":
             self._record_and_broadcast({"type": "result", "error": params.get("message") or _json_text(params)})
+        elif method.endswith("/updated"):
+            self._handle_updated_event(method, params)
         else:
             self._codex_notice("Unhandled Codex event: " + method, method, params)
 
@@ -871,6 +1006,7 @@ class CodexSession:
         if status == "interrupted":
             self._record_and_broadcast({"type": "interrupted"})
         else:
+            self._flush_pending_plan_items()
             ev = {"type": "result", "duration_ms": turn.get("durationMs"), "usage": self._last_usage or {}}
             if status == "failed" or error:
                 ev["error"] = _json_text(error or "Codex turn failed")
@@ -900,10 +1036,29 @@ class CodexSession:
             content = "\n".join((item.get("summary") or []) + (item.get("content") or []))
             if content:
                 self._record_and_broadcast({"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": content}]}})
+        elif typ == "plan":
+            item_id = item.get("id") or "turn-plan"
+            buffered = self._plan_output.pop(item_id, "")
+            text = item.get("text") or buffered or _extract_text(item)
+            ev = _plan_text_event(text)
+            if ev:
+                self._awaiting_plan_decision = True
+                self._record_and_broadcast(ev)
         else:
             result = self._tool_result_from_item(item)
             if result:
                 self._record_and_broadcast(result)
+
+    def _flush_pending_plan_items(self):
+        if not self._plan_output:
+            return
+        pending = self._plan_output
+        self._plan_output = {}
+        for _item_id, text in pending.items():
+            ev = _plan_text_event(text)
+            if ev:
+                self._awaiting_plan_decision = True
+                self._record_and_broadcast(ev)
 
     def _on_plan_updated(self, params):
         plan = params.get("plan") or []
@@ -974,6 +1129,10 @@ class CodexSession:
                     txt = item.get("text") or ""
                     if txt:
                         events.append({"type": "assistant", "message": {"content": [{"type": "text", "text": txt}]}})
+                elif typ == "plan":
+                    ev = _plan_text_event(item.get("text") or _extract_text(item))
+                    if ev:
+                        events.append(ev)
                 elif typ == "reasoning":
                     txt = "\n".join((item.get("summary") or []) + (item.get("content") or []))
                     if txt:
@@ -1019,7 +1178,7 @@ class CodexSession:
             name = "WebSearch"
             inp = {"query": item.get("query") or "", "action": item.get("action")}
         elif typ == "plan":
-            return {"type": "assistant", "message": {"content": [{"type": "text", "text": item.get("text") or ""}]}}
+            return _plan_text_event(item.get("text") or _extract_text(item))
         elif typ in ("agentMessage", "reasoning", "userMessage"):
             # These are first-class chat/reasoning items. Text/reasoning deltas and
             # completed items render them; exposing item/started as a tool card is noise.
@@ -1359,18 +1518,25 @@ class CodexSession:
             pass
 
     @classmethod
-    def recover(cls, sid, cwd):
+    def recover(cls, sid, cwd, expected_thread_id=None):
         try:
             with open(os.path.join(STATE_DIR, "codex_%s.json" % sid), "r", encoding="utf-8") as f:
                 data = json.load(f)
             ns = cls(sid, data.get("cwd") or cwd, yolo=False)
-            ns.thread_id = data.get("thread_id")
+            ns.thread_id = expected_thread_id or data.get("thread_id")
             ns.last_turn_id = data.get("last_turn_id")
             ns.model = data.get("model") or ""
             ns.model_provider = data.get("model_provider") or ""
             ns.service_tier = data.get("service_tier") or ""
             ns.events = data.get("events") or []
             if ns.thread_id:
+                try:
+                    snap = cls.history_snapshot(ns.thread_id)
+                    if snap.get("events"):
+                        ns.events = snap.get("events") or ns.events
+                        ns.cwd = os.path.abspath(snap.get("cwd") or ns.cwd)
+                except Exception:
+                    pass
                 get_app_client().register(ns.thread_id, ns)
             return ns
         except (OSError, ValueError):

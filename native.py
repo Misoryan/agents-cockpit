@@ -91,6 +91,8 @@ class NativeSession:
         self.clients = set()
         self.clients_lock = threading.Lock()
         self.claude_sid = None          # claude 的 session_id(下次 --resume 续接)
+        self.model = ""                # claude 当前 model(system 事件报出;新客户端连上时补发)
+        self.convo_title = None      # 首条用户消息摘要(活跃会话标题优于目录名)
         self.events = []                # 已完成的终态事件(replay 给新客户端)
         self._closed = False
         self.alive = True
@@ -110,6 +112,10 @@ class NativeSession:
     # ---------- public API ----------
     def send(self, prompt):
         with self._lock:
+            if not self.events:
+                _t = " ".join(str(prompt).split())[:60]
+                if _t:
+                    self.convo_title = _t
             self.events.append({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
         threading.Thread(target=self._run_cli, args=(prompt,), daemon=True).start()
@@ -321,6 +327,10 @@ class NativeSession:
             snapshot = list(self.events)
         if snapshot:
             self._send_one(sock, {"type": "replay_batch", "events": snapshot})
+        with self._lock:
+            _m = self.model
+        if _m:
+            self._send_one(sock, {"type": "system", "model": _m})
         with self.clients_lock:
             self.clients.add(sock)
         def keepalive():
@@ -461,6 +471,8 @@ class NativeSession:
             with self._lock:
                 if ev.get("session_id"):
                     self.claude_sid = ev["session_id"]
+                if ev.get("type") == "system" and ev.get("model"):
+                    self.model = ev["model"]
             if ev.get("type") == "result":
                 result_ev = ev   # 暂存,不广播不入 events
                 continue

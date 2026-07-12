@@ -72,6 +72,38 @@ def kill_all():
         pass
 
 
+def idle_sweaper(interval=60, ttl=1800):
+    """后台回收:清理 claude 路线中无人查看、未在生成、未在等审批、且超过 ttl 秒未活动的 NativeSession。
+    只释放内存与 registry,历史文件保留(可恢复)。codex 常驻 app-client 架构排除。"""
+    while True:
+        try:
+            time.sleep(interval)
+            now = time.time()
+            to_kill = []
+            with _lock:
+                for sid, s in list(sessions.items()):
+                    if common.is_codex_backend(s.get("backend", "")):
+                        continue
+                    ns = s.get("native")
+                    if not ns or getattr(ns, "_closed", False) or not getattr(ns, "alive", False):
+                        continue
+                    if getattr(ns, "clients", None):
+                        continue
+                    proc = getattr(ns, "_proc", None)
+                    if proc is not None and proc.poll() is None:
+                        continue
+                    if getattr(ns, "_pending", None):
+                        continue
+                    if now - float(getattr(ns, "last_activity", 0) or 0) > ttl:
+                        to_kill.append(sid)
+            for sid in to_kill:
+                try:
+                    kill_session(sid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
 def _session_title(cwd, title):
     return title or os.path.basename(cwd.rstrip(os.sep)) or cwd
 
@@ -474,6 +506,7 @@ def _sigterm_die(*_a):
 def run():
     print("Agents Cockpit manager: http://%s:%d" % (common.MANAGER_HOST, common.MANAGER_PORT))
     reattach_sessions()
+    threading.Thread(target=idle_sweaper, daemon=True).start()
     atexit.register(kill_all)
     if os.name == "posix":
         import signal as _sig

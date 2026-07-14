@@ -772,6 +772,7 @@ class CodexSession:
         self.events = []
         self.thread_id = None
         self.last_turn_id = None
+        self.current_turn_started_at = None
         self.model = ""
         self.model_provider = ""
         self.service_tier = ""
@@ -806,8 +807,10 @@ class CodexSession:
     def send(self, prompt):
         with self._lock:
             self._awaiting_plan_decision = False
-        self._record_and_broadcast({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
+        self._busy = True
+        self.current_turn_started_at = self.last_activity
+        self._record_and_broadcast({"type": "user", "message": {"role": "user", "content": prompt}})
         threading.Thread(target=self._run_turn, args=(prompt,), daemon=True).start()
 
     def close(self):
@@ -962,6 +965,8 @@ class CodexSession:
 
     def _run_turn(self, prompt):
         self._busy = True
+        if not self.current_turn_started_at:
+            self.current_turn_started_at = time.time()
         self.last_activity = time.time()
         try:
             self._ensure_thread()
@@ -974,6 +979,7 @@ class CodexSession:
             self._persist()
         except Exception as e:
             self._busy = False
+            self.current_turn_started_at = None
             self._record_and_broadcast({"type": "result", "error": "Codex turn failed: %s" % e})
             self._persist()
 
@@ -1042,7 +1048,16 @@ class CodexSession:
             if self.last_turn_id:
                 get_app_client().register_turn(self.last_turn_id, self)
             self._busy = True
-            self._broadcast({"type": "turn_started", "provider": "codex", "turn_id": self.last_turn_id})
+            if not self.current_turn_started_at:
+                self.current_turn_started_at = time.time()
+            self._broadcast({
+                "type": "turn_started",
+                "provider": "codex",
+                "turn_id": self.last_turn_id,
+                "started_at": self.current_turn_started_at,
+                "started_at_ms": int(self.current_turn_started_at * 1000),
+                "elapsed_ms": max(0, int((time.time() - self.current_turn_started_at) * 1000)),
+            })
             self._persist()
         elif method == "turn/completed":
             self._on_turn_completed(params.get("turn") or {})
@@ -1050,6 +1065,7 @@ class CodexSession:
             status = params.get("status")
             if status == "idle" or (isinstance(status, dict) and status.get("type") == "idle"):
                 self._busy = False
+                self.current_turn_started_at = None
         elif method == "thread/settings/updated":
             self._on_thread_settings_updated(params.get("threadSettings") or {})
         elif method == "item/agentMessage/delta":
@@ -1121,6 +1137,7 @@ class CodexSession:
 
     def _on_turn_completed(self, turn):
         self._busy = False
+        self.current_turn_started_at = None
         self.last_turn_id = turn.get("id") or self.last_turn_id
         status = turn.get("status") or ""
         error = turn.get("error")
@@ -1700,6 +1717,10 @@ class CodexSession:
         with self._pending_lock:
             for req_id, entry in self._pending.items():
                 pending.append({"id": req_id, "kind": entry.get("kind")})
+        turn_started_at = self.current_turn_started_at if self._busy else None
+        turn_elapsed_ms = None
+        if turn_started_at:
+            turn_elapsed_ms = max(0, int((time.time() - turn_started_at) * 1000))
         return {
             "type": "state_snapshot",
             "state": self.state(),
@@ -1708,6 +1729,10 @@ class CodexSession:
             "task": bool(self.task_mode),
             "pending": pending,
             "last_seq": max(0, int(self._next_seq or 1) - 1),
+            "turn_started_at": turn_started_at,
+            "turn_started_at_ms": int(turn_started_at * 1000) if turn_started_at else None,
+            "turn_elapsed_ms": turn_elapsed_ms,
+            "server_now_ms": int(time.time() * 1000),
             "route_debug": self._route_debug[-10:],
         }
 
@@ -1764,6 +1789,7 @@ class CodexSession:
 
     def on_client_exit(self):
         self._busy = False
+        self.current_turn_started_at = None
         self._thread_ready = False
         if not self._closed:
             self._broadcast({"type": "result", "error": "Codex app-server exited. It will be restarted on the next send."})

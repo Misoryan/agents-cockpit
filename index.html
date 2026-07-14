@@ -1063,6 +1063,55 @@ function nRenderTasks(st){
 }
 function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;
   requestAnimationFrame(function(){ if(m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight; }); }
+function nCoerceEpochMs(v){
+  var n=Number(v);
+  if(!isFinite(n) || n<=0) return 0;
+  if(n<100000000000) n*=1000;
+  return Math.round(n);
+}
+function nThinkingBaseMs(src){
+  if(src && typeof src==="object"){
+    var elapsed=src.turn_elapsed_ms;
+    if(elapsed==null) elapsed=src.elapsed_ms;
+    elapsed=Number(elapsed);
+    if(isFinite(elapsed) && elapsed>=0) return Date.now()-elapsed;
+    return nCoerceEpochMs(src.turn_started_at_ms || src.started_at_ms || src.turn_started_at || src.started_at);
+  }
+  return nCoerceEpochMs(src);
+}
+function nThinkingSeconds(st){
+  return Math.max(0, Math.floor((Date.now()-(st.thinkStart||Date.now()))/1000));
+}
+function nThinkingLabel(st){ return "\u601d\u8003\u4e2d... "+nThinkingSeconds(st)+"s"; }
+function nSetThinkingStart(st, src){
+  var base=nThinkingBaseMs(src);
+  if(base) st.thinkStart=base;
+  else if(!st.thinkStart) st.thinkStart=Date.now();
+  nUpdateThinkingLabel(st);
+}
+function nUpdateThinkingLabel(st){
+  var label=nThinkingLabel(st);
+  var t=st.thinkBubble&&st.thinkBubble.querySelector(".ti-txt");
+  if(t) t.textContent=label;
+  if(st.thinkSum) st.thinkSum.innerHTML=_I('message-circle')+" "+label;
+}
+function nTurnHasContent(card){
+  if(!card || !card.children) return false;
+  for(var i=0;i<card.children.length;i++){
+    var ch=card.children[i];
+    if(ch.classList && ch.classList.contains("thinking-ind")) continue;
+    if((ch.textContent||"").trim()) return true;
+    if(ch.querySelector && ch.querySelector("pre,button,input,textarea,select,svg")) return true;
+  }
+  return false;
+}
+function nPruneEmptyTurn(st, card){
+  card=card||st.turnCard;
+  if(!card || !card.classList || !card.classList.contains("turn")) return;
+  if(nTurnHasContent(card)) return;
+  if(card.parentNode) card.parentNode.removeChild(card);
+  if(st.turnCard===card) st.turnCard=null;
+}
 function nTurnCard(st){
   if(st.turnCard) return st.turnCard;
   var d=document.createElement("div"); d.className="nmsg turn";
@@ -1127,29 +1176,30 @@ function nNewTextBubble(st){
   var t=document.createElement("div"); t.className="ntxt";
   d.appendChild(t); var _mt=document.createElement("div"); _mt.className="mtime"; _mt.textContent=_msgTime(); d.appendChild(_mt); nTurnCard(st).appendChild(d); st.curTxt=t; nScrollBottom();
 }
-function nStartThinking(st){
-  if(st.thinking || st.thinkBox) return;
+function nStartThinking(st, startedAt){
+  nSetThinkingStart(st, startedAt);
+  if(st.thinking || st.thinkBox){ nUpdateThinkingLabel(st); return; }
   st.thinking=true;
-  if(!st.thinkStart) st.thinkStart=Date.now();
   var d=document.createElement("div"); d.className="nmsg assistant thinking-ind";
-  d.innerHTML='<span class="ti-dot"></span><span class="ti-txt">思考中… 0s</span>';
-  nTurnCard(st).appendChild(d); st.thinkBubble=d; nScrollBottom();
-  st.thinkTimer=setInterval(function(){
-    var s=Math.floor((Date.now()-st.thinkStart)/1000);
-    var t=d.querySelector('.ti-txt'); if(t) t.textContent='思考中… '+s+'s';
-  },1000);
+  d.innerHTML='<span class="ti-dot"></span><span class="ti-txt"></span>';
+  nTurnCard(st).appendChild(d); st.thinkBubble=d; nUpdateThinkingLabel(st); nScrollBottom();
+  st.thinkTimer=setInterval(function(){ nUpdateThinkingLabel(st); },1000);
 }
 function nStopThinking(st){
   st.thinking=false;
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
-  if(st.thinkBubble){ st.thinkBubble.remove(); st.thinkBubble=null; }
+  if(st.thinkBubble){
+    var card=st.thinkBubble.parentNode;
+    st.thinkBubble.remove(); st.thinkBubble=null;
+    nPruneEmptyTurn(st, card);
+  }
 }
 /* 收束思考框:停止计时、摘要显示耗时、默认折叠;清空引用以便下一轮思考重建 */
 function nFinalizeThinking(st){
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.thinkBox){
-    var dur=st.thinkStart?Math.max(0,Math.round((Date.now()-st.thinkStart)/1000)):0;
-    if(st.thinkSum) st.thinkSum.innerHTML = st.thinkStart?(_I('message-circle')+' 思考 ('+dur+'s)'):_I('message-circle')+' 思考';
+    var dur=st.thinkStart?nThinkingSeconds(st):0;
+    if(st.thinkSum) st.thinkSum.innerHTML = st.thinkStart?(_I('message-circle')+' \u601d\u8003 ('+dur+'s)'):_I('message-circle')+' \u601d\u8003';
     st.thinkBox.open=false;
   }
   st.curThink=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
@@ -1489,7 +1539,7 @@ function nHandle(sid, obj){
     if(currentSid===sid){
       nSyncModes(st);
       nSetGen(!!obj.running);
-      if(obj.running && !st.curTxt && !st.curThink){ nStartThinking(st); }
+      if(obj.running && !st.curTxt && !st.curThink){ nStartThinking(st, obj); }
     }
     if(obj.route_debug){ try{ console.debug("[Codex route]", obj.route_debug); }catch(_e){} }
     if(obj.state==="confirm" || obj.state==="plan"){ st.lastPendingResync=0; }
@@ -1510,7 +1560,7 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="turn_started"){
-    nStartThinking(st);
+    nStartThinking(st, obj);
     if(currentSid===sid) nSetGen(true);
     return;
   }
@@ -1527,19 +1577,15 @@ function nHandle(sid, obj){
       st.lastToolGroup=null;
       if(st.thinkBubble) nStopThinking(st);
       if(!st.curThink){
-        if(!st.thinkStart) st.thinkStart=Date.now();
+        nSetThinkingStart(st, obj);
         var _thd=document.createElement("details"); _thd.open=false;
-        var _sum=document.createElement("summary"); _sum.innerHTML=_I('message-circle')+' 思考中… 0s';
+        var _sum=document.createElement("summary"); _sum.innerHTML=_I('message-circle')+' '+nThinkingLabel(st);
         var _pre=document.createElement("pre");
         _thd.appendChild(_sum); _thd.appendChild(_pre);
         nTurnCard(st).appendChild(_thd);
         st.curThink=_pre; st.thinkBox=_thd; st.thinkSum=_sum;
         if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
-        st.thinkTimer=setInterval(function(){
-          if(!st.thinkSum||!st.thinkStart) return;
-          var s=Math.floor((Date.now()-st.thinkStart)/1000);
-          st.thinkSum.innerHTML=_I('message-circle')+' 思考中… '+s+'s';
-        },1000);
+        st.thinkTimer=setInterval(function(){ nUpdateThinkingLabel(st); },1000);
       }
       st.curThink.appendChild(document.createTextNode(dl.thinking));
       nScrollBottom();

@@ -194,6 +194,11 @@ def reattach_sessions():
         if not ns:
             common.registry_drop(sid)
             continue
+        if "yolo" in e:
+            try:
+                ns.yolo = bool(e.get("yolo"))
+            except Exception:
+                pass
         with _lock:
             sessions[sid] = {
                 "dir": e.get("dir", getattr(ns, "cwd", "")),
@@ -344,7 +349,8 @@ class ManagerHandler(BaseHandler):
         except Exception as e:
             self._json({"error": str(e)}, 500)
             return
-        self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "session_path": "/t/%s/" % sid})
+        self._json({"ok": True, "sid": sid, "dir": d, "backend": backend,
+                    "yolo": auto_approve, "session_path": "/t/%s/" % sid})
 
     def do_POST(self):
         if not self._auth():
@@ -368,7 +374,8 @@ class ManagerHandler(BaseHandler):
             except Exception as e:
                 self._json({"error": str(e)}, 500)
                 return
-            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend, "session_path": "/t/%s/" % sid})
+            self._json({"ok": True, "sid": sid, "dir": d, "backend": backend,
+                        "yolo": auto_approve, "session_path": "/t/%s/" % sid})
         elif pr.path in ("/api/resume", "/api/nresume"):
             self._resume_native(data)
         elif pr.path == "/api/stop":

@@ -299,6 +299,7 @@ body.sb-collapsed #sidebar{display:none}
         .nathead{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--canvas);border-bottom:1px solid var(--line);min-height:52px}
         .nathead .nt{flex:1;font-weight:600;font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.01em}
         .nathead .nmodel{flex:0 0 auto;font:11px/1.4 var(--mono);color:var(--muted);background:var(--surface-soft);border:1px solid var(--line);padding:3px 9px;border-radius:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .nathead .nyolo{color:var(--amber);background:var(--amber-soft);border-color:transparent}
         .nathead .ghost{padding:7px 12px;font-size:12.5px}
         #nativemsgs{flex:1 1 auto;overflow-y:auto;padding:20px 16px 24px;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:14px}
         .nmsg{padding:0;word-break:break-word;line-height:1.65;animation:nfade .14s ease}
@@ -465,6 +466,7 @@ body.sb-collapsed #sidebar{display:none}
         <button class="ghost" id="nativeback"><i class="ic" data-lucide="arrow-left"></i> 返回</button>
         <span class="nt" id="nativettl">原生会话</span>
         <span class="nmodel" id="nativemodel" title="当前模型" style="display:none"></span>
+        <span class="nmodel nyolo" id="nativeyolo" title="当前会话自动批准状态" style="display:none">自动批准</span>
       </div>
       <div id="nativetasks" style="display:none"></div>
       <div id="nativemsgs"></div>
@@ -696,6 +698,14 @@ api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ avai
 /* ---- notifications (in-site only) ---- */
 var noticeTimers={};
 function removeNotice(key){ var el=document.querySelector('[data-notice-key="'+key+'"]'); if(el) el.remove(); if(noticeTimers[key]) clearTimeout(noticeTimers[key]); delete noticeTimers[key]; }
+function emitAndroidNotice(kind, s, title, body){
+  try{
+    if(window.AndroidNotify && typeof window.AndroidNotify.notify==="function"){
+      window.AndroidNotify.notify(JSON.stringify({kind:kind, sid:s.sid||"", title:title||"", body:body||"", backend:s.backend||"", dir:s.dir||"", state:s.state||""}));
+    }
+  }catch(e){}
+}
+function emitAndroidSessionNotice(kind, sid, title, body){ emitAndroidNotice(kind, {sid:sid||"", state:kind}, title, body); }
 function showSiteNotice(kind, s, title, body){
   var key=s.sid+"-"+kind; removeNotice(key);
   var box=document.createElement("div"); box.className="notice "+kind; box.setAttribute("data-notice-key", key);
@@ -718,6 +728,7 @@ function emitAiNotice(kind, s){
   else if(kind==="plan"){ title=name+" Plan 待确认"; body=(s.dir||"")+" · 点击查看计划"; }
   else { title=name+" 已完成"; body=(s.dir||"")+" · 等待下一条指令"; }
   showSiteNotice(kind, s, title, body);
+  emitAndroidNotice(kind, s, title, body);
 }
 
 /* ---- sessions + sidebar model ---- */
@@ -725,7 +736,7 @@ var runSessions=[], sessionWatch={}, dirModel=[], expanded={}, dirFullOpen={}, s
 var pendingOpenSid=""; try{ pendingOpenSid=new URLSearchParams(location.search).get("open")||""; }catch(e){}
 
 function sessionSignature(){
-  return runSessions.slice().sort(function(a,b){ return a.sid<b.sid?-1:1; }).map(function(s){ return s.sid+":"+s.state; }).join("|");
+  return runSessions.slice().sort(function(a,b){ return a.sid<b.sid?-1:1; }).map(function(s){ return s.sid+":"+s.state+":"+(s.yolo?"1":"0"); }).join("|");
 }
 function ensureSessionDirs(){
   var byNorm={}; dirModel.forEach(function(d){ byNorm[d.norm]=d; });
@@ -740,12 +751,43 @@ function attachSessionsToModel(){
   });
   dirModel.sort(function(a,b){ return (b.running?1:0)-(a.running?1:0) || (b.lastActivity||0)-(a.lastActivity||0); });
 }
+function nFindRunSession(sid){
+  for(var i=0;i<runSessions.length;i++){ if(runSessions[i].sid===sid) return runSessions[i]; }
+  return null;
+}
+function nRenderYoloBadge(s){
+  var el=$("nativeyolo"); if(!el) return;
+  if(s && s.yolo){
+    el.textContent="自动批准";
+    el.title="此会话启用了自动批准:大多数工具不会弹确认卡";
+    el.style.display="";
+  }else{
+    el.style.display="none";
+    el.textContent="自动批准";
+  }
+}
+function nHasPendingUi(st, state){
+  if(!st || !st.root) return false;
+  if(state==="confirm") return !!st.root.querySelector(".nmsg.approval,.nmsg.ask,.nmsg.form");
+  if(state==="plan") return !!st.root.querySelector(".nmsg.plan");
+  return true;
+}
+function nEnsurePendingVisible(s){
+  if(!s || s.sid!==currentSid || (s.state!=="confirm" && s.state!=="plan")) return;
+  var st=nativeStages[s.sid]; if(!st || nHasPendingUi(st, s.state)) return;
+  var ws=nativeWs[s.sid]; if(ws && ws.readyState===0) return;
+  var now=Date.now();
+  if(st.lastPendingResync && now-st.lastPendingResync<10000) return;
+  st.lastPendingResync=now;
+  nAddRow(st, "sys", _I('refresh-cw')+" 检测到会话待处理但卡片未显示,正在重新同步…");
+  nativeConnect(s.sid);
+}
 function rememberSessions(ss, skipPendingOpen){
   runSessions=ss||[];
   var _rg=0,_pg=0; (ss||[]).forEach(function(s){ if(s.state==="running")_rg++; else if(s.state==="confirm"||s.state==="plan")_pg++; });
   var _parts=[]; if(_rg)_parts.push(_rg+" 生成中"); if(_pg)_parts.push(_pg+" 待处理");
   var rc=$("runcnt"); if(rc) rc.textContent=_parts.length?("· "+_parts.join(" · ")):"";
-  if(currentSid){ var _cs=(ss||[]).find(function(x){return x.sid===currentSid;}); if(_cs) nSetGen(_cs.state==="running"); }
+  if(currentSid){ var _cs=nFindRunSession(currentSid); if(_cs){ nSetGen(_cs.state==="running"); nRenderYoloBadge(_cs); nEnsurePendingVisible(_cs); } }
   Object.keys(nativeStages).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropNativeStage(sid); });
   ss.forEach(function(s){
     var prev=sessionWatch[s.sid];
@@ -846,7 +888,7 @@ function renderConv(it){
   if(it.kind==="run"){
     var s=it.data; var dot=s.state==="confirm"?"confirm":s.state==="plan"?"plan":s.state==="new"?"new":(s.state==="running"?"run":"idle");
     var _sl=s.state==="running"?"生成中":s.state==="confirm"?"待确认":s.state==="plan"?"计划中":s.state==="new"?"新会话":"空闲";
-    var meta=_sl+" · "+backendShort(s.backend)+(s.mode==="resume"?" · 恢复":"")+" · "+elapsedStr(s.last_input_ts);
+    var meta=_sl+" · "+backendShort(s.backend)+(s.yolo?" · 自动批准":"")+(s.mode==="resume"?" · 恢复":"")+" · "+elapsedStr(s.last_input_ts);
     el.innerHTML='<span class="dot '+dot+'"></span><div class="cmain"><div class="ct">'+esc(s.title||basename(s.dir))+'</div><div class="cm">'+esc(meta)+'</div></div>';
     var b=document.createElement("button"); b.className="cbtn"; b.textContent="打开";
     var openFn=function(){ showNativeSession(s.sid, s.title||basename(s.dir)); };
@@ -873,6 +915,7 @@ function resumeHist(h){
     if(r.error){ alert("恢复失败："+r.error); return; }
     var title=(h.title||"恢复会话")+" · "+backendLabel(be);
     showNativeSession(r.sid, title);
+    nRenderYoloBadge({yolo:r.yolo});
     loadSidebarData();
   });
 }
@@ -1066,8 +1109,9 @@ function nativeStage(sid){
   var d=document.createElement("div");
   d.style.cssText="display:none;width:100%;flex-direction:column;gap:10px";
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
-  nativeStages[sid]={root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
-                      planMode:null, taskMode:null, todos:null, tasksCollapsed:false};
+  nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
+                      planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
+                      renderedEvents:{}, lastBatchSig:"", lastSeq:0};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -1212,11 +1256,50 @@ function nRenderAssistantText(sid, st, text){
 }
 /* 事件指纹:用 type+uuid 序列 + 数量签名(不 stringify 正文,免得大对话卡顿)。
    同一份事件流 → 同一指纹;新增/裁剪事件 → 指纹变。用于「内容没变就跳过重放」杜绝闪屏。 */
+function nEventStableKey(e){
+  if(!e) return "";
+  if(e.event_id) return "id:"+String(e.event_id);
+  if(e.seq!=null) return "seq:"+String(e.seq);
+  var m=e.message||{}, blocks=m.content||[], key=(e.type||"")+"|"+(m.uuid||m.id||e.uuid||"");
+  if(!key || key==="|") key=e.type||"event";
+  if(Array.isArray(blocks) && blocks.length){
+    var b=blocks[0]||{}; key += "|"+(b.id||b.tool_use_id||b.type||"");
+  }
+  return key;
+}
+function nHashText(s){
+  s=String(s==null?"":s);
+  var h=0;
+  for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; }
+  return String(h>>>0);
+}
 function nEvSigPart(e){
-  var m=(e&&e.message)||{};
-  return (e&&e.type||"")+"|"+(m.uuid||m.id||(e&&e.uuid)||(e&&e.type==="result"?"r":"x"));
+  var key=nEventStableKey(e);
+  var body="";
+  try{ body=JSON.stringify(e||{}); }catch(_e){ body=String(e); }
+  return key+"|"+(e&&e.merged_seq!=null?e.merged_seq:"")+"|"+body.length+"|"+nHashText(body);
 }
 function nSigFromParts(parts){ return parts.length+"#"+parts.join(","); }
+function nMarkRendered(st,obj){
+  if(!obj || obj.type==="replay_batch" || obj.type==="state_snapshot") return true;
+  var id=obj.event_id || (obj.seq!=null ? ("seq:"+obj.seq) : "");
+  if(!id) return true;
+  st.renderedEvents=st.renderedEvents||{};
+  if(st.renderedEvents[id] && !obj.replay) return false;
+  st.renderedEvents[id]=true;
+  if(obj.seq!=null){ st.lastSeq=Math.max(st.lastSeq||0, Number(obj.seq)||0); }
+  return true;
+}
+function nResetReplayState(st){
+  if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
+  st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
+  st.lastWasHumanUser=false; st.lastHumanText="";
+  st.renderedEvents={};
+  st.lastSeq=0;
+  st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
+  st.root.innerHTML="";
+}
 function nAddHumanRow(st, text){
   text=String(text==null?"":text).trim();
   if(!text) return;
@@ -1254,6 +1337,8 @@ function nSubmitAsk(sid, obj, card){
   card.remove();
 }
 function nRenderAsk(sid, st, obj){
+  var old=(st.turnCard||st.root).querySelector('.nmsg.ask[data-tuid="'+obj.tool_use_id+'"]');
+  if(old) old.remove();
   var acard=document.createElement("div"); acard.className="nmsg ask"; acard.dataset.tuid=obj.tool_use_id;
   var qs=nAskQuestions(obj);
   if(qs.length){
@@ -1362,6 +1447,8 @@ function nSubmitForm(sid, obj, card, action){
   card.remove();
 }
 function nRenderForm(sid, st, obj){
+  var old=(st.turnCard||st.root).querySelector('.nmsg.form[data-tuid="'+obj.tool_use_id+'"]');
+  if(old) old.remove();
   var card=document.createElement("div"); card.className="nmsg form"; card.dataset.tuid=obj.tool_use_id;
   var fields=Array.isArray(obj.fields)?obj.fields:[];
   var html='<div class="fhead">'+_I('receipt')+' Codex 表单请求</div><div class="fmsg">'+nEsc(obj.message||"需要填写表单")+'</div>';
@@ -1380,31 +1467,32 @@ function nHandle(sid, obj){
   try{ console.log("[N]", obj.type, obj.subtype || (obj.event&&obj.event.delta&&obj.event.delta.type) || ""); }catch(e){}
   var t=obj.type;
   var st=nativeStages[sid]; if(!st) return;
-  // 实时事件(非 replay)也计入「已渲染指纹」,这样切后台重连时能识别「内容没变」→ 跳过闪屏重放。
-  // replay 的事件由 replay_batch 统一建指纹,这里不重复计。
-  if(!obj.replay && (t==="assistant"||t==="user"||t==="result")){
-    st.sigParts=(st.sigParts||[]); st.sigParts.push(nEvSigPart(obj));
-    st.lastBatchSig=nSigFromParts(st.sigParts);
-  }
   if(t==="replay_batch"){
     var _evs=obj.events||[];
     var _sig=nSigFromParts(_evs.map(nEvSigPart));
-    if(_sig && _sig===st.lastBatchSig){
-      // 同一份历史(最常见:切后台→浏览器杀 WS→回来重连,期间 agent 没动;实时会话也会命中,
-      // 因为实时事件已计入 st.sigParts)。完全不动 DOM,杜绝「清空重建」造成的整屏闪动。
-      return;
-    }
+    if(_sig && _sig===st.lastBatchSig){ return; }
     st.sigParts=_evs.map(nEvSigPart);
     st.lastBatchSig=_sig;
-    // 内容确实变了(首次加载 / 后台期间 agent 产生了新输出):清空重建一份权威快照。
-    if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
-    st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
-    st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
-    st.lastWasHumanUser=false; st.lastHumanText="";
-    st.todos=null; if(currentSid===sid) nRenderTasks(st);   // 清空任务面板,由重放的 TodoWrite 重建
-    st.root.innerHTML="";
-    if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "⟳ 历史对话恢复"); }
+    nResetReplayState(st);
+    if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "history replay"); }
     _evs.forEach(function(e){ e.replay=true; nHandle(sid, e); });
+    return;
+  }
+  if(!nMarkRendered(st,obj)) return;
+  if(!obj.replay && t!=="state_snapshot"){
+    st.sigParts=(st.sigParts||[]); st.sigParts.push(nEvSigPart(obj));
+    st.lastBatchSig=nSigFromParts(st.sigParts);
+  }
+  if(t==="state_snapshot"){
+    st.planMode=!!obj.plan; st.taskMode=!!obj.task;
+    st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
+    if(currentSid===sid){
+      nSyncModes(st);
+      nSetGen(!!obj.running);
+      if(obj.running && !st.curTxt && !st.curThink){ nStartThinking(st); }
+    }
+    if(obj.route_debug){ try{ console.debug("[Codex route]", obj.route_debug); }catch(_e){} }
+    if(obj.state==="confirm" || obj.state==="plan"){ st.lastPendingResync=0; }
     return;
   }
   if(t==="system"){
@@ -1592,9 +1680,13 @@ function nHandle(sid, obj){
   }
   if(t==="pending_approval"){
     nFinalizeThinking(st); nStopThinking(st);
+    st.lastPendingResync=0;
     // ExitPlanMode(计划模式提交计划)→ 计划审批卡:markdown 计划 + 批准/拒绝。
     // 批准后后端自动退出计划模式并广播 mode_state(同步前端开关),与 claude cli 行为一致。
     if(obj.name==="ExitPlanMode"){
+      emitAndroidSessionNotice("plan", sid, "Codex plan needs review", "Tap to review and decide whether to continue.");
+      var oldPlan=(st.turnCard||st.root).querySelector('.nmsg.plan[data-tuid="'+obj.tool_use_id+'"],.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
+      if(oldPlan) oldPlan.remove();
       var pcard=document.createElement("div"); pcard.className="nmsg plan"; pcard.dataset.tuid=obj.tool_use_id;
       var _planMd=(obj.input&&obj.input.plan)||"";
       pcard.innerHTML='<div class="plan-head">'+_I('clipboard-list')+' 计划方案 · 请审阅后决定</div><div class="plan-body">'+renderMd(_planMd)+'</div>'+
@@ -1604,6 +1696,9 @@ function nHandle(sid, obj){
       pcard.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); pcard.remove(); });
       nTurnCard(st).appendChild(pcard); st.curTxt=null; nScrollBottom(); return;
     }
+    emitAndroidSessionNotice("confirm", sid, (obj.danger?"Dangerous action needs confirmation":"Action needs confirmation"), obj.preview||obj.name||"Tap to confirm.");
+    var old=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"],.nmsg.plan[data-tuid="'+obj.tool_use_id+'"]');
+    if(old) old.remove();
     var dng=obj.danger?" danger":"";
     var card=document.createElement("div"); card.className="nmsg approval"+dng; card.dataset.tuid=obj.tool_use_id;
     var _btns='<div class="abtns"><button class="allow">允许</button>';
@@ -1619,11 +1714,15 @@ function nHandle(sid, obj){
   }
   if(t==="pending_ask"){
     nFinalizeThinking(st); nStopThinking(st);
+    emitAndroidSessionNotice("confirm", sid, "Agent waits for input", obj.question||"Tap to answer.");
+    st.lastPendingResync=0;
     nRenderAsk(sid, st, obj);
     return;
   }
   if(t==="pending_form"){
     nFinalizeThinking(st); nStopThinking(st);
+    emitAndroidSessionNotice("confirm", sid, "Form input required", obj.message||"Tap to fill the form.");
+    st.lastPendingResync=0;
     nRenderForm(sid, st, obj);
     return;
   }
@@ -1728,6 +1827,7 @@ document.addEventListener("visibilitychange", function(){
 function showNativeSession(sid, title){
   currentSid=sid; $("nativettl").textContent=title||sid;
   nRenderModelBadge((nativeStages[sid]||{}).model||"");
+  nRenderYoloBadge(nFindRunSession(sid));
   Object.keys(nativeStages).forEach(function(k){ nativeStages[k].root.style.display=(k===sid)?"flex":"none"; });
   var st=nativeStage(sid);
   // 恢复计划/任务模式开关:优先 stage 内存(切会话保持),首次加载从 localStorage 读
@@ -1738,6 +1838,7 @@ function showNativeSession(sid, title){
   postJSON("/api/nmode",{sid:sid, plan:st.planMode, task:st.taskMode});
   st.root.style.display="flex";
   if(!nativeWs[sid] || nativeWs[sid].readyState===3) nativeConnect(sid);
+  nEnsurePendingVisible(nFindRunSession(sid));
   setMainView("native"); closeSidebar();
   setTimeout(function(){ $("nativeinput").focus({preventScroll:true}); }, 60);
 }
@@ -1805,6 +1906,7 @@ function launchDir(dir, title, backend, yolo, args){
     var be=r.backend||backend;
     if(!isNativeBackend(be)){ alert("\u540e\u7aef\u8fd4\u56de\u4e86\u4e0d\u652f\u6301\u7684\u4f1a\u8bdd\u7c7b\u578b\u3002\u8bf7\u5148\u5728\u8bbe\u7f6e\u91cc\u91cd\u542f\u540e\u7aef\u5c42\uff0c\u518d\u5237\u65b0\u9875\u9762\u91cd\u8bd5\u3002"); return; }
     showNativeSession(r.sid, (title||basename(r.dir)) + " \u00b7 " + backendLabel(be));
+    nRenderYoloBadge({yolo:r.yolo});
     loadSidebarData(); pollSessionSignals();
   });
 }

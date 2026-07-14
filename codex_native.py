@@ -6,6 +6,7 @@ stream-json events, while speaking Codex app-server JSONL/JSON-RPC on the
 backend.
 """
 import atexit
+import copy
 import json
 import os
 import subprocess
@@ -24,6 +25,11 @@ _TASK_SYSTEM = (
     "Task mode: for multi-step work, keep a concise todo list and update it as "
     "you make progress so the user can follow the task state."
 )
+
+_REPLAY_MAX_EVENTS = 400
+_REPLAY_STREAM_MAX_CHARS = 24000
+_UNROUTED_MAX = 120
+_UNROUTED_TTL = 10.0
 
 
 def _push_notify_worker(title, body, event, webhook_body=None):
@@ -356,6 +362,7 @@ class CodexAppServerClient:
         self.sessions = {}
         self.turn_sessions = {}
         self.item_sessions = {}
+        self.unrouted_events = []
         self.stderr_tail = []
         self.initialized = False
         self.dead = False
@@ -444,11 +451,14 @@ class CodexAppServerClient:
                 line = line.rstrip()
                 if not line:
                     continue
-                self.stderr_tail.append(line)
-                if len(self.stderr_tail) > 40:
-                    self.stderr_tail = self.stderr_tail[-40:]
+                self._log_tail(line)
         except Exception:
             pass
+
+    def _log_tail(self, line):
+        self.stderr_tail.append(str(line))
+        if len(self.stderr_tail) > 40:
+            self.stderr_tail = self.stderr_tail[-40:]
 
     def _dispatch(self, msg):
         if "id" in msg and ("result" in msg or "error" in msg):
@@ -469,12 +479,25 @@ class CodexAppServerClient:
             self._remember_item_route(params, session)
             session.handle_notification(method, params)
             return
-        # Many Codex notifications are scoped only by turnId/itemId. If we
-        # cannot prove ownership, dropping is safer than leaking one thread's
-        # deltas into every open browser session.
+        # Many Codex notifications are scoped only by turnId/itemId. If the
+        # turn/item route has not been learned yet, keep a short buffer and
+        # replay it once a later notification or response establishes ownership.
+        if method and self._has_route_hint(params):
+            fallback = self._single_busy_session()
+            if fallback:
+                self._remember_item_route(params, fallback)
+                fallback._remember_route_debug("single-busy fallback", method, params)
+                fallback.handle_notification(method, params)
+                return
+            self._buffer_unrouted(method, params)
+            return
         if method and not method.endswith("/updated"):
-            self.stderr_tail.append("unrouted notification: %s %s" % (method, _compact_json(params)[:500]))
-            self.stderr_tail = self.stderr_tail[-40:]
+            fallback = self._single_busy_session()
+            if fallback:
+                fallback._remember_route_debug("single-busy global fallback", method, params)
+                fallback.handle_notification(method, params)
+                return
+            self._log_tail("unrouted notification: %s %s" % (method, _compact_json(params)[:500]))
 
     @staticmethod
     def _thread_id_from_params(params):
@@ -538,19 +561,100 @@ class CodexAppServerClient:
             return self.item_sessions.get(item_id)
         return None
 
+    def _has_route_hint(self, params):
+        return bool(
+            self._thread_id_from_params(params)
+            or self._turn_id_from_params(params)
+            or self._item_id_from_params(params)
+        )
+
     def _remember_item_route(self, params, session):
+        thread_id = self._thread_id_from_params(params)
         turn_id = self._turn_id_from_params(params)
+        item_id = self._item_id_from_params(params)
+        if thread_id:
+            self.sessions[thread_id] = session
         if turn_id:
             self.turn_sessions[turn_id] = session
-        item_id = self._item_id_from_params(params)
         if item_id:
             self.item_sessions[item_id] = session
+        if thread_id or turn_id or item_id:
+            self._flush_unrouted(session, thread_id=thread_id, turn_id=turn_id, item_id=item_id)
+
+    def _single_busy_session(self):
+        seen = set()
+        busy = []
+        for session in list(self.sessions.values()):
+            marker = id(session)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            if getattr(session, "_busy", False) and not getattr(session, "_closed", False):
+                busy.append(session)
+        return busy[0] if len(busy) == 1 else None
+
+    def _buffer_unrouted(self, method, params):
+        now = time.time()
+        entry = {
+            "method": method,
+            "params": copy.deepcopy(params),
+            "ts": now,
+            "thread_id": self._thread_id_from_params(params),
+            "turn_id": self._turn_id_from_params(params),
+            "item_id": self._item_id_from_params(params),
+        }
+        with self.lock:
+            self.unrouted_events = [
+                e for e in self.unrouted_events
+                if now - float(e.get("ts") or 0) < _UNROUTED_TTL
+            ]
+            self.unrouted_events.append(entry)
+            self.unrouted_events = self.unrouted_events[-_UNROUTED_MAX:]
+        if method and not method.endswith("/updated"):
+            self._log_tail("buffered unrouted notification: %s %s" % (method, _compact_json(params)[:500]))
+
+    def _flush_unrouted(self, session, thread_id=None, turn_id=None, item_id=None):
+        now = time.time()
+        with self.lock:
+            if not self.unrouted_events:
+                return
+            keep = []
+            replay = []
+            for entry in self.unrouted_events:
+                matched = (
+                    (thread_id and entry.get("thread_id") == thread_id)
+                    or (turn_id and entry.get("turn_id") == turn_id)
+                    or (item_id and entry.get("item_id") == item_id)
+                    or (entry.get("thread_id") and entry.get("thread_id") == getattr(session, "thread_id", None))
+                )
+                if matched:
+                    replay.append(entry)
+                elif now - float(entry.get("ts") or 0) < _UNROUTED_TTL:
+                    keep.append(entry)
+            self.unrouted_events = keep[-_UNROUTED_MAX:]
+        for entry in replay:
+            params = entry.get("params") or {}
+            ethread = self._thread_id_from_params(params)
+            eturn = self._turn_id_from_params(params)
+            eitem = self._item_id_from_params(params)
+            if ethread:
+                self.sessions[ethread] = session
+            if eturn:
+                self.turn_sessions[eturn] = session
+            if eitem:
+                self.item_sessions[eitem] = session
+            session._remember_route_debug("drained buffered event", entry.get("method"), params)
+            session.handle_notification(entry.get("method"), params)
 
     def _handle_server_request(self, msg):
         req_id = msg.get("id")
         method = msg.get("method")
         params = msg.get("params") or {}
         session = self._session_from_params(params)
+        if not session and self._has_route_hint(params):
+            session = self._single_busy_session()
+            if session:
+                session._remember_route_debug("single-busy request fallback", method, params)
         try:
             if session:
                 self._remember_item_route(params, session)
@@ -604,10 +708,12 @@ class CodexAppServerClient:
     def register(self, thread_id, session):
         if thread_id:
             self.sessions[thread_id] = session
+            self._flush_unrouted(session, thread_id=thread_id)
 
     def register_turn(self, turn_id, session):
         if turn_id:
             self.turn_sessions[turn_id] = session
+            self._flush_unrouted(session, turn_id=turn_id)
 
     def unregister(self, session):
         for thread_id, existing in list(self.sessions.items()):
@@ -681,11 +787,15 @@ class CodexSession:
         self._item_changes = {}
         self._plan_output = {}
         self._codex_debug_notices = []
+        self._route_debug = []
+        self.timeline = []
+        self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
         self.task_mode = False
         self._awaiting_plan_decision = False
         self.last_activity = time.time()
+        self._last_persist = 0.0
 
     def start(self):
         res = get_app_client().request("thread/start", self._thread_params(), timeout=30)
@@ -696,7 +806,7 @@ class CodexSession:
     def send(self, prompt):
         with self._lock:
             self._awaiting_plan_decision = False
-            self.events.append({"type": "user", "message": {"role": "user", "content": prompt}})
+        self._record_and_broadcast({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
         threading.Thread(target=self._run_turn, args=(prompt,), daemon=True).start()
 
@@ -876,6 +986,17 @@ class CodexSession:
         })
         self._codex_debug_notices = self._codex_debug_notices[-50:]
 
+    def _remember_route_debug(self, message, method=None, params=None):
+        self._route_debug.append({
+            "ts": time.time(),
+            "message": str(message or ""),
+            "method": method,
+            "thread_id": CodexAppServerClient._thread_id_from_params(params or {}) if params else None,
+            "turn_id": CodexAppServerClient._turn_id_from_params(params or {}) if params else None,
+            "item_id": CodexAppServerClient._item_id_from_params(params or {}) if params else None,
+        })
+        self._route_debug = self._route_debug[-30:]
+
     def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
         if silent:
             self._remember_codex_debug_notice(message, method, params)
@@ -1031,6 +1152,8 @@ class CodexSession:
             if text:
                 if _extract_proposed_plan(text):
                     self._awaiting_plan_decision = True
+                    self._push("plan", "📋 Plan 待确认 · " + os.path.basename(self.cwd),
+                               self.cwd + " · 点击查看计划")
                 self._record_and_broadcast({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
         elif typ == "reasoning":
             content = "\n".join((item.get("summary") or []) + (item.get("content") or []))
@@ -1043,6 +1166,8 @@ class CodexSession:
             ev = _plan_text_event(text)
             if ev:
                 self._awaiting_plan_decision = True
+                self._push("plan", "📋 Plan 待确认 · " + os.path.basename(self.cwd),
+                           self.cwd + " · 点击查看计划")
                 self._record_and_broadcast(ev)
         else:
             result = self._tool_result_from_item(item)
@@ -1058,6 +1183,8 @@ class CodexSession:
             ev = _plan_text_event(text)
             if ev:
                 self._awaiting_plan_decision = True
+                self._push("plan", "📋 Plan 待确认 · " + os.path.basename(self.cwd),
+                           self.cwd + " · 点击查看计划")
                 self._record_and_broadcast(ev)
 
     def _on_plan_updated(self, params):
@@ -1261,10 +1388,12 @@ class CodexSession:
         raise AppServerRequestError(-32601, "unsupported app-server request: %s" % method)
 
     def _await_approval(self, req_id, method, params, name, preview):
-        entry = {"event": threading.Event(), "kind": "approve", "method": method, "params": params, "allow": None, "always": False}
+        danger = self._is_dangerous(preview)
+        entry = {"event": threading.Event(), "kind": "approve", "method": method, "params": params,
+                 "name": name, "preview": preview, "danger": danger,
+                 "allow": None, "always": False}
         with self._pending_lock:
             self._pending[req_id] = entry
-        danger = self._is_dangerous(preview)
         self._broadcast({
             "type": "pending_approval",
             "tool_use_id": req_id,
@@ -1285,7 +1414,9 @@ class CodexSession:
         questions = _clean_questions(params.get("questions") or [])
         fallback = params.get("message") or params.get("prompt") or _json_text(params)
         question_text = _question_text(questions, fallback)
-        entry = {"event": threading.Event(), "kind": "ask", "method": method, "params": params, "answer": ""}
+        entry = {"event": threading.Event(), "kind": "ask", "method": method, "params": params,
+                 "question": question_text, "questions": questions,
+                 "auto_resolution_ms": params.get("autoResolutionMs"), "answer": ""}
         with self._pending_lock:
             self._pending[req_id] = entry
         ev = {
@@ -1323,7 +1454,10 @@ class CodexSession:
         schema = params.get("requestedSchema")
         fields = _form_fields_from_schema(schema)
         msg = params.get("message") or "Codex requests form input"
-        entry = {"event": threading.Event(), "kind": "form", "method": method, "params": params, "answer": None}
+        entry = {"event": threading.Event(), "kind": "form", "method": method, "params": params,
+                 "message": msg, "fields": fields,
+                 "schema_detail": _compact_json(schema, 2500) if schema is not None else "",
+                 "answer": None}
         with self._pending_lock:
             self._pending[req_id] = entry
         self._broadcast({
@@ -1418,7 +1552,82 @@ class CodexSession:
                     self.events = self.events[-200:]
         self._broadcast(obj)
 
+    def _event_identity_locked(self, obj):
+        seq = self._next_seq
+        self._next_seq += 1
+        typ = obj.get("type") or "event"
+        key = obj.get("tool_use_id") or obj.get("turn_id") or obj.get("event_id")
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        if not key and isinstance(msg, dict):
+            key = msg.get("uuid") or msg.get("id")
+            blocks = msg.get("content") or []
+            if not key and isinstance(blocks, list) and blocks:
+                first = blocks[0] or {}
+                key = first.get("id") or first.get("tool_use_id") or first.get("type")
+        return seq, "%s-%06d-%s" % (self.sid, seq, str(key or typ))
+
+    def _record_timeline_locked(self, obj):
+        if obj.get("type") in ("replay_batch", "state_snapshot", "codex_usage"):
+            return obj
+        out = dict(obj)
+        if not out.get("seq"):
+            seq, event_id = self._event_identity_locked(out)
+            out["seq"] = seq
+            out["event_id"] = event_id
+        elif not out.get("event_id"):
+            out["event_id"] = "%s-%06d-%s" % (self.sid, int(out.get("seq") or 0), out.get("type") or "event")
+        if self._merge_timeline_event_locked(out):
+            return out
+        self.timeline.append(out)
+        if len(self.timeline) > _REPLAY_MAX_EVENTS:
+            self.timeline = self.timeline[-_REPLAY_MAX_EVENTS:]
+        return out
+
+    def _merge_timeline_event_locked(self, out):
+        typ = out.get("type")
+        if typ == "stream_event":
+            dl = ((out.get("event") or {}).get("delta") or {})
+            field = "text" if dl.get("type") == "text_delta" else "thinking" if dl.get("type") == "thinking_delta" else ""
+            if not field or not dl.get(field) or not self.timeline:
+                return False
+            last = self.timeline[-1]
+            last_dl = ((last.get("event") or {}).get("delta") or {})
+            if last.get("type") != "stream_event" or last_dl.get("type") != dl.get("type"):
+                return False
+            merged = (last_dl.get(field) or "") + (dl.get(field) or "")
+            if len(merged) > _REPLAY_STREAM_MAX_CHARS:
+                merged = "... (stream truncated)\n" + merged[-_REPLAY_STREAM_MAX_CHARS:]
+            last_dl[field] = merged
+            last["merged_seq"] = out.get("seq")
+            return True
+        tool_id = self._tool_result_id(out)
+        if not tool_id:
+            return False
+        for prev in reversed(self.timeline[-80:]):
+            if self._tool_result_id(prev) == tool_id:
+                prev["message"] = out.get("message")
+                prev["merged_seq"] = out.get("seq")
+                return True
+        return False
+
+    @staticmethod
+    def _tool_result_id(ev):
+        if not isinstance(ev, dict) or ev.get("type") != "user":
+            return ""
+        blocks = ((ev.get("message") or {}).get("content") or [])
+        if not isinstance(blocks, list) or not blocks:
+            return ""
+        first = blocks[0] or {}
+        if first.get("type") != "tool_result":
+            return ""
+        return str(first.get("tool_use_id") or "")
+
+    def _decorate_for_broadcast(self, obj):
+        with self._lock:
+            return self._record_timeline_locked(obj)
+
     def _broadcast(self, obj):
+        obj = self._decorate_for_broadcast(obj)
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         with self.clients_lock:
             clients = list(self.clients)
@@ -1432,6 +1641,15 @@ class CodexSession:
             with self.clients_lock:
                 for c in dead:
                     self.clients.discard(c)
+        self._persist_if_due(obj)
+
+    def _persist_if_due(self, obj):
+        typ = obj.get("type") if isinstance(obj, dict) else ""
+        now = time.time()
+        important = typ in ("assistant", "user", "result", "pending_approval", "pending_ask", "pending_form", "interrupted")
+        if important or now - self._last_persist >= 1.5:
+            self._last_persist = now
+            self._persist()
 
     def _send_one(self, sock, obj):
         try:
@@ -1442,9 +1660,12 @@ class CodexSession:
 
     def add_client(self, sock):
         with self._lock:
-            snapshot = list(self.events)
+            snapshot = list(self.timeline or self.events)
         if snapshot:
             self._send_one(sock, {"type": "replay_batch", "events": snapshot})
+        self._send_one(sock, self._state_snapshot())
+        for ev in self._pending_events_snapshot():
+            self._send_one(sock, ev)
         with self.clients_lock:
             self.clients.add(sock)
 
@@ -1473,6 +1694,59 @@ class CodexSession:
                 sock.close()
             except OSError:
                 pass
+
+    def _state_snapshot(self):
+        pending = []
+        with self._pending_lock:
+            for req_id, entry in self._pending.items():
+                pending.append({"id": req_id, "kind": entry.get("kind")})
+        return {
+            "type": "state_snapshot",
+            "state": self.state(),
+            "running": bool(self._busy),
+            "plan": bool(self.plan_mode),
+            "task": bool(self.task_mode),
+            "pending": pending,
+            "last_seq": max(0, int(self._next_seq or 1) - 1),
+            "route_debug": self._route_debug[-10:],
+        }
+
+    def _pending_events_snapshot(self):
+        with self._pending_lock:
+            pending = list(self._pending.items())
+        events = []
+        for req_id, entry in pending:
+            kind = entry.get("kind")
+            if kind == "approve":
+                events.append({
+                    "type": "pending_approval",
+                    "tool_use_id": req_id,
+                    "name": entry.get("name") or entry.get("method") or "Approval",
+                    "input": entry.get("params") or {},
+                    "preview": entry.get("preview") or "",
+                    "danger": bool(entry.get("danger")),
+                })
+            elif kind == "ask":
+                ev = {
+                    "type": "pending_ask",
+                    "tool_use_id": req_id,
+                    "question": entry.get("question") or "",
+                    "questions": entry.get("questions") or [],
+                }
+                if entry.get("auto_resolution_ms") is not None:
+                    ev["auto_resolution_ms"] = entry.get("auto_resolution_ms")
+                events.append(ev)
+            elif kind == "form":
+                events.append({
+                    "type": "pending_form",
+                    "tool_use_id": req_id,
+                    "message": entry.get("message") or "Codex requests form input",
+                    "mode": (entry.get("params") or {}).get("mode") or "form",
+                    "server_name": (entry.get("params") or {}).get("serverName") or "",
+                    "fields": entry.get("fields") or [],
+                    "schema_detail": entry.get("schema_detail") or "",
+                })
+        return events
 
     def _push(self, event, title, body, webhook_body=None):
         try:
@@ -1506,10 +1780,13 @@ class CodexSession:
                         "thread_id": self.thread_id,
                         "last_turn_id": self.last_turn_id,
                         "cwd": self.cwd,
+                        "yolo": self.yolo,
                         "model": self.model,
                         "model_provider": self.model_provider,
                         "service_tier": self.service_tier,
                         "events": self.events[-50:],
+                        "timeline": self.timeline[-_REPLAY_MAX_EVENTS:],
+                        "next_seq": self._next_seq,
                     },
                     f,
                     ensure_ascii=False,
@@ -1522,18 +1799,26 @@ class CodexSession:
         try:
             with open(os.path.join(STATE_DIR, "codex_%s.json" % sid), "r", encoding="utf-8") as f:
                 data = json.load(f)
-            ns = cls(sid, data.get("cwd") or cwd, yolo=False)
+            ns = cls(sid, data.get("cwd") or cwd, yolo=bool(data.get("yolo")))
             ns.thread_id = expected_thread_id or data.get("thread_id")
             ns.last_turn_id = data.get("last_turn_id")
             ns.model = data.get("model") or ""
             ns.model_provider = data.get("model_provider") or ""
             ns.service_tier = data.get("service_tier") or ""
             ns.events = data.get("events") or []
+            had_timeline = bool(data.get("timeline"))
+            ns.timeline = data.get("timeline") or list(ns.events)
+            try:
+                ns._next_seq = max([int(e.get("seq") or 0) for e in ns.timeline] + [int(data.get("next_seq") or 1) - 1]) + 1
+            except Exception:
+                ns._next_seq = int(data.get("next_seq") or 1)
             if ns.thread_id:
                 try:
                     snap = cls.history_snapshot(ns.thread_id)
                     if snap.get("events"):
                         ns.events = snap.get("events") or ns.events
+                        if not had_timeline:
+                            ns.timeline = list(ns.events)
                         ns.cwd = os.path.abspath(snap.get("cwd") or ns.cwd)
                 except Exception:
                     pass

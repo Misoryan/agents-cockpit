@@ -229,18 +229,19 @@ class NativeSession:
             whitelisted = tool_name in self._allow_tools
         if whitelisted and not self._is_dangerous(tool_name, inp):
             return (True, None)
+        preview = self._preview_for(tool_name, inp)
+        danger = self._is_dangerous(tool_name, inp)
         entry = {"event": threading.Event(), "kind": "approve", "allow": None, "msg": None,
-                 "tool": tool_name}
+                 "tool": tool_name, "input": inp, "preview": preview, "danger": danger}
         with self._pending_lock:
             self._pending[tool_use_id] = entry
         self._broadcast({"type": "pending_approval", "tool_use_id": tool_use_id,
                          "name": tool_name, "input": inp,
-                         "preview": self._preview_for(tool_name, inp),
-                         "danger": self._is_dangerous(tool_name, inp)})
+                         "preview": preview, "danger": danger})
         # 顺手推送到手机:有人没盯着网页时也能收到「需确认」
         self._push("confirm", ("⚠️ 高危需确认 · " if self._is_dangerous(tool_name, inp) else "⚠️ 需确认 · ")
                    + os.path.basename(self.cwd),
-                   (self._preview_for(tool_name, inp) or tool_name or "") + "\n" + self.cwd)
+                   (preview or tool_name or "") + "\n" + self.cwd)
         # pending_approval 不入 self.events(挂起态不 replay,见 replay 决定)
         got = entry["event"].wait(timeout=_GATE_TIMEOUT)
         with self._pending_lock:
@@ -257,7 +258,7 @@ class NativeSession:
 
     def await_answer(self, tool_use_id, question):
         """广播 pending_ask 并阻塞等用户回答。返回回答文本。"""
-        entry = {"event": threading.Event(), "kind": "ask", "ans": None}
+        entry = {"event": threading.Event(), "kind": "ask", "question": question, "ans": None}
         with self._pending_lock:
             self._pending[tool_use_id] = entry
         self._broadcast({"type": "pending_ask", "tool_use_id": tool_use_id, "question": question})
@@ -331,6 +332,8 @@ class NativeSession:
             _m = self.model
         if _m:
             self._send_one(sock, {"type": "system", "model": _m})
+        for ev in self._pending_events_snapshot():
+            self._send_one(sock, ev)
         with self.clients_lock:
             self.clients.add(sock)
         def keepalive():
@@ -357,6 +360,25 @@ class NativeSession:
                 self.clients.discard(sock)
             try: sock.close()
             except OSError: pass
+
+    def _pending_events_snapshot(self):
+        with self._pending_lock:
+            pending = list(self._pending.items())
+        events = []
+        for tool_use_id, entry in pending:
+            kind = entry.get("kind")
+            if kind == "approve":
+                events.append({"type": "pending_approval",
+                               "tool_use_id": tool_use_id,
+                               "name": entry.get("tool") or "Approval",
+                               "input": entry.get("input") or {},
+                               "preview": entry.get("preview") or "",
+                               "danger": bool(entry.get("danger"))})
+            elif kind == "ask":
+                events.append({"type": "pending_ask",
+                               "tool_use_id": tool_use_id,
+                               "question": entry.get("question") or ""})
+        return events
 
     def _broadcast(self, obj):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -569,6 +591,7 @@ class NativeSession:
             os.makedirs(STATE_DIR, exist_ok=True)
             with open(os.path.join(STATE_DIR, "native_%s.json" % self.sid), "w", encoding="utf-8") as f:
                 json.dump({"claude_sid": self.claude_sid, "cwd": self.cwd,
+                           "yolo": self.yolo,
                            "allow_tools": sorted(self._allow_tools),
                            "events": self.events[-50:]}, f, ensure_ascii=False)
         except OSError:
@@ -579,7 +602,7 @@ class NativeSession:
         try:
             with open(os.path.join(STATE_DIR, "native_%s.json" % sid), "r", encoding="utf-8") as f:
                 d = json.load(f)
-            ns = cls(sid, d.get("cwd", cwd), yolo=False)
+            ns = cls(sid, d.get("cwd", cwd), yolo=bool(d.get("yolo")))
             ns.claude_sid = d.get("claude_sid")
             ns.events = d.get("events", [])
             ns._allow_tools = set(d.get("allow_tools") or [])

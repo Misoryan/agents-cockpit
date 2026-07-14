@@ -73,6 +73,7 @@ webhook_url =
 webhook_secret =
 events = confirm,done
 min_interval = 30
+desktop_toast = 0
 [security]
 session_ttl = 86400
 max_fail = 5
@@ -164,6 +165,9 @@ _ev = (_cfg_get("notify", "events")).strip() or "confirm,done"
 NOTIFY_EVENTS = {e.strip() for e in _ev.replace(";", ",").split(",") if e.strip()}
 NOTIFY_MIN_INTERVAL = _CFG.getfloat("notify", "min_interval") or 30.0
 NOTIFY_TIMEOUT = 6.0
+# 本机 Windows 桌面 toast(通知中心)。与 Telegram/Bark/webhook 并列的独立推送通道;
+# 仅 Windows 生效,其它平台静默。受同一 NOTIFY_ENABLED + NOTIFY_EVENTS 门槛与 _push 去抖控制。
+NOTIFY_DESKTOP_TOAST = _CFG.getboolean("notify", "desktop_toast")
 
 # ---- auth / session (会话化登录) ----
 SESSION_TTL = _CFG.getint("security", "session_ttl") or 86400   # 登录会话有效期(秒)
@@ -898,6 +902,7 @@ def _registry_safe_entry(sid, s):
         "title": s.get("title", ""),
         "started": s.get("started", time.time()),
         "mode": s.get("mode", "new"),
+        "yolo": bool(getattr(ns, "yolo", False) if ns else s.get("yolo")),
         "session_id": getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id"),
         "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
         "cols": 0,
@@ -1349,6 +1354,7 @@ def session_obj(sid, s, host):
             "started": s["started"], "session_path": "/t/%s/" % sid,
             "backend": backend, "provider": provider, "native": True,
             "state": ns.state() if ns else "idle",
+            "yolo": bool(getattr(ns, "yolo", False) if ns else s.get("yolo")),
             "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
             "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
             "cols": 0, "rows": 0}
@@ -1382,12 +1388,66 @@ def notify_result_text(events, limit=3500):
     return ""
 
 
+def _ps_quote(s):
+    """转义字符串以安全嵌入 PowerShell 单引号字面量(' → ''),并压平换行(toast 文本一行)。"""
+    return str(s).replace("\r", " ").replace("\n", " ").replace("'", "''")
+
+
+# Windows toast:GetTemplateContent(ToastText02) 取系统模板 → 新 XmlDocument 载入 → .Item(n).InnerText
+# 填两行文本(InnerText 自动做 XML 转义,故标题/正文无需额外 Escape,只需 _ps_quote 转义 PS 单引号)。
+# AUMID 用系统已注册的 Microsoft.Windows.Explorer(自定义 AUMID 需配开始菜单快捷方式,门槛高),
+# 失败再试 RunDialog,最后退到无参 CreateToastNotifier()。
+_DESKTOP_TOAST_PS = r"""[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+$t='<T>'; $b='<B>'
+$tpl = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml($tpl.GetXml())
+$nodes = $xml.GetElementsByTagName('text')
+$nodes.Item(0).InnerText = $t
+$nodes.Item(1).InnerText = $b
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$ok=$false
+foreach($a in @('Microsoft.Windows.Explorer','Microsoft.Windows.Shell.RunDialog')){
+  try { [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($a).Show($toast); $ok=$true; break }
+  catch {}
+}
+if(-not $ok){ try { [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast) } catch { exit 3 } }"""
+
+
+def desktop_notify(title, body=""):
+    """Windows 原生 toast(进通知中心,带横幅+声音)。经 PowerShell 调 WinRT;非 Windows / 未启用 /
+    任何失败均静默返回 False。在 push_notify 内被调用,故复用上层 _push 的 per-event 去抖与
+    _notify_enabled_for 门槛。用 -EncodedCommand(base64/UTF-16LE)传输整段脚本,彻底规避
+    Python↔PowerShell 引号/反斜杠转义;标题与正文仅做单引号转义后注入占位符。"""
+    if os.name != "nt" or not NOTIFY_DESKTOP_TOAST:
+        return False
+    title = (str(title).strip() or "notice")[:200]
+    body = str(body).strip()[:400]
+    try:
+        script = _DESKTOP_TOAST_PS.replace("<T>", _ps_quote(title)).replace("<B>", _ps_quote(body))
+        enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=8, creationflags=CREATE_NO_WINDOW)
+        return r.returncode == 0
+    except Exception as e:
+        print("notify desktop toast failed: %s" % e)
+        return False
+
+
 def push_notify(title, body, event, webhook_body=None):
     """Fire-and-forget external push over every configured channel. Blocking HTTP — the
     caller (manager._notify_sender worker) is expected to run this off the main loop.
     Returns True if at least one channel returned 2xx. Silent on error (prints a line)."""
     if not _notify_enabled_for(event):
         return False
+    # 本机 Windows 桌面 toast:与下面的 Telegram/Bark/webhook 并列的独立通道。
+    # desktop_notify 内部自检平台+开关,非 Windows / 未启用时静默 no-op,不影响网络推送。
+    try:
+        desktop_notify(title, body)
+    except Exception:
+        pass
     ok = False
     full = (str(title) + "\n" + str(body)).strip()
     # --- Telegram Bot ---

@@ -59,6 +59,10 @@ webhook_url =
 webhook_secret =
 events = confirm,done
 min_interval = 30
+# Windows native desktop toast (Action Center). 1 = also pop a local toast on the
+# machine running the service (Windows only; silent no-op elsewhere). Shares the
+# same enabled/events/min_interval gate above.
+desktop_toast = 0
 
 [security]
 session_ttl = 86400

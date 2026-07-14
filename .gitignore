@@ -31,3 +31,13 @@ _probe_*.py
 # 操作系统
 .DS_Store
 Thumbs.db
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+
+.local/

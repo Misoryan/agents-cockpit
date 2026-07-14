@@ -1,0 +1,15 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'net.easecation.agentcockpit'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'net.easecation.agentcockpit'
+        minSdk 23
+        targetSdk 34
+        versionCode 4
+        versionName '0.1.3'
+    }
+}
+

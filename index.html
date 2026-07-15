@@ -59,11 +59,15 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 .nmsg .mtime{font-size:10px;color:var(--faint);margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:.02em}.nmsg.user .mtime{text-align:right;color:var(--muted)}
 
 /* ---- app shell ---- */
-#mobilebar{display:flex;height:48px;align-items:center;gap:10px;padding:0 8px;background:var(--canvas);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:62}
-#mobilebar .mbttl{flex:1;font-size:14px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+#mobilebar{display:flex;height:46px;align-items:center;gap:8px;padding:0 8px;background:var(--canvas);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:62;box-sizing:border-box}
+#mobilebar .mbttl{flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--ink);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mobilebar .mbttl small{color:var(--muted);font-weight:400;font-size:12px}
-#mobilebar .mbbtn{padding:8px 11px;background:none;border:0;color:var(--ink-2);font-size:18px;line-height:1;cursor:pointer}
-#app{display:flex;height:calc(100vh - 48px);height:calc(100dvh - 48px)}
+#mobilebar.has-tabs .mbttl{display:none}
+#mobilebar .mbbtn{flex:0 0 auto;padding:7px 10px;background:none;border:0;color:var(--ink-2);font-size:18px;line-height:1;cursor:pointer;border-radius:7px}
+#mobilebar .mbbtn:hover{background:var(--surface-hover)}
+#topstatus{flex:0 0 auto;display:flex;align-items:center;gap:5px;min-width:0}
+#topstatus:empty{display:none}
+#app{display:flex;height:calc(100vh - 46px);height:calc(100dvh - 46px)}
 #sidebar{flex:0 0 auto;width:290px;display:flex;flex-direction:column;background:var(--sidebar-bg);border-right:1px solid var(--line);min-height:0}
 #main{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;background:var(--canvas)}
 
@@ -87,7 +91,7 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 .drow{margin:5px 0;background:#fff;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;transition:border-color .12s}
 .drow.hasrun{border-color:var(--green)}
 .dhead{display:flex;align-items:center;gap:8px;padding:10px 8px 8px 10px;cursor:pointer}
-.dhead:hover{background:var(--surface-hover)}
+.dhead:hover{background:transparent}
 .dhead .icn{flex:0 0 auto;font-size:15px}
 .dhead .nm{flex:1;min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
 .dhead .badge{flex:0 0 auto;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--green-soft);color:var(--green)}
@@ -118,6 +122,20 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 /* ---- main views ---- */
 .main-view{display:none;flex:1 1 auto;min-height:0;min-width:0;flex-direction:column}
 .main-view.active{display:flex}
+#sessiontabs{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding:0 2px}
+#sessiontabs::-webkit-scrollbar{display:none}
+#sessiontabs.tabs-empty{display:none}
+.stab{flex:0 0 auto;display:flex;align-items:center;gap:6px;max-width:210px;min-width:0;padding:6px 7px 6px 9px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--ink-2);cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.stab:hover{background:var(--surface-hover);border-color:var(--line)}
+.stab.active{background:#fff;border-color:var(--line-strong);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.stab .dot{flex:0 0 auto}
+.stab .st-main{min-width:0;display:block}
+.stab .st-title{font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.stab .st-meta{display:none}
+.stab .st-close{flex:0 0 auto;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:inherit;border-radius:5px;opacity:.42;cursor:pointer;padding:0;font-size:14px;line-height:1}
+.stab .st-close:hover{opacity:1;background:rgba(0,0,0,.08)}
+.topchip{display:inline-flex;align-items:center;max-width:130px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--muted);font:11px/1.35 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topchip.nyolo{font-family:var(--sans);color:var(--amber);background:var(--amber-soft);border-color:transparent}
 #landing{align-items:center;justify-content:center;overflow-y:auto;padding:24px}
 .welcome{max-width:580px;width:100%;margin:auto;padding:18px;text-align:center}
 .welcome h1{font-size:28px;letter-spacing:-.03em;margin:0 0 8px;color:var(--ink);font-weight:700}
@@ -154,7 +172,7 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 
 /* mobile sidebar shade + reopen strip */
 #shade{position:fixed;inset:0;background:rgba(15,15,15,.28);z-index:60;display:none}
-#sbreopen{display:none;position:fixed;left:0;top:48px;bottom:0;width:20px;align-items:center;justify-content:center;background:var(--canvas);border-right:1px solid var(--line);color:var(--muted);cursor:pointer;z-index:30;font-size:13px}
+#sbreopen{display:none;position:fixed;left:0;top:46px;bottom:0;width:20px;align-items:center;justify-content:center;background:var(--canvas);border-right:1px solid var(--line);color:var(--muted);cursor:pointer;z-index:30;font-size:13px}
 body.sb-collapsed #sbreopen{display:flex}
 body.sb-collapsed #sidebar{display:none}
 
@@ -229,12 +247,14 @@ body.sb-collapsed #sidebar{display:none}
 /* responsive: narrow -> sidebar becomes a drawer */
 @media (max-width:860px){
   #mobilebar{display:flex}
-  #app{height:calc(100vh - 48px);height:calc(100dvh - 48px)}
-  #sidebar{position:fixed;top:48px;left:0;bottom:0;width:84%;max-width:330px;transform:translateX(-100%);transition:transform .18s;z-index:61;box-shadow:0 14px 42px rgba(0,0,0,.12)}
+  #app{height:calc(100vh - 46px);height:calc(100dvh - 46px)}
+  #sidebar{position:fixed;top:46px;left:0;bottom:0;width:84%;max-width:330px;transform:translateX(-100%);transition:transform .18s;z-index:61;box-shadow:0 14px 42px rgba(0,0,0,.12)}
   body.sb-open #sidebar{transform:translateX(0)}
   body.sb-open #shade{display:block}
   #sbreopen{display:none!important}
   body.sb-collapsed #sidebar{display:flex}
+  #topstatus{display:none}
+  .stab{max-width:180px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
@@ -253,9 +273,14 @@ body.sb-collapsed #sidebar{display:none}
 </div>
 
 <div id="mobilebar">
-  <button class="mbbtn" id="menubtn" title="目录"><i class="ic" data-lucide="menu"></i></button>
+  <button class="mbbtn" id="menubtn" title="Menu"><i class="ic" data-lucide="menu"></i></button>
   <div class="mbttl">Agents Cockpit <small id="runcnt"></small></div>
-  <button class="mbbtn" id="mbnew" title="新建"><i class="ic" data-lucide="plus"></i></button>
+  <div id="sessiontabs" class="tabs-empty" aria-label="Open sessions"></div>
+  <div id="topstatus">
+    <span class="topchip" id="nativemodel" title="Model" style="display:none"></span>
+    <span class="topchip nyolo" id="nativeyolo" title="Auto approve" style="display:none">Auto</span>
+  </div>
+  <button class="mbbtn" id="mbnew" title="New"><i class="ic" data-lucide="plus"></i></button>
 </div>
 
 <div id="app">
@@ -296,7 +321,7 @@ body.sb-collapsed #sidebar{display:none}
     <section class="main-view" id="nativestage">
       <style>
         #nativestage{flex-direction:column;flex:1 1 auto;min-height:0}
-        .nathead{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--canvas);border-bottom:1px solid var(--line);min-height:52px}
+        .nathead{display:none}
         .nathead .nt{flex:1;font-weight:600;font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.01em}
         .nathead .nmodel{flex:0 0 auto;font:11px/1.4 var(--mono);color:var(--muted);background:var(--surface-soft);border:1px solid var(--line);padding:3px 9px;border-radius:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .nathead .nyolo{color:var(--amber);background:var(--amber-soft);border-color:transparent}
@@ -465,8 +490,6 @@ body.sb-collapsed #sidebar{display:none}
       <div class="nathead">
         <button class="ghost" id="nativeback"><i class="ic" data-lucide="arrow-left"></i> 返回</button>
         <span class="nt" id="nativettl">原生会话</span>
-        <span class="nmodel" id="nativemodel" title="当前模型" style="display:none"></span>
-        <span class="nmodel nyolo" id="nativeyolo" title="当前会话自动批准状态" style="display:none">自动批准</span>
       </div>
       <div id="nativetasks" style="display:none"></div>
       <div id="nativemsgs"></div>
@@ -732,8 +755,64 @@ function emitAiNotice(kind, s){
 }
 
 /* ---- sessions + sidebar model ---- */
-var runSessions=[], sessionWatch={}, dirModel=[], expanded={}, dirFullOpen={}, sbSearch="", lastSig="";
+var runSessions=[], sessionWatch={}, dirModel=[], expanded={}, dirExpandClicks={}, sbSearch="", lastSig="";
 var pendingOpenSid=""; try{ pendingOpenSid=new URLSearchParams(location.search).get("open")||""; }catch(e){}
+
+var openTabs=[], sessionsLoaded=false;
+try{ openTabs=JSON.parse(localStorage.getItem("acOpenTabs")||"[]")||[]; }catch(e){ openTabs=[]; }
+function saveOpenTabs(){ try{ localStorage.setItem("acOpenTabs", JSON.stringify(openTabs)); }catch(e){} }
+function ensureTabOpen(sid){
+  if(!sid) return;
+  if(openTabs.indexOf(sid)<0){ openTabs.push(sid); saveOpenTabs(); }
+}
+function pruneOpenTabs(){
+  if(!sessionsLoaded) return;
+  var live={}; runSessions.forEach(function(s){ live[s.sid]=true; });
+  var before=openTabs.length;
+  openTabs=openTabs.filter(function(sid){ return live[sid]; });
+  if(openTabs.length!==before) saveOpenTabs();
+}
+function tabSession(sid){
+  for(var i=0;i<runSessions.length;i++){ if(runSessions[i].sid===sid) return runSessions[i]; }
+  return null;
+}
+function sessionDot(s){ return s.state==="confirm"?"confirm":s.state==="plan"?"plan":s.state==="new"?"new":(s.state==="running"?"run":"idle"); }
+function sessionStateText(s){ return s.state==="running"?"\u751f\u6210\u4e2d":s.state==="confirm"?"\u5f85\u786e\u8ba4":s.state==="plan"?"\u8ba1\u5212\u4e2d":s.state==="new"?"\u65b0\u4f1a\u8bdd":"\u7a7a\u95f2"; }
+function renderSessionTabs(){
+  var bar=$("sessiontabs"); if(!bar) return;
+  bar.innerHTML="";
+  var rendered=0;
+  openTabs.forEach(function(sid){
+    var s=tabSession(sid); if(!s) return;
+    var btn=document.createElement("button"); btn.type="button"; btn.className="stab"+(sid===currentSid?" active":"");
+    btn.title=(s.title||basename(s.dir)||sid)+"\n"+(s.dir||"");
+    btn.innerHTML='<span class="dot '+sessionDot(s)+'"></span><span class="st-main"><span class="st-title">'+esc(s.title||basename(s.dir)||sid)+'</span><span class="st-meta">'+esc(sessionStateText(s)+" / "+backendShort(s.backend))+'</span></span>';
+    var close=document.createElement("span"); close.className="st-close"; close.setAttribute("aria-label","Close tab"); close.textContent="x";
+    close.addEventListener("click", function(ev){ ev.stopPropagation(); closeTab(sid); });
+    btn.appendChild(close);
+    btn.addEventListener("click", function(){ showNativeSession(sid, s.title||basename(s.dir)); });
+    bar.appendChild(btn); rendered++;
+  });
+  bar.classList.toggle("tabs-empty", !rendered);
+  var dock=$("mobilebar"); if(dock) dock.classList.toggle("has-tabs", !!rendered);
+  var ts=$("topstatus"); if(ts) ts.style.display=currentSid?"":"none";
+}
+function closeTab(sid){
+  var idx=openTabs.indexOf(sid); if(idx<0) return;
+  openTabs.splice(idx,1); saveOpenTabs();
+  if(sid===currentSid){
+    var nextSid=openTabs[idx] || openTabs[idx-1] || "";
+    if(nextSid){ openSessionBySid(nextSid, true); }
+    else { currentSid=null; setMainView("landing"); nSetGen(false); }
+  }
+  renderSessionTabs();
+}
+function switchTab(delta){
+  if(!openTabs.length) return;
+  var idx=openTabs.indexOf(currentSid); if(idx<0) idx=delta>0?-1:0;
+  var next=(idx+delta+openTabs.length)%openTabs.length;
+  openSessionBySid(openTabs[next], true);
+}
 
 function sessionSignature(){
   return runSessions.slice().sort(function(a,b){ return a.sid<b.sid?-1:1; }).map(function(s){ return s.sid+":"+s.state+":"+(s.yolo?"1":"0"); }).join("|");
@@ -758,12 +837,12 @@ function nFindRunSession(sid){
 function nRenderYoloBadge(s){
   var el=$("nativeyolo"); if(!el) return;
   if(s && s.yolo){
-    el.textContent="自动批准";
-    el.title="此会话启用了自动批准:大多数工具不会弹确认卡";
+    el.textContent="Auto";
+    el.title="Auto approve is enabled for this session";
     el.style.display="";
   }else{
     el.style.display="none";
-    el.textContent="自动批准";
+    el.textContent="Auto";
   }
 }
 function nHasPendingUi(st, state){
@@ -775,15 +854,19 @@ function nHasPendingUi(st, state){
 function nEnsurePendingVisible(s){
   if(!s || s.sid!==currentSid || (s.state!=="confirm" && s.state!=="plan")) return;
   var st=nativeStages[s.sid]; if(!st || nHasPendingUi(st, s.state)) return;
-  var ws=nativeWs[s.sid]; if(ws && ws.readyState===0) return;
-  var now=Date.now();
+  var ws=nativeWs[s.sid], now=Date.now();
+  if(ws && (ws.readyState===0 || ws.readyState===1)){
+    var since=st.pendingExpectedAt||0;
+    if(!since || now-since<1800) return;
+  }
   if(st.lastPendingResync && now-st.lastPendingResync<10000) return;
   st.lastPendingResync=now;
-  nAddRow(st, "sys", _I('refresh-cw')+" 检测到会话待处理但卡片未显示,正在重新同步…");
+  st.pendingExpectedAt=now;
+  nAddRow(st, "sys", _I('refresh-cw')+" Pending card missing; resyncing session...");
   nativeConnect(s.sid);
 }
 function rememberSessions(ss, skipPendingOpen){
-  runSessions=ss||[];
+  runSessions=ss||[]; sessionsLoaded=true;
   var _rg=0,_pg=0; (ss||[]).forEach(function(s){ if(s.state==="running")_rg++; else if(s.state==="confirm"||s.state==="plan")_pg++; });
   var _parts=[]; if(_rg)_parts.push(_rg+" 生成中"); if(_pg)_parts.push(_pg+" 待处理");
   var rc=$("runcnt"); if(rc) rc.textContent=_parts.length?("· "+_parts.join(" · ")):"";
@@ -799,6 +882,7 @@ function rememberSessions(ss, skipPendingOpen){
     sessionWatch[s.sid]={state:s.state, last_output_ts:s.last_output_ts||0, last_input_ts:s.last_input_ts||0};
   });
   Object.keys(sessionWatch).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) delete sessionWatch[sid]; });
+  pruneOpenTabs(); renderSessionTabs();
   if(dirModel.length){
     ensureSessionDirs(); attachSessionsToModel();
     var sig=sessionSignature(); if(sig!==lastSig){ lastSig=sig; renderSidebar(); }
@@ -867,11 +951,18 @@ function renderDirBody(d, mc){
   var history=(mc.history||[]).filter(function(h){ return !runIds[h.session_id]; }).sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
   var items=running.map(function(s){ return {kind:"run", data:s}; }).concat(history.map(function(h){ return {kind:"hist", data:h}; }));
   if(!items.length){ var e=empty("（暂无对话）"); e.style.padding="8px"; body.appendChild(e); return body; }
-  var limit=dirFullOpen[d.cwd]?999:6;
+  var clicks=Number(dirExpandClicks[d.cwd]||0);
+  var limit;
+  if(running.length){
+    var slotLimit=clicks<=0?3:(5+(clicks-1)*5);
+    limit=Math.max(running.length, slotLimit);
+  }else{
+    limit=clicks<=0?6:(6+clicks*5);
+  }
   items.slice(0,limit).forEach(function(it){ body.appendChild(renderConv(it)); });
   if(items.length>limit){
-    var more=document.createElement("button"); more.className="more"; more.textContent="查看全部 "+items.length+" 段";
-    more.addEventListener("click", function(){ dirFullOpen[d.cwd]=true; renderSidebar(); });
+    var more=document.createElement("button"); more.className="more"; more.textContent="展开";
+    more.addEventListener("click", function(){ dirExpandClicks[d.cwd]=clicks+1; renderSidebar(); });
     body.appendChild(more);
   }
   return body;
@@ -879,6 +970,7 @@ function renderDirBody(d, mc){
 function closeSession(sid, btn){
   if(btn){ btn.disabled=true; btn.textContent="关闭中"; }
   postJSON("/api/stop",{sid:sid}).then(function(){
+    if(openTabs.indexOf(sid)>=0){ openTabs=openTabs.filter(function(x){ return x!==sid; }); saveOpenTabs(); renderSessionTabs(); }
     if(sid===currentSid){ dropNativeStage(sid); setMainView("landing"); }
     pollSessionSignals(); loadSidebarData();
   }).catch(function(){ if(btn){ btn.disabled=false; btn.textContent="关闭"; } alert("关闭失败:网络错误"); });
@@ -1033,12 +1125,11 @@ function nShortModel(m){
 function nRenderModelBadge(m, ver){
   var el=$("nativemodel"); if(!el) return;
   m=String(m||"");
-  if(!m){ el.style.display="none"; el.textContent=""; el.title="当前模型"; return; }
+  if(!m){ el.style.display="none"; el.textContent=""; el.title="Model"; return; }
   el.textContent=nShortModel(m);
-  el.title="当前模型: "+m+(ver?(" (CLI "+ver+")"):"");
+  el.title="Model: "+m+(ver?(" (CLI "+ver+")"):"");
   el.style.display="";
 }
-/* 计划/任务模式开关 UI 同步:按 st.planMode / st.taskMode 点亮对应按钮。 */
 function nSyncModes(st){
   var bp=$("nmode-plan"), bt=$("nmode-task");
   if(bp){ bp.classList.toggle("active", !!st.planMode); bp.setAttribute("aria-pressed", st.planMode?"true":"false"); }
@@ -1125,7 +1216,7 @@ function nEndTurn(st){
   st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
 }
 /* result 事件的轻量元信息条:补齐 CLI 底栏的「用量/收尾」层。
-   显示:收尾图标(随 stop_reason / is_error 变化)、轮数、token 用量(入/出/缓存)、花费、耗时。
+   显示:收尾图标(随 stop_reason / is_error 变化)、轮数、token 用量(入/出/缓存)、耗时。
    stop_reason 异常(max_tokens / refusal)或 is_error → 红框警示,补 CLI 里限流/拒绝/截断的感知。
    必须在 nEndTurn 之前调用(此时 turnCard 还在,信息条挂在 turn 卡尾部)。 */
 function nFmtDur(ms){var s=Math.max(0,Math.round(Number(ms)/1000));if(s<60)return s+"秒";var m=Math.floor(s/60),r=s%60;return r?(m+"分"+r+"秒"):(m+"分钟");}
@@ -1170,7 +1261,7 @@ function dropNativeStage(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} delete nativeWs[sid]; }
   if(currentSid===sid) hideNative();
 }
-function hideNative(){ currentSid=null; setMainView("landing"); }
+function hideNative(){ currentSid=null; nSetGen(false); setMainView("landing"); renderSessionTabs(); }
 function nNewTextBubble(st){
   var d=document.createElement("div"); d.className="nmsg assistant";
   var t=document.createElement("div"); t.className="ntxt";
@@ -1372,8 +1463,8 @@ function nSubmitAsk(sid, obj, card){
     var answers={}, fallback=[];
     qs.forEach(function(q,idx){
       var qid=q.id||String(idx), wrap=nFindAskItem(card, qid);
-      var vals=[], sel=wrap&&wrap.querySelector('.qopt.selected');
-      if(sel && sel.dataset.value){ vals.push(sel.dataset.value); }
+      var vals=[], sels=wrap.querySelectorAll('.qopt.selected');
+      sels.forEach(function(sel){ if(sel.dataset.value){ vals.push(sel.dataset.value); } });
       var free=wrap&&wrap.querySelector('.ainp');
       if(!vals.length && free && free.value.trim()){ vals.push(free.value.trim()); }
       if(vals.length){ answers[qid]=vals; fallback.push(vals.join(", ")); }
@@ -1409,12 +1500,18 @@ function nRenderAsk(sid, st, obj){
       item.innerHTML=html; acard.appendChild(item);
     });
     var btns=document.createElement("div"); btns.className="abtns"; btns.innerHTML='<button class="asend">回答</button>'; acard.appendChild(btns);
+    var _qmap={}; qs.forEach(function(q,idx){ _qmap[q.id||String(idx)]=q; });
     acard.querySelectorAll('.qopt').forEach(function(btn){
       btn.addEventListener("click", function(){
         var wrap=btn.closest('.qitem');
-        wrap.querySelectorAll('.qopt').forEach(function(x){ x.classList.toggle("selected", x===btn); });
-        var free=wrap.querySelector('.ainp'); if(free) free.value="";
-        if(qs.length===1) nSubmitAsk(sid,obj,acard);
+        var _q=_qmap[wrap.dataset.qid]||{};
+        if(_q.multiSelect){
+          btn.classList.toggle("selected");
+        }else{
+          wrap.querySelectorAll('.qopt').forEach(function(x){ x.classList.toggle("selected", x===btn); });
+          var free=wrap.querySelector('.ainp'); if(free) free.value="";
+          if(qs.length===1) nSubmitAsk(sid,obj,acard);
+        }
       });
     });
     acard.querySelector(".asend").addEventListener("click", function(){ nSubmitAsk(sid,obj,acard); });
@@ -1525,7 +1622,11 @@ function nHandle(sid, obj){
     st.lastBatchSig=_sig;
     nResetReplayState(st);
     if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "history replay"); }
-    _evs.forEach(function(e){ e.replay=true; nHandle(sid, e); });
+    _evs.forEach(function(e){
+      if(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form")) return;
+      try{ e.replay=true; nHandle(sid, e); }
+      catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
+    });
     return;
   }
   if(!nMarkRendered(st,obj)) return;
@@ -1542,7 +1643,13 @@ function nHandle(sid, obj){
       if(obj.running && !st.curTxt && !st.curThink){ nStartThinking(st, obj); }
     }
     if(obj.route_debug){ try{ console.debug("[Codex route]", obj.route_debug); }catch(_e){} }
-    if(obj.state==="confirm" || obj.state==="plan"){ st.lastPendingResync=0; }
+    if(obj.state==="confirm" || obj.state==="plan"){
+      st.lastPendingResync=0;
+      st.pendingExpectedAt=Date.now();
+      setTimeout(function(){ nEnsurePendingVisible(nFindRunSession(sid)); }, 2200);
+    }else{
+      st.pendingExpectedAt=0;
+    }
     return;
   }
   if(t==="system"){
@@ -1604,6 +1711,7 @@ function nHandle(sid, obj){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
         var _inp=b.input||{};
         var _n=(b.name||"").toLowerCase();
+        if(_n==="mcp__cockpit__ask_user"){ return; }
         if((_n==="agentmessage"||_n==="reasoning") && (_inp.type===_n || _inp.type===b.name)){ return; }
         var _cmd = _inp.command || _inp.cmd;
         var _isEdit = (_n==="edit"||_n==="str_replace_edit"||_n==="write"||_n==="write_file") && b.input;
@@ -1726,7 +1834,7 @@ function nHandle(sid, obj){
   }
   if(t==="pending_approval"){
     nFinalizeThinking(st); nStopThinking(st);
-    st.lastPendingResync=0;
+    st.lastPendingResync=0; st.pendingExpectedAt=0;
     // ExitPlanMode(计划模式提交计划)→ 计划审批卡:markdown 计划 + 批准/拒绝。
     // 批准后后端自动退出计划模式并广播 mode_state(同步前端开关),与 claude cli 行为一致。
     if(obj.name==="ExitPlanMode"){
@@ -1761,14 +1869,14 @@ function nHandle(sid, obj){
   if(t==="pending_ask"){
     nFinalizeThinking(st); nStopThinking(st);
     emitAndroidSessionNotice("confirm", sid, "Agent waits for input", obj.question||"Tap to answer.");
-    st.lastPendingResync=0;
+    st.lastPendingResync=0; st.pendingExpectedAt=0;
     nRenderAsk(sid, st, obj);
     return;
   }
   if(t==="pending_form"){
     nFinalizeThinking(st); nStopThinking(st);
     emitAndroidSessionNotice("confirm", sid, "Form input required", obj.message||"Tap to fill the form.");
-    st.lastPendingResync=0;
+    st.lastPendingResync=0; st.pendingExpectedAt=0;
     nRenderForm(sid, st, obj);
     return;
   }
@@ -1871,9 +1979,13 @@ document.addEventListener("visibilitychange", function(){
   pollSessionSignals();
 });
 function showNativeSession(sid, title){
-  currentSid=sid; $("nativettl").textContent=title||sid;
+  ensureTabOpen(sid);
+  currentSid=sid;
+  var _rs=nFindRunSession(sid);
+  $("nativettl").textContent=title||(_rs&&(_rs.title||basename(_rs.dir)))||sid;
   nRenderModelBadge((nativeStages[sid]||{}).model||"");
-  nRenderYoloBadge(nFindRunSession(sid));
+  nRenderYoloBadge(_rs);
+  nSetGen(!!(_rs && _rs.state==="running"));
   Object.keys(nativeStages).forEach(function(k){ nativeStages[k].root.style.display=(k===sid)?"flex":"none"; });
   var st=nativeStage(sid);
   // 恢复计划/任务模式开关:优先 stage 内存(切会话保持),首次加载从 localStorage 读
@@ -1885,6 +1997,7 @@ function showNativeSession(sid, title){
   st.root.style.display="flex";
   if(!nativeWs[sid] || nativeWs[sid].readyState===3) nativeConnect(sid);
   nEnsurePendingVisible(nFindRunSession(sid));
+  renderSessionTabs();
   setMainView("native"); closeSidebar();
   setTimeout(function(){ $("nativeinput").focus({preventScroll:true}); }, 60);
 }
@@ -1933,6 +2046,9 @@ $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
 $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
 $("nativeinput").addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); nativeSend(); } });
 $("nativeinput").addEventListener("input", function(){ this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,200)+"px"; });
+document.addEventListener("keydown", function(e){
+  if(e.ctrlKey && e.key==="Tab"){ e.preventDefault(); switchTab(e.shiftKey?-1:1); }
+});
 function openSessionBySid(sid, skipFetch){
   if(!sid) return false;
   var i, s; for(i=0;i<runSessions.length;i+=1){ if(runSessions[i].sid===sid){ s=runSessions[i]; break; } }
@@ -2027,23 +2143,17 @@ $("browse-open").addEventListener("click", function(){
 
 /* ---- usage ---- */
 var ccCache=null;
-function fmtUSD(v){ return "$"+(Number(v)||0).toFixed(2); }
 function fmtTok(n){ n=Number(n)||0; if(n>=1e9) return (n/1e9).toFixed(2)+"B"; if(n>=1e6) return (n/1e6).toFixed(1)+"M"; if(n>=1e3) return (n/1e3).toFixed(1)+"k"; return String(n); }
-function fmtNum(n){ return (Number(n)||0).toLocaleString("en-US"); }
-function ccBalanceTag(used){
-  var fg,bg; if(used>=95){fg="#d95757";bg="#fff0f0";} else if(used>=80){fg="#d9901a";bg="#fff7e8";} else {fg="#13985d";bg="#eef9f3";}
-  return '<span class="tag" style="color:'+fg+';background:'+bg+'">已用 '+used+'%</span>';
-}
 function renderSummary(){
   var el=$("summary"); if(!el) return;
   if(!ccCache){ el.innerHTML='<div class="empty" style="grid-column:1/-1">用量加载中…</div>'; return; }
   if(!ccCache.enabled){ el.innerHTML='<div class="empty" style="grid-column:1/-1">未检测到 CC Switch 用量数据</div>'; return; }
   if(ccCache.error){ el.innerHTML='<div class="err" style="grid-column:1/-1">'+esc(ccCache.error)+'</div>'; return; }
-  var u=ccCache.usage||{}, t=u.today||{}, mo=u.month||{}, b=ccCache.balance, chips=[];
-  if(b && b.supported && b.used_pct!=null) chips.push('<div class="sumchip"><div class="sv">'+(b.remaining_pct!=null?b.remaining_pct:"—")+'%</div><div class="sl">剩余额度</div></div>');
-  chips.push('<div class="sumchip"><div class="sv">'+fmtUSD(t.cost)+'</div><div class="sl">今日花费</div></div>');
-  chips.push('<div class="sumchip"><div class="sv">'+fmtNum(t.requests)+'</div><div class="sl">今日请求</div></div>');
-  chips.push('<div class="sumchip"><div class="sv">'+fmtUSD(mo.cost)+'</div><div class="sl">本月花费</div></div>');
+  var u=ccCache.usage||{}, t=u.today||{}, mo=u.month||{}, chips=[];
+  chips.push('<div class="sumchip"><div class="sv">'+fmtTok(t.input_tokens)+'</div><div class="sl">今日输入 tokens</div></div>');
+  chips.push('<div class="sumchip"><div class="sv">'+fmtTok(t.output_tokens)+'</div><div class="sl">今日输出 tokens</div></div>');
+  chips.push('<div class="sumchip"><div class="sv">'+fmtTok(t.cache_tokens)+'</div><div class="sl">今日缓存 tokens</div></div>');
+  chips.push('<div class="sumchip"><div class="sv">'+fmtTok((Number(mo.input_tokens)||0)+(Number(mo.output_tokens)||0)+(Number(mo.cache_tokens)||0))+'</div><div class="sl">本月总 tokens</div></div>');
   var prov=(ccCache.providers||[]).filter(function(p){return p.is_current;})[0];
   var provTxt=prov?(prov.app_type==="claude"?"Claude":prov.app_type==="codex"?"Codex":prov.app_type)+" · "+esc(prov.name)+(prov.model?" · "+esc(prov.model):""):"";
   el.innerHTML=chips.join("")+(provTxt?'<div class="sumprov" style="grid-column:1/-1">'+provTxt+'</div>':'');
@@ -2053,28 +2163,21 @@ function refreshCC(){
     ccCache=d; renderSummary();
     if(!d||!d.enabled){ $("usagebody").innerHTML='<div class="empty">未检测到 CC Switch (~/.cc-switch/cc-switch.db)</div>'; return; }
     if(d.error){ $("usagebody").innerHTML='<div class="err">读取失败:'+esc(d.error)+'</div>'; return; }
-    var u=d.usage||{}, list=[]; var b=d.balance;
-    if(b && b.supported && b.pending){
-      list.push('<div class="dirrow"><div class="nm" style="color:#747474">剩余额度:查询中…</div><div class="mt">智谱 / Z.ai 编码套餐</div></div>');
-    } else if(b && b.supported && b.used_pct!=null){
-      var resetTxt="";
-      if(b.reset_ms){ var rd=new Date(b.reset_ms); function pad(x){return x<10?"0"+x:x;} var hrs=Math.max(0,Math.round((b.reset_ms-Date.now())/3600000)); resetTxt=' · 约 '+hrs+'h 后重置 ('+pad(rd.getHours())+":"+pad(rd.getMinutes())+')'; }
-      list.push('<div class="dirrow"><div class="nm">'+ccBalanceTag(b.used_pct)+' 剩余 '+(b.remaining_pct!=null?b.remaining_pct:"—")+'%'+(b.plan?' · <span style="color:#8267d8">'+esc(b.plan)+' 套餐</span>':'')+'</div><div class="mt">智谱 / Z.ai 编码套餐额度'+resetTxt+'</div></div>');
-    } else if(b && b.supported && b.error){
-      list.push('<div class="dirrow"><div class="nm" style="color:#747474">剩余额度:查询失败</div><div class="mt">'+esc(b.error)+'</div></div>');
-    }
+    var u=d.usage||{}, list=[];
     (d.providers||[]).filter(function(p){return p.is_current;}).forEach(function(p){
       var be=p.app_type==="claude"?'<span class="tag be-claude">Claude</span>':p.app_type==="codex"?'<span class="tag be-codex">Codex</span>':'<span class="tag">'+esc(p.app_type)+'</span>';
       list.push('<div class="dirrow"><div class="nm">'+be+' '+esc(p.name)+'</div><div class="mt">模型 '+(p.model?esc(p.model):'—')+' · '+(p.host?esc(p.host):'本机')+'</div></div>');
     });
     var t=u.today||{}, mo=u.month||{};
-    list.push('<div class="dirrow"><div class="nm">今日 '+fmtUSD(t.cost)+' · '+fmtNum(t.requests)+' 次</div><div class="mt">输入 '+fmtTok(t.input_tokens)+' / 输出 '+fmtTok(t.output_tokens)+' / 缓存 '+fmtTok(t.cache_tokens)+'</div><div class="mt" style="margin-top:6px">本月 '+fmtUSD(mo.cost)+' · '+fmtNum(mo.requests)+' 次</div></div>');
+    var todayTotal=(Number(t.input_tokens)||0)+(Number(t.output_tokens)||0)+(Number(t.cache_tokens)||0);
+    var monthTotal=(Number(mo.input_tokens)||0)+(Number(mo.output_tokens)||0)+(Number(mo.cache_tokens)||0);
+    list.push('<div class="dirrow"><div class="nm">今日 '+fmtTok(todayTotal)+' tokens</div><div class="mt">输入 '+fmtTok(t.input_tokens)+' / 输出 '+fmtTok(t.output_tokens)+' / 缓存 '+fmtTok(t.cache_tokens)+'</div><div class="mt" style="margin-top:6px">本月 '+fmtTok(monthTotal)+' tokens</div></div>');
     var bm=u.by_model||[];
     if(bm.length){
-      var maxCost=Math.max.apply(null, bm.map(function(x){return x.cost;}))||1;
-      var rows=bm.map(function(x){ var w=Math.max(4,Math.round(x.cost/maxCost*100)); return '<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;font-size:12px"><span>'+esc(x.model)+'</span><span style="color:#747474">'+fmtUSD(x.cost)+' · '+fmtNum(x.requests)+'次</span></div><div style="height:5px;background:#f3f2f0;border-radius:3px;margin-top:3px"><div style="height:5px;width:'+w+'%;background:#151515;border-radius:3px"></div></div></div>'; }).join("");
-      list.push('<div class="dirrow"><div class="nm" style="font-size:13px">按模型(今日)</div>'+rows+'</div>');
-    } else { list.push('<div class="empty">暂无用量记录(请确认 CC Switch 的本地代理已启用并记录请求)</div>'); }
+      var maxTok=Math.max.apply(null, bm.map(function(x){return Number(x.tokens)||0;}))||1;
+      var rows=bm.map(function(x){ var tok=Number(x.tokens)||0; var w=Math.max(4,Math.round(tok/maxTok*100)); return '<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;font-size:12px"><span>'+esc(x.model)+'</span><span style="color:#747474">'+fmtTok(tok)+' tokens</span></div><div style="height:5px;background:#f3f2f0;border-radius:3px;margin-top:3px"><div style="height:5px;width:'+w+'%;background:#151515;border-radius:3px"></div></div></div>'; }).join("");
+      list.push('<div class="dirrow"><div class="nm" style="font-size:13px">按模型（今日）</div>'+rows+'</div>');
+    } else { list.push('<div class="empty">暂无 token 用量记录（请确认 CC Switch 的本地代理已启用并记录请求）</div>'); }
     if(u.last_ts){ list.push('<div style="font-size:11px;color:#a3a29f;margin:6px 2px">最近一条:'+fmtTime(u.last_ts)+(d.cached?' · (缓存)':'')+'</div>'); }
     $("usagebody").innerHTML=list.join("");
   }).catch(function(){ $("usagebody").innerHTML='<div class="err">加载失败</div>'; });
@@ -2107,6 +2210,7 @@ $("settingsmodal").addEventListener("click", function(e){ if(e.target===$("setti
 (function(){ if("serviceWorker" in navigator){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }).catch(function(){}); } })();
 renderBackend("lm-backend"); renderYolo("lm-yolo","lm-yolo-sw"); renderYolo("set-yolo","set-yolo-sw");
 setMainView("landing");
+renderSessionTabs();
 loadSidebarData(); pollSessionSignals(); refreshCC();
 setInterval(pollSessionSignals, 4000);
 setInterval(loadSidebarData, 20000);

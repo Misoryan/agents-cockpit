@@ -359,6 +359,12 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.assistant .ntxt a{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
         .nmsg.assistant .ntxt blockquote{border-left:3px solid var(--line-strong);margin:10px 0;padding:2px 14px;color:var(--muted)}
         .nmsg.sys{align-self:center;background:var(--surface-soft);border:1px solid var(--line);color:var(--muted);font-size:12px;border-radius:var(--radius-sm);padding:5px 13px}
+        .nmsg.replay-progress{align-self:center;min-width:min(360px,90%);background:#fff;border:1px solid var(--line-strong);box-shadow:0 10px 28px rgba(0,0,0,.08);color:var(--ink);font-size:12px;border-radius:var(--radius);padding:10px 12px}
+        .nmsg.replay-progress .rp-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:7px;font-weight:650}
+        .nmsg.replay-progress .rp-meta{color:var(--muted);font:11px var(--mono);font-weight:400}
+        .nmsg.replay-progress .rp-bar{height:6px;background:var(--surface-hover);border-radius:999px;overflow:hidden}
+        .nmsg.replay-progress .rp-fill{height:100%;width:0;background:var(--accent);transition:width .12s ease}
+        .nmsg.replay-progress.done{border-color:var(--green);color:var(--green)}
         .nmsg.meta{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 11px;font:11px/1.5 var(--mono);color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:0}
         .nmsg.meta.warn{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
         .nmsg.meta .msep{color:var(--line-strong);margin:0 6px}
@@ -1265,7 +1271,7 @@ function nativeStage(sid){
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
   nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
-                      renderedEvents:{}, lastBatchSig:"", lastSeq:0};
+                      renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -1447,13 +1453,59 @@ function nMarkRendered(st,obj){
 }
 function nResetReplayState(st){
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
   st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
   st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
   st.lastWasHumanUser=false; st.lastHumanText="";
   st.renderedEvents={};
   st.lastSeq=0;
   st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
+  st.replayCard=null;
   st.root.innerHTML="";
+}
+function nReplayProgressStart(st,total){
+  if(!total) return null;
+  var card=document.createElement("div"); card.className="nmsg replay-progress";
+  card.innerHTML='<div class="rp-top"><span>Loading conversation</span><span class="rp-meta">0/'+total+'</span></div><div class="rp-bar"><div class="rp-fill"></div></div>';
+  st.root.appendChild(card); st.replayCard=card; nScrollBottom();
+  return card;
+}
+function nReplayProgressUpdate(st,done,total){
+  var card=st.replayCard; if(!card) return;
+  var pct=total?Math.max(1,Math.min(100,Math.round(done*100/total))):100;
+  var meta=card.querySelector(".rp-meta"), fill=card.querySelector(".rp-fill");
+  if(meta) meta.textContent=done+"/"+total;
+  if(fill) fill.style.width=pct+"%";
+}
+function nReplayProgressDone(st,total){
+  var card=st.replayCard; if(!card) return;
+  nReplayProgressUpdate(st,total,total);
+  card.classList.add("done");
+  var top=card.querySelector(".rp-top span"); if(top) top.textContent="Conversation loaded";
+  setTimeout(function(){ if(card.parentNode) card.parentNode.removeChild(card); if(st.replayCard===card) st.replayCard=null; }, 700);
+}
+function nReplayBatchAsync(sid, st, events){
+  var total=events.length, idx=0, chunk=18;
+  st.replayActive=true; st.replayPending=[];
+  nReplayProgressStart(st,total);
+  function pump(){
+    var end=Math.min(total, idx+chunk);
+    for(; idx<end; idx++){
+      var e=events[idx];
+      if(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form")) continue;
+      try{ e.replay=true; nHandle(sid, e); }
+      catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
+    }
+    nReplayProgressUpdate(st,idx,total);
+    if(idx<total){
+      st.replayTimer=setTimeout(pump, 0);
+      return;
+    }
+    st.replayTimer=null; st.replayActive=false; nReplayProgressDone(st,total);
+    var pending=st.replayPending||[]; st.replayPending=[];
+    pending.forEach(function(ev){ nHandle(sid, ev); });
+  }
+  pump();
 }
 function nAddHumanRow(st, text){
   text=String(text==null?"":text).trim();
@@ -1635,12 +1687,11 @@ function nHandle(sid, obj){
     st.sigParts=_evs.map(nEvSigPart);
     st.lastBatchSig=_sig;
     nResetReplayState(st);
-    if(!st.everRendered){ st.everRendered=true; nAddRow(st, "sys", "history replay"); }
-    _evs.forEach(function(e){
-      if(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form")) return;
-      try{ e.replay=true; nHandle(sid, e); }
-      catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
-    });
+    nReplayBatchAsync(sid, st, _evs);
+    return;
+  }
+  if(st.replayActive && !obj.replay){
+    st.replayPending=(st.replayPending||[]); st.replayPending.push(obj);
     return;
   }
   if(!nMarkRendered(st,obj)) return;

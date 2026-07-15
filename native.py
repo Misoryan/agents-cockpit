@@ -36,10 +36,64 @@ _GATE_BIN = os.path.join(_HERE, "gate_mcp.py")
 _GATE_TIMEOUT = 600.0          # 门控阻塞上限(秒);超时按拒绝/无回答处理
 # 需要网页审批的工具(Windows 下模型走 PowerShell,故 Bash+PowerShell 都要)
 _ASK_TOOLS = ["Bash", "PowerShell", "Edit", "Write", "NotebookEdit"]
-# 提示模型主动用 ask_user(信息不足时问用户,别瞎猜)
-_ASK_SYSTEM = ("当一个动作需要用户许可时你会被自动拦截。当信息不足、需要用户决策或确认意图时,"
-               "调用 ask_user 工具向用户提问并等待回答,不要自行臆测。")
-# 计划模式:只读调研 → ExitPlanMode 提交结构化计划,等用户批准再执行
+# 内置 AskUserQuestion 在 -p 无头模式下无法真正弹问(claude 自己执行后只回「用户未回答」),
+# 全模式禁用它,改由 gate_mcp 的 ask_user 工具承担提问(网页渲染 + 阻塞等回答)。
+_DISABLED_TOOLS = ["AskUserQuestion"]
+# 提示模型用 ask_user 问用户(支持结构化 questions,AskUserQuestion 风格)。ask_user 由 gate_mcp 提供,
+# 全模式可用(含 yolo:MCP 工具不受 --dangerously-skip-permissions 影响)。
+_ASK_SYSTEM = ("当信息不足、需要用户决策或确认意图时,调用 ask_user 工具向用户提问并等待回答,不要自行臆测。"
+               "ask_user 支持结构化提问:可传 questions 数组(每项含 question/header/options[{label,description}]/multiSelect),"
+               "用户在网页点选后把回答返回给你;问题简单时也可只传 question 字符串。")
+# 仅在挂门控的模式(非 yolo / plan)注入:提醒「需许可的动作会被拦截」
+_GATE_SYSTEM = "当一个动作需要用户许可时你会被自动拦截。"
+
+
+def _clean_ask_questions(questions):
+    """规整 ask_user 的 questions 数组(模型给的 AskUserQuestion 风格结构),供前端 nRenderAsk 渲染。"""
+    out = []
+    for q in questions or []:
+        if not isinstance(q, dict):
+            continue
+        opts = []
+        for opt in q.get("options") or []:
+            if isinstance(opt, dict):
+                opts.append({"label": str(opt.get("label") or ""),
+                             "description": str(opt.get("description") or "")})
+            elif opt is not None:
+                opts.append({"label": str(opt), "description": ""})
+        out.append({"id": str(q.get("id") or ""),
+                    "header": str(q.get("header") or ""),
+                    "question": str(q.get("question") or ""),
+                    "multiSelect": bool(q.get("multiSelect")),
+                    "options": opts})
+    return out
+
+
+def _format_ask_answer(ans, questions):
+    """把网页回传的答案规整成给模型的文本。ans 可能是结构化 {qid:[vals]}(有 options 时)或纯文本。"""
+    if ans is None:
+        return ""
+    if isinstance(ans, str):
+        return ans
+    if isinstance(ans, dict):
+        qmap = {}
+        for idx, q in enumerate(questions or []):
+            qid = q.get("id") or str(idx)
+            qmap[qid] = q.get("question") or q.get("header") or ""
+        lines = []
+        for qid, vals in ans.items():
+            if isinstance(vals, (list, tuple)):
+                vtext = ", ".join(str(v) for v in vals if v not in (None, ""))
+            else:
+                vtext = str(vals) if vals not in (None, "") else ""
+            if not vtext:
+                continue
+            label = qmap.get(qid) or ""
+            lines.append(("%s: %s" % (label, vtext)) if label else vtext)
+        return chr(10).join(lines)
+    return str(ans)
+
+
 _PLAN_SYSTEM = ("【计划模式】你只能使用只读工具(Read / Grep / Glob / WebFetch / WebSearch 等)进行调研,"
                 "不得执行任何修改性操作(Bash / Edit / Write 等)。调研清楚后,调用 ExitPlanMode 工具"
                 "提交一份结构化计划(目标 / 实施步骤 / 风险与注意事项),交由用户审批后再执行。")
@@ -178,15 +232,14 @@ class NativeSession:
 
     def _mode_system(self):
         """拼装本轮的 --append-system-prompt。提示必须与 _build_argv 实际挂载的能力一致:
-          ask_user 由 gate_mcp 提供 → 仅在挂 gate_mcp 时注入 _ASK_SYSTEM(=plan_mode 或 非 yolo)。
+          ask_user 由 gate_mcp 提供 → 全模式注入 _ASK_SYSTEM(yolo 也挂 gate_mcp,只为提供 ask_user)。
+          门控(需许可动作会被拦截)→ 仅挂 permission-prompt-tool 的模式(plan 或 非 yolo)注入 _GATE_SYSTEM。
           ExitPlanMode 由 --permission-mode plan 自带 → 仅 plan_mode 时注入 _PLAN_SYSTEM。
-          yolo 且非 plan:不挂 gate_mcp(--dangerously-skip-permissions)→ 无 ask_user;又无 plan →
-            无 ExitPlanMode;只保留 TodoWrite(claude 自带)的 _TASK_SYSTEM。
         """
         gated = self.plan_mode or (not self.yolo)   # 挂 gate_mcp ⟺ 有 ask_user
-        parts = []
+        parts = [_ASK_SYSTEM]   # ask_user 全模式可用(网页提问),始终提示
         if gated:
-            parts.append(_ASK_SYSTEM)
+            parts.append(_GATE_SYSTEM)
         if self.plan_mode:
             parts.append(_PLAN_SYSTEM)
         if self.task_mode:
@@ -256,12 +309,15 @@ class NativeSession:
             self._broadcast({"type": "mode_state", "plan": False, "task": self.task_mode})
         return (allow, entry["msg"])
 
-    def await_answer(self, tool_use_id, question):
-        """广播 pending_ask 并阻塞等用户回答。返回回答文本。"""
-        entry = {"event": threading.Event(), "kind": "ask", "question": question, "ans": None}
+    def await_answer(self, tool_use_id, question, questions=None):
+        """广播 pending_ask(含结构化 questions)并阻塞等用户回答。返回回答文本。"""
+        questions = _clean_ask_questions(questions)
+        entry = {"event": threading.Event(), "kind": "ask", "question": question,
+                 "questions": questions, "ans": None}
         with self._pending_lock:
             self._pending[tool_use_id] = entry
-        self._broadcast({"type": "pending_ask", "tool_use_id": tool_use_id, "question": question})
+        self._broadcast({"type": "pending_ask", "tool_use_id": tool_use_id,
+                         "question": question, "questions": questions})
         self._push("confirm", "❓ 待回答 · " + os.path.basename(self.cwd),
                    (question or "") + "\n" + self.cwd)
         got = entry["event"].wait(timeout=_GATE_TIMEOUT)
@@ -298,7 +354,7 @@ class NativeSession:
             entry = self._pending.get(tool_use_id)
         if not entry or entry.get("kind") != "ask":
             return False
-        entry["ans"] = ans
+        entry["ans"] = _format_ask_answer(ans, entry.get("questions") or [])
         entry["event"].set()
         self._broadcast({"type": "ask_answered", "tool_use_id": tool_use_id})
         return True
@@ -377,7 +433,8 @@ class NativeSession:
             elif kind == "ask":
                 events.append({"type": "pending_ask",
                                "tool_use_id": tool_use_id,
-                               "question": entry.get("question") or ""})
+                               "question": entry.get("question") or "",
+                               "questions": entry.get("questions") or []})
         return events
 
     def _broadcast(self, obj):
@@ -410,6 +467,16 @@ class NativeSession:
     def _mcp_config_path(self):
         return os.path.join(STATE_DIR, "gate_mcp_%s.json" % self.sid)
 
+    def _write_mcp_config(self):
+        """写 per-session --mcp-config(网关服务器)。yolo 模式也挂它,只为提供 ask_user 工具
+        (提问不受 bypass 权限模式影响)。"""
+        os.makedirs(STATE_DIR, exist_ok=True)
+        mcp = {"mcpServers": {"cockpit": {
+            "command": sys.executable,
+            "args": [_GATE_BIN, self.sid, str(MANAGER_PORT)]}}}
+        with open(self._mcp_config_path(), "w", encoding="utf-8") as f:
+            json.dump(mcp, f, ensure_ascii=False)
+
     def _write_gate_configs(self, allow_tools=False):
         """写 per-session 的 --settings 与 --mcp-config(网关服务器)。
         allow_tools=True(yolo+plan):普通工具进 allow 自动放行,只有 ExitPlanMode 走门控审批计划。
@@ -418,17 +485,14 @@ class NativeSession:
         key = "allow" if allow_tools else "ask"
         with open(self._settings_path(), "w", encoding="utf-8") as f:
             json.dump({"permissions": {key: list(_ASK_TOOLS)}}, f, ensure_ascii=False)
-        mcp = {"mcpServers": {"cockpit": {
-            "command": sys.executable,
-            "args": [_GATE_BIN, self.sid, str(MANAGER_PORT)]}}}
-        with open(self._mcp_config_path(), "w", encoding="utf-8") as f:
-            json.dump(mcp, f, ensure_ascii=False)
+        self._write_mcp_config()
 
     def _build_argv(self, prompt):
         argv = [CLAUDE_BIN, "-p", prompt] + _CLAUDE_ARGS
         if self.claude_sid:
             argv += ["--resume", self.claude_sid]
         sys_prompt = self._mode_system()
+        argv += ["--disallowedTools"] + _DISABLED_TOOLS   # 内置 AskUserQuestion 无头不可用,全模式禁用
         # 计划模式优先于 yolo:plan 用于"先规划后执行",不应被 yolo 屏蔽。无论 yolo 与否,plan_mode
         # 都挂 --permission-mode plan(提供 ExitPlanMode)+ gate_mcp(ExitPlanMode 经
         # --permission-prompt-tool 让用户审批计划)。yolo 只决定普通工具:allow 自动放行 vs ask 逐项审批。
@@ -447,7 +511,15 @@ class NativeSession:
                 argv += ["--append-system-prompt", sys_prompt]
             return argv
         if self.yolo:
-            argv += ["--dangerously-skip-permissions"]
+            # yolo:普通工具 --dangerously-skip-permissions 自动放行;但仍挂 gate_mcp 提供 ask_user
+            # (MCP 工具不受 bypass 权限模式影响)。内置 AskUserQuestion 已由上方 --disallowedTools 禁用。
+            try:
+                self._write_mcp_config()
+            except OSError:
+                traceback.print_exc()
+            argv += ["--dangerously-skip-permissions",
+                     "--mcp-config", self._mcp_config_path(),
+                     "--strict-mcp-config"]
             if sys_prompt:
                 argv += ["--append-system-prompt", sys_prompt]
             return argv

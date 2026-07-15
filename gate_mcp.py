@@ -101,6 +101,7 @@ def handle_tools_call(mid, params):
         return
     if name == "ask_user":
         question = args.get("question", "")
+        questions = args.get("questions")
         tuid = args.get("tool_use_id")
         if not tuid:
             with _ask_lock:
@@ -108,7 +109,8 @@ def handle_tools_call(mid, params):
                 tuid = "ask_%d_%d" % (_ask_counter[0], id(question) & 0xffff)
         try:
             resp = _post("/api/_ask_gate", {
-                "sid": SID, "tool_use_id": tuid, "question": question})
+                "sid": SID, "tool_use_id": tuid,
+                "question": question, "questions": questions})
             ans = resp.get("answer", "")
         except OSError as e:
             _log("ask gate unreachable: %r" % e)
@@ -142,7 +144,7 @@ def main():
         elif method == "notifications/initialized":
             pass  # 通知,不回
         elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": [
+            tools = [
                 {"name": "approve",
                  "description": "Permission gate. Called automatically before running tools that need approval. Do not call directly.",
                  "inputSchema": {"type": "object",
@@ -151,11 +153,13 @@ def main():
                                                 "tool_use_id": {"type": "string"}},
                                  "required": ["tool_name", "input", "tool_use_id"]}},
                 {"name": "ask_user",
-                 "description": "向用户提问以获取澄清、确认或输入,会阻塞等待用户回答。当信息不足、需要用户决策或确认意图时调用,不要瞎猜。question 是要问用户的问题。返回用户的回答文本。",
+                 "description": "向用户提问以获取澄清、确认或输入,会阻塞等待用户回答。当信息不足、需要用户决策或确认意图时调用,不要瞎猜。可只传 question(简单文本),或传 questions 做结构化提问(AskUserQuestion 风格)。questions 是数组,每项含:question(必填,问题文本)、header(短标签)、options(数组,每项含 label 与 description)、multiSelect(布尔,是否多选)。用户在网页点选后把回答返回给你。",
                  "inputSchema": {"type": "object",
-                                 "properties": {"question": {"type": "string", "description": "要问用户的问题"}},
-                                 "required": ["question"]}},
-            ]}})
+                                 "properties": {"question": {"type": "string", "description": "简单提问文本(与 questions 二选一)"},
+                                                "questions": {"type": "array", "description": "结构化提问数组(AskUserQuestion 风格),每项含 question/header/options[{label,description}]/multiSelect"}},
+                                 "required": []}},
+            ]
+            _send({"jsonrpc": "2.0", "id": mid, "result": {"tools": tools}})
         elif method == "tools/call":
             handle_tools_call(mid, msg.get("params", {}) or {})
         else:

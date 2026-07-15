@@ -1174,7 +1174,7 @@ def _usage_by_model(cur, since, limit=8):
         "SELECT model, COUNT(*) n, TOTAL(CAST(total_cost_usd AS REAL)) cost, "
         "TOTAL(input_tokens+output_tokens+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0)) tok "
         "FROM proxy_request_logs WHERE created_at>=? AND status_code<500 "
-        "GROUP BY model ORDER BY cost DESC LIMIT ?", (since, limit)).fetchall()
+        "GROUP BY model ORDER BY tok DESC LIMIT ?", (since, limit)).fetchall()
     return [{"model": r["model"] or "(unknown)", "requests": int(r["n"] or 0),
              "cost": round(float(r["cost"] or 0.0), 4), "tokens": int(r["tok"] or 0)} for r in rows]
 

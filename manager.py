@@ -465,7 +465,7 @@ class ManagerHandler(BaseHandler):
             if not ns:
                 self._json({"answer": "(session not found)"}, 404)
                 return
-            ans = ns.await_answer(data.get("tool_use_id") or "", data.get("question") or "")
+            ans = ns.await_answer(data.get("tool_use_id") or "", data.get("question") or "", data.get("questions"))
             self._json({"answer": ans})
         elif pr.path == "/api/stop_all":
             kill_all()

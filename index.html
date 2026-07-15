@@ -331,6 +331,11 @@ body.sb-collapsed #sidebar{display:none}
         .nathead .nyolo{color:var(--amber);background:var(--amber-soft);border-color:transparent}
         .nathead .ghost{padding:7px 12px;font-size:12.5px}
         #nativemsgs{flex:1 1 auto;overflow-y:auto;padding:20px 16px 24px;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:14px}
+        #scrollbottom{position:absolute;right:calc(50% - 410px + 18px);bottom:calc(96px + env(safe-area-inset-bottom));width:38px;height:38px;display:none;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-strong);background:#fff;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.16);z-index:8;cursor:pointer;padding:0}
+        #scrollbottom.show{display:flex}
+        #scrollbottom:hover{background:var(--surface-hover)}
+        #scrollbottom .ic{width:18px;height:18px;margin:0}
+        @media (max-width:900px){#scrollbottom{right:16px;bottom:calc(96px + env(safe-area-inset-bottom))}}
         .nmsg{padding:0;word-break:break-word;line-height:1.65;animation:nfade .14s ease}
         @keyframes nfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
         .nmsg.user{align-self:flex-end;max-width:78%;background:var(--user-bubble);color:var(--ink);border:0;border-radius:var(--radius-lg);padding:10px 14px}
@@ -497,6 +502,7 @@ body.sb-collapsed #sidebar{display:none}
       </div>
       <div id="nativetasks" style="display:none"></div>
       <div id="nativemsgs"></div>
+      <button type="button" id="scrollbottom" title="Scroll to bottom" aria-label="Scroll to bottom"><i class="ic" data-lucide="arrow-down"></i></button>
       <form id="nativesend">
         <div class="nwrap">
           <textarea id="nativeinput" placeholder="给 agent 发消息…  Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
@@ -807,7 +813,7 @@ function closeTab(sid){
   if(sid===currentSid){
     var nextSid=openTabs[idx] || openTabs[idx-1] || "";
     if(nextSid){ openSessionBySid(nextSid, true); }
-    else { currentSid=null; setMainView("landing"); nSetGen(false); }
+    else { currentSid=null; setMainView("landing"); nSetGen(false); nUpdateScrollButton(); }
   }
   renderSessionTabs();
 }
@@ -1156,8 +1162,12 @@ function nRenderTasks(st){
     st.tasksCollapsed=!st.tasksCollapsed; nRenderTasks(st);
   });
 }
+function nAtBottom(){ var m=$("nativemsgs"); if(!m) return true; return (m.scrollHeight - m.scrollTop - m.clientHeight) < 120; }
+function nUpdateScrollButton(){ var b=$("scrollbottom"), m=$("nativemsgs"); if(!b||!m) return; b.classList.toggle("show", currentSid && !nAtBottom()); }
+function nJumpBottom(){ var m=$("nativemsgs"); if(!m) return; m.scrollTop=m.scrollHeight; nUpdateScrollButton(); }
 function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;
-  requestAnimationFrame(function(){ if(m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight; }); }
+  var stick=nAtBottom();
+  requestAnimationFrame(function(){ if(stick) m.scrollTop = m.scrollHeight; nUpdateScrollButton(); }); }
 function nCoerceEpochMs(v){
   var n=Number(v);
   if(!isFinite(n) || n<=0) return 0;
@@ -1265,7 +1275,7 @@ function dropNativeStage(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} delete nativeWs[sid]; }
   if(currentSid===sid) hideNative();
 }
-function hideNative(){ currentSid=null; nSetGen(false); setMainView("landing"); renderSessionTabs(); }
+function hideNative(){ currentSid=null; nSetGen(false); setMainView("landing"); renderSessionTabs(); nUpdateScrollButton(); }
 function nNewTextBubble(st){
   var d=document.createElement("div"); d.className="nmsg assistant";
   var t=document.createElement("div"); t.className="ntxt";
@@ -2002,7 +2012,7 @@ function showNativeSession(sid, title){
   if(!nativeWs[sid] || nativeWs[sid].readyState===3) nativeConnect(sid);
   nEnsurePendingVisible(nFindRunSession(sid));
   renderSessionTabs();
-  setMainView("native"); closeSidebar();
+  setMainView("native"); nUpdateScrollButton(); closeSidebar();
   setTimeout(function(){ $("nativeinput").focus({preventScroll:true}); }, 60);
 }
 var _nGenerating=false;
@@ -2050,6 +2060,8 @@ $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
 $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
 $("nativeinput").addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); nativeSend(); } });
 $("nativeinput").addEventListener("input", function(){ this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,200)+"px"; });
+$("nativemsgs").addEventListener("scroll", nUpdateScrollButton);
+$("scrollbottom").addEventListener("click", nJumpBottom);
 document.addEventListener("keydown", function(e){
   if(e.ctrlKey && e.key==="Tab"){ e.preventDefault(); switchTab(e.shiftKey?-1:1); }
 });
@@ -2254,6 +2266,7 @@ var _ICONS={
 "settings":"<path d=\"M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
 "arrow-left":"<path d=\"m12 19-7-7 7-7\"/><path d=\"M19 12H5\"/>",
 "arrow-up":"<path d=\"m5 12 7-7 7 7\"/><path d=\"M12 19V5\"/>",
+"arrow-down":"<path d=\"M12 5v14\"/><path d=\"m19 12-7 7-7-7\"/>",
 "chevron-right":"<path d=\"m9 18 6-6-6-6\"/>",
 "chevron-down":"<path d=\"m6 9 6 6 6-6\"/>",
 "check":"<path d=\"M20 6 9 17l-5-5\"/>",

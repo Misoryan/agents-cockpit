@@ -398,6 +398,12 @@ class CodexSession:
     def list_mcp_resources(self, arg):
         return self._slash.list_mcp_resources(arg)
 
+    def list_skills(self, arg):
+        return self._slash.list_skills(arg)
+
+    def list_plugins(self, arg):
+        return self._slash.list_plugins(arg)
+
     def call_mcp_tool(self, arg):
         return self._slash.call_mcp_tool(arg)
 

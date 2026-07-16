@@ -13,7 +13,7 @@
 但它还不是完整的 Codex CLI 替代品。当前状态可以概括为：
 
 - Remote usable Codex agent session: about **78-82% usable**; core chat, streaming text, reasoning, tool cards, approvals, Plan, replay, history recovery, and image input have working paths.
-- Full Codex CLI TUI replacement: about **60-65%**; remaining gaps are mainly profile/add-dir/config depth, full command palette, richer lifecycle UI, account refresh, plugin/skills, and deeper terminal/MCP validation.
+- Full Codex CLI TUI replacement: about **60-65%** in the early baseline; current checkpoints have moved plugin/skills to read-only inventory, while remaining gaps are mainly profile/config depth, full command palette, richer lifecycle UI, account refresh, plugin/skills write flows, and deeper terminal/MCP validation.
 - 代码结构经历了一轮有效拆分：`manager.py`、`common.py`、`native.py`、`codex_native.py` 都已经从巨型单文件向 helper 模块迁移；但 `CodexSession`、`common.py` facade、`web.py`、`index.html` 内联样式和前端全局状态仍是主要复杂度热点。
 - 下一阶段不应优先做普通 UI 美化，而应按“协议覆盖 -> CLI 高价值入口 -> Codex-native 工具渲染 -> 安全/结构硬化”推进。
 
@@ -94,7 +94,7 @@ Browser / Android WebView
 | 动态工具 | `item/tool/call` / MCP passthrough | 手动 MCP tool/resource 已接；自动 dynamic tool 支持 `[codex_dynamic_tools]` allowlist 透传 | 仍需真实 MCP server 验证和更完整结果卡 |
 | 终端交互 | command exec stdin/resize/terminate/write | terminalInteraction stdin/terminate/resize 第一刀 | 仍需真实复杂命令验证 |
 | Codex 账号 | login/token refresh/rate limits/usage | 依赖外部 CLI 登录；refresh unsupported | 关键差距 |
-| Plugin/skills | plugin/list/read/install、skills/list/read | 未接入 | 后续能力 |
+| Plugin/skills | plugin/list/read/install、skills/list/read | `/skills`、`/plugins [installed\|available]` 已只读接入；read/install/write 未接 | 只读可见，写入仍后续 |
 | Realtime/audio | realtime notifications | 未接入 | 暂不必要 |
 | 远程/多端 | CLI 单终端 | Web 多端、通知、Android WebView | Web 优势 |
 
@@ -351,7 +351,7 @@ Current verified baseline:
 - Branch/worktree: `main...origin/main`, clean before this documentation update.
 - Latest pushed checkpoint: `d6e7f68 Exercise live broadcast in Codex WS smoke`.
 - Local CLI baseline: `codex-cli 0.142.4`.
-- Protocol matrix baseline: app-server schema currently records 68 server notifications, 10 server requests, and 87 client requests. The web adapter labels 30 notifications as supported, 7 as degraded, 31 as generic visible, 5 server requests as supported, 3 as degraded, 2 as generic visible, and 27 client requests as supported.
+- Protocol matrix baseline: app-server schema currently records 68 server notifications, 10 server requests, and 87 client requests. The web adapter labels 30 notifications as supported, 9 as degraded, 29 as generic visible, 5 server requests as supported, 3 as degraded, 2 as generic visible, and 32 client requests as supported.
 
 ### 14.1 Current product position
 
@@ -366,16 +366,16 @@ The project is now a credible remote Codex session host, not just a web terminal
 - Manual MCP resource/tool slash calls, dynamic tool allowlist passthrough, and web stdin cards for terminal interaction.
 - Multi-user state/home/workspace isolation with documented hardened deployment guidance.
 
-It is still not a full Codex CLI replacement. The remaining gap is less about basic chat and more about tail behavior: stale-open WebSocket reconciliation, real-world browser/mobile visual QA, richer Codex-native tool cards, deep MCP/terminal validation, Web-native account recovery, plugin/skills/account/client-method coverage, and security hardening for tunneled/shared exposure.
+It is still not a full Codex CLI replacement. The remaining gap is less about basic chat and more about tail behavior: stale-open WebSocket reconciliation, real-world browser/mobile visual QA, richer Codex-native tool cards, deep MCP/terminal validation, Web-native account recovery, plugin/skills write/install/read-detail coverage, and security hardening for tunneled/shared exposure.
 
 Updated rough progress estimate:
 
 | Area | Current estimate | Notes |
 | --- | ---: | --- |
 | Remote usable Codex agent session | 85% | Core chat, approvals, Plan, history, replay, image input, and multi-client protocol smoke are usable. |
-| Full Codex CLI TUI replacement | 65-70% | High-frequency session operations are covered; plugin/skills/account/doctor/cloud/exec/review/apply-style workflows remain mostly outside the web UI. |
+| Full Codex CLI TUI replacement | 66-71% | High-frequency session operations are covered; plugin/skills inventory is read-only; account/doctor/cloud/exec/review/apply-style workflows remain mostly outside the web UI. |
 | Multi-access and sync | 75% | Incremental reconnect and two-client smoke are strong; open-but-stale WS catch-up and real browser/mobile visual tests are still needed. |
-| app-server protocol coverage | 60% | 27/87 client requests are supported; many long-tail account/config/fs/plugin/skills/windows sandbox methods are intentionally not integrated yet. |
+| app-server protocol coverage | 62% | 32/87 client requests are supported; plugin/skills inventory is read-only, while many long-tail account/config/fs/plugin-write/skills-write/windows sandbox methods remain intentionally not integrated. |
 | Frontend maintainability | 65% | JS/CSS are split, but `index.html` still holds large native-stage style blocks and the JS state model remains global. |
 | Backend maintainability | 70% | Manager/common/native modules are split; `CodexSession`, `common.py`, and some app-server routing fallbacks remain complexity hotspots. |
 | Security/release hardening | 55% | Auth/multi-user/hardened docs exist; CSRF/Origin checks and stricter default deployment profiles still need implementation. |
@@ -404,7 +404,7 @@ Updated rough progress estimate:
 
 5. Account and non-session CLI capabilities:
    - Covered: account refresh and attestation now fail visibly with safe CLI recovery steps.
-   - Remaining gap: Web-native account login/logout/token refresh, usage/rate-limit details, `doctor`, `plugin`, `skills`, `cloud`, `review`, `apply`, and noninteractive `exec` are mostly not integrated.
+   - Remaining gap: Web-native account login/logout/token refresh, usage/rate-limit details, `doctor`, plugin/skills write/install/read-detail, `cloud`, `review`, `apply`, and noninteractive `exec` are mostly not integrated.
    - Required adaptation: treat these as lower priority than session stability unless the user workflow depends on them; start with read-only account/status/plugin/skills views before write/install actions.
 
 6. Security and deployment:
@@ -803,3 +803,11 @@ Immediate next commit candidate:
 - Strengthened `tools/codex_browser_smoke.py` so the reconnect test marks an existing rendered message node before forcibly closing one browser tab's WebSocket.
 - After reconnect/catch-up, the smoke now requires both old text preservation and the same DOM node marker to remain, proving the session was not fully cleared/repainted during recovery.
 - This gives the multi-access anti-flicker requirement a stronger repeatable browser-level gate than checking final text content alone.
+
+
+## 59. 2026-07-17 Codex plugin/skills read-only inventory checkpoint
+
+- Added `codex_inventory.py` and slash commands `/skills`, `/plugins`, and `/plugins available`, backed by app-server `skills/list`, `plugin/installed`, and `plugin/list`.
+- The payload intentionally strips local skill/plugin paths and icon paths before replay, keeping the browser card focused on name, scope, enabled/installed state, version, and descriptions.
+- Added dedicated `codex.skills` and `codex.plugins` result-card rendering in `assets/native_tool_results.js`, so plugin/skills inventory is replayable across clients without falling back to raw JSON.
+- Updated the protocol matrix to mark `skills/list`, `plugin/installed`, and `plugin/list` as supported read-only client requests; write/install/read-detail plugin and skills flows remain documented gaps.

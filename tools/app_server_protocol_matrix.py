@@ -112,6 +112,9 @@ SUPPORT = {
             "mcpServer/tool/call",
             "mcpServer/resource/read",
             "mcpServerStatus/list",
+            "plugin/installed",
+            "plugin/list",
+            "skills/list",
             "turn/steer",
         },
         "degraded": {
@@ -145,6 +148,12 @@ METHOD_NOTES = {
         "Shown as visible OAuth success/failure notice; Web does not own token flows.",
     ("client_requests", "mcpServerStatus/list"):
         "Exposed through /mcp-status and /mcp-resources for manual MCP inventory browsing.",
+    ("client_requests", "plugin/installed"):
+        "Exposed read-only through /plugins for installed plugin inventory.",
+    ("client_requests", "plugin/list"):
+        "Exposed read-only through /plugins available for marketplace/plugin inventory.",
+    ("client_requests", "skills/list"):
+        "Exposed read-only through /skills for workspace skill inventory.",
 }
 
 

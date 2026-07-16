@@ -32,6 +32,7 @@ const {
   nToolResultMarkup,
   nJsonResultHtml,
   nMcpStatusResultHtml,
+  nCodexInventoryResultHtml,
   nTerminalCardHtml,
   nSpecialToolBody,
   nStructuredToolBody
@@ -152,6 +153,27 @@ const mcpResourceHtml = nToolResultMarkup("mcp-resources-docs", JSON.stringify({
 assert.ok(mcpResourceHtml.includes("MCP Resources"));
 assert.ok(mcpResourceHtml.includes("mcp-resource-card"));
 assert.ok(mcpResourceHtml.includes("/mcp-resource"));
+const skillsHtml = nCodexInventoryResultHtml({
+  total: 1,
+  enabled: 1,
+  disabled: 0,
+  roots: [{cwd:"E:/repo", skills:[{name:"openai-docs", displayName:"OpenAI Docs", scope:"system", enabled:true, shortDescription:"Docs helper"}]}]
+}, "codex.skills");
+assert.ok(skillsHtml.includes("Codex Skills"));
+assert.ok(skillsHtml.includes("codex-inventory-card"));
+assert.ok(skillsHtml.includes("OpenAI Docs"));
+assert.ok(nToolResultMarkup("codex-skills", JSON.stringify({
+  total: 1,
+  enabled: 1,
+  roots: [{cwd:"E:/repo", skills:[{name:"openai-docs", enabled:true}]}]
+}), "codex.skills").includes("Codex Skills"));
+const pluginsHtml = nCodexInventoryResultHtml({
+  mode: "installed",
+  total: 1,
+  marketplaces: [{name:"Local", plugins:[{id:"browser", name:"Browser", installed:true}]}]
+}, "codex.plugins");
+assert.ok(pluginsHtml.includes("Codex Plugins"));
+assert.ok(pluginsHtml.includes("Browser"));
 assert.ok(nSpecialToolBody("sleep", {durationMs: 1200, reason: "wait"}).includes("sleep-card"));
 assert.ok(nSpecialToolBody("contextcompaction", {status: "started", summary: "compact"}).includes("compact-card"));
 assert.ok(nSpecialToolBody("imagegeneration", {prompt: "a cat", size: "1024x1024"}).includes("image-card"));

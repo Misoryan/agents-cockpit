@@ -26,6 +26,10 @@ class FakeClient:
                 "resourceTemplates": [],
                 "tools": {"search": {"name": "search", "inputSchema": {}}},
             }]}
+        if method == "skills/list":
+            return {"data": [{"cwd": os.getcwd(), "skills": [{"name": "openai-docs", "enabled": True}]}]}
+        if method == "plugin/installed":
+            return {"marketplaces": [{"id": "local", "plugins": [{"id": "browser", "name": "Browser"}]}]}
         return {}
 
 
@@ -127,6 +131,20 @@ def main():
         "resource_templates": 0,
         "tools": 1,
     }
+    assert slash.handle_slash_command("/skills") == {
+        "ok": True,
+        "command": "skills",
+        "mode": "all",
+        "skills": 1,
+    }
+    assert session.client.calls[-1][0] == "skills/list"
+    assert slash.handle_slash_command("/plugins") == {
+        "ok": True,
+        "command": "plugins",
+        "mode": "installed",
+        "plugins": 1,
+    }
+    assert session.client.calls[-1][0] == "plugin/installed"
 
     print("codex slash helper checks passed")
 

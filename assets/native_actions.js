@@ -31,6 +31,8 @@ var nativeSlashCommands=[
   {cmd:"/mcp-resources", fill:"/mcp-resources ", desc:"Browse one MCP server's resources and tools"},
   {cmd:"/mcp-resource", fill:"/mcp-resource ", desc:"Read an MCP resource: server uri"},
   {cmd:"/mcp-tool", fill:"/mcp-tool ", desc:"Call an MCP tool: server tool {json}"},
+  {cmd:"/skills", fill:"/skills", desc:"List available Codex skills for this workspace"},
+  {cmd:"/plugins", fill:"/plugins", desc:"List installed Codex plugins read-only"},
   {cmd:"/steer", fill:"/steer ", desc:"Send guidance to the currently running Codex turn"}
 ];
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;

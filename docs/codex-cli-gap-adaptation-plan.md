@@ -4,7 +4,7 @@
 项目：`E:\tools\codex-web`
 当前基线：`main`（截至 2026-07-17 Codex MCP status visibility checkpoint）
 Codex CLI：`codex-cli 0.142.4`
-协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=9/generic_visible=29；server requests supported=5/degraded=3/generic_visible=2；client requests supported=29/degraded=1/not_integrated=57。
+协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=9/generic_visible=29；server requests supported=5/degraded=3/generic_visible=2；client requests supported=32/degraded=1/not_integrated=54。
 
 ## 1. 总体判断
 
@@ -138,11 +138,12 @@ Browser / Android WebView
 
 - Web 自身有 login/logout、多用户隔离、per-user home/workspace、Origin/Referer 检查、hardened verifier。
 - `account/chatgptAuthTokens/refresh`、`attestation/generate` 不再假成功，而是给可见恢复步骤且不泄 token。
+- `plugin/installed`、`plugin/list`、`skills/list` 已通过 `/plugins`、`/plugins available`、`/skills` 提供只读 inventory，并以结构化 replay 卡片同步到多端。
 
 仍缺：
 
 - Codex CLI 的 `login/logout`、token refresh、attestation、usage/rate detail 还不是 Web 原生闭环。
-- `doctor`、`update`、`features`、`plugin`、`mcp` 管理、`skills`、`sandbox`、`exec`、`review`、`apply`、`cloud` 等非会话 CLI 能力基本未产品化。
+- `doctor`、`update`、`features`、plugin/skills 写入安装、`mcp` 管理、`sandbox`、`exec`、`review`、`apply`、`cloud` 等非会话 CLI 能力仍未产品化。
 - 这些能力不应直接塞进 CodexSession；需要单独的 admin/diagnostic 模块或明确不做。
 
 ## 4. 当前代码问题清单
@@ -277,7 +278,7 @@ Browser / Android WebView
 
 建议：
 
-- `doctor/features/account/plugin/skills/mcp`：作为 admin/diagnostic 页面，只读优先。
+- `doctor/features/account/plugin/skills/mcp`：作为 admin/diagnostic 页面，只读优先。（第一刀已落地：`/skills` 与 `/plugins [installed|available]` 读取 app-server inventory，不做安装/写入。）
 - `exec/review/apply/sandbox/cloud`：独立 workflow，不复用 CodexSession 主循环，除非明确需要 Web 产品化。
 - `update`：默认不做自动更新；最多提供只读版本和文档提示。
 
@@ -304,7 +305,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_inventory.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

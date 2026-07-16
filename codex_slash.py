@@ -5,6 +5,7 @@ import shlex
 import time
 
 import codex_config
+import codex_inventory
 import codex_mcp_status
 import codex_text
 import common
@@ -70,6 +71,10 @@ class CodexSlashAdapter:
             return self.list_mcp_resources(arg)
         if name == "/mcp-tool":
             return self.call_mcp_tool(arg)
+        if name == "/skills":
+            return self.list_skills(arg)
+        if name == "/plugins":
+            return self.list_plugins(arg)
         return {"ok": False, "error": "unsupported Codex slash command: %s" % name}
 
     def set_model(self, model):
@@ -432,6 +437,12 @@ class CodexSlashAdapter:
 
     def list_mcp_resources(self, arg):
         return codex_mcp_status.list_mcp_resources(self.session, arg)
+
+    def list_skills(self, arg):
+        return codex_inventory.list_skills(self.session, arg)
+
+    def list_plugins(self, arg):
+        return codex_inventory.list_plugins(self.session, arg)
 
     def call_mcp_tool(self, arg):
         parts = str(arg or "").split(None, 2)

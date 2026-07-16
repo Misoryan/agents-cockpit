@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; degraded=1, not_integrated=57, supported=29
+- Total: 87; degraded=1, not_integrated=54, supported=32
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -151,8 +151,8 @@ plus static Agents Cockpit coverage labels.
 | `modelProvider/capabilities/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `permissionProfile/list` | `supported` | Implemented in current adapter path. |
 | `plugin/install` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `plugin/installed` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `plugin/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `plugin/installed` | `supported` | Exposed read-only through /plugins for installed plugin inventory. |
+| `plugin/list` | `supported` | Exposed read-only through /plugins available for marketplace/plugin inventory. |
 | `plugin/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `plugin/share/checkout` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `plugin/share/delete` | `not_integrated` | Not integrated in Agents Cockpit yet. |
@@ -164,7 +164,7 @@ plus static Agents Cockpit coverage labels.
 | `review/start` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `skills/config/write` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `skills/extraRoots/set` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `skills/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `skills/list` | `supported` | Exposed read-only through /skills for workspace skill inventory. |
 | `thread/approveGuardianDeniedAction` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `thread/archive` | `supported` | Implemented in current adapter path. |
 | `thread/compact/start` | `supported` | Implemented in current adapter path. |

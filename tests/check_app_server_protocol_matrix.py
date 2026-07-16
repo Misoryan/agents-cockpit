@@ -45,7 +45,9 @@ def main():
     assert matrix.classify("client_requests", "turn/steer") == "supported"
     assert matrix.classify("client_requests", "command/exec") == "degraded"
     assert matrix.classify("server_notifications", "command/exec/outputDelta") == "degraded"
-    assert matrix.classify("client_requests", "plugin/list") == "not_integrated"
+    assert matrix.classify("client_requests", "plugin/list") == "supported"
+    assert matrix.classify("client_requests", "plugin/installed") == "supported"
+    assert matrix.classify("client_requests", "skills/list") == "supported"
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -55,7 +57,8 @@ def main():
             json.dumps(_schema("item/tool/call")), encoding="utf-8")
         (root / "ClientRequest.json").write_text(
             json.dumps(_schema(
-                "thread/start", "thread/fork", "account/read", "command/exec", "mcpServerStatus/list"
+                "thread/start", "thread/fork", "account/read", "command/exec",
+                "mcpServerStatus/list", "plugin/list", "skills/list"
             )),
             encoding="utf-8")
         methods = matrix.load_methods(root)
@@ -72,6 +75,10 @@ def main():
         assert "Live smoke and connection-scoped output handling" in doc
         assert "| `mcpServerStatus/list` | `supported` |" in doc
         assert "manual MCP inventory browsing" in doc
+        assert "| `plugin/list` | `supported` |" in doc
+        assert "marketplace/plugin inventory" in doc
+        assert "| `skills/list` | `supported` |" in doc
+        assert "workspace skill inventory" in doc
 
     print("app-server protocol matrix checks passed")
 

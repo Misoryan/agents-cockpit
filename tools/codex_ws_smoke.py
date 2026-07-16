@@ -193,7 +193,7 @@ def _read_many(sockets, seconds):
     return out
 
 
-def _read_many_with_action(sockets, seconds, action=None, action_delay=0.25):
+def _read_many_with_action(sockets, seconds, action=None, action_delay=None):
     out = {}
     threads = []
     for label, sock in sockets.items():
@@ -201,6 +201,8 @@ def _read_many_with_action(sockets, seconds, action=None, action_delay=0.25):
         t.start()
         threads.append(t)
     if action is not None:
+        if action_delay is None:
+            action_delay = min(1.0, max(0.5, float(seconds) * 0.4))
         time.sleep(max(0.0, float(action_delay)))
         action()
     for thread in threads:

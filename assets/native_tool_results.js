@@ -269,11 +269,69 @@ function nMcpStatusResultHtml(obj, toolName){
   var body=servers.length?servers.map(nMcpServerCard).join(""):'<div class="mcp-empty">No MCP servers returned</div>';
   return '<details class="tres-det mcp-det" open><summary>'+nEsc(sum)+'</summary><div class="mcp-status-card">'+body+nMcpRawDetails(obj)+'</div></details>';
 }
+function nCodexSkillRows(skills){
+  skills=Array.isArray(skills)?skills:[];
+  if(!skills.length) return '<div class="mcp-empty">No skills</div>';
+  var max=28;
+  var rows=skills.slice(0,max).map(function(skill){
+    skill=skill||{};
+    var name=skill.displayName||skill.name||"skill";
+    var desc=skill.shortDescription||skill.description||"";
+    var meta=[skill.name&&skill.displayName?skill.name:"", skill.scope||"", skill.enabled===false?"disabled":"enabled"].filter(Boolean).join(" | ");
+    return '<div class="mcp-row passive"><div class="mcp-row-main"><b>'+nEsc(name)+'</b>'+(meta?'<span>'+nEsc(meta)+'</span>':'')+(desc?'<small>'+nEsc(desc)+'</small>':'')+'</div></div>';
+  }).join("");
+  if(skills.length>max) rows+='<div class="mcp-more">+'+(skills.length-max)+' more skills</div>';
+  return rows;
+}
+function nCodexSkillsResultHtml(obj){
+  var roots=Array.isArray(obj&&obj.roots)?obj.roots:[], total=Number(obj&&obj.total)||0;
+  var summary="Codex Skills | "+total+" total | "+(Number(obj&&obj.enabled)||0)+" enabled";
+  var body=roots.length?roots.map(function(root){
+    root=root||{};
+    return '<div class="mcp-server-card"><div class="mcp-card-head"><div><b>'+nEsc(root.cwd||"Workspace")+'</b><span>'+nEsc((root.skills||[]).length+" shown")+'</span></div></div><div class="mcp-section"><h4>Skills</h4>'+nCodexSkillRows(root.skills)+'</div></div>';
+  }).join(""):'<div class="mcp-empty">No skills returned</div>';
+  return '<details class="tres-det mcp-det" open><summary>'+nEsc(summary)+'</summary><div class="mcp-status-card codex-inventory-card">'+body+nMcpRawDetails(obj)+'</div></details>';
+}
+function nCodexPluginRows(plugins){
+  plugins=Array.isArray(plugins)?plugins:[];
+  if(!plugins.length) return '<div class="mcp-empty">No plugins</div>';
+  var max=24;
+  var rows=plugins.slice(0,max).map(function(plugin){
+    plugin=plugin||{};
+    var flags=[];
+    if(plugin.version) flags.push(plugin.version);
+    if(plugin.installed===true) flags.push("installed");
+    if(plugin.enabled===true) flags.push("enabled");
+    var meta=[plugin.id||"", flags.join(", ")].filter(Boolean).join(" | ");
+    return '<div class="mcp-row passive"><div class="mcp-row-main"><b>'+nEsc(plugin.name||plugin.id||"plugin")+'</b>'+(meta?'<span>'+nEsc(meta)+'</span>':'')+(plugin.description?'<small>'+nEsc(plugin.description)+'</small>':'')+'</div></div>';
+  }).join("");
+  if(plugins.length>max) rows+='<div class="mcp-more">+'+(plugins.length-max)+' more plugins</div>';
+  return rows;
+}
+function nCodexPluginsResultHtml(obj){
+  var markets=Array.isArray(obj&&obj.marketplaces)?obj.marketplaces:[], total=Number(obj&&obj.total)||0;
+  var summary="Codex Plugins | "+(obj&&obj.mode||"installed")+" | "+total+" listed";
+  var body=markets.length?markets.map(function(market){
+    market=market||{};
+    return '<div class="mcp-server-card"><div class="mcp-card-head"><div><b>'+nEsc(market.name||market.id||"Marketplace")+'</b><span>'+nEsc((market.plugins||[]).length+" plugins")+'</span></div></div><div class="mcp-section"><h4>Plugins</h4>'+nCodexPluginRows(market.plugins)+'</div></div>';
+  }).join(""):'<div class="mcp-empty">No plugins returned</div>';
+  var errors=Array.isArray(obj&&obj.marketplaceLoadErrors)?obj.marketplaceLoadErrors:[];
+  if(errors.length) body+='<div class="mcp-section"><h4>Load errors</h4>'+nCodexPluginRows(errors.map(function(err, idx){ return {name:"error "+(idx+1), description:String(err)}; }))+'</div>';
+  return '<details class="tres-det mcp-det" open><summary>'+nEsc(summary)+'</summary><div class="mcp-status-card codex-inventory-card">'+body+nMcpRawDetails(obj)+'</div></details>';
+}
+function nCodexInventoryResultHtml(obj, toolName){
+  var name=String(toolName||"").toLowerCase();
+  if(name==="codex.skills" || (obj && Array.isArray(obj.roots) && obj.total!=null)) return nCodexSkillsResultHtml(obj||{});
+  if(name==="codex.plugins" || (obj && Array.isArray(obj.marketplaces) && obj.mode)) return nCodexPluginsResultHtml(obj||{});
+  return "";
+}
 function nJsonResultHtml(txt, toolName){
   var obj=nTryJson(txt);
   if(obj==null) return "";
   var mcp=nMcpStatusResultHtml(obj, toolName);
   if(mcp) return mcp;
+  var codexInventory=nCodexInventoryResultHtml(obj, toolName);
+  if(codexInventory) return codexInventory;
   var pretty;
   try{ pretty=JSON.stringify(obj,null,2); }catch(e){ pretty=txt; }
   var summary=nJsonResultSummary(obj, toolName);

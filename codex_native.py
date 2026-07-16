@@ -528,43 +528,10 @@ class CodexSession:
     @staticmethod
     def history_action(thread_id, action, name="", objective="", status="", user="", uid="",
                        state_dir=None, codex_home=None):
-        thread_id = str(thread_id or "").strip()
-        action = str(action or "").strip().lower()
-        if not thread_id:
-            return {"ok": False, "error": "missing thread_id"}
-        client = get_app_client(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home)
-        if action == "fork":
-            res = client.request("thread/fork", {"threadId": thread_id}, timeout=30) or {}
-            thread = res.get("thread") or res.get("forkedThread") or res
-            fork_id = (thread or {}).get("id") if isinstance(thread, dict) else ""
-            fork_id = fork_id or ((thread or {}).get("sessionId") if isinstance(thread, dict) else "")
-            return {"ok": True, "action": action, "thread_id": fork_id or codex_text.compact_json(thread or res)}
-        if action == "archive":
-            client.request("thread/archive", {"threadId": thread_id}, timeout=30)
-            return {"ok": True, "action": action, "thread_id": thread_id}
-        if action == "unarchive":
-            client.request("thread/unarchive", {"threadId": thread_id}, timeout=30)
-            return {"ok": True, "action": action, "thread_id": thread_id}
-        if action == "rename":
-            name = str(name or "").strip()
-            if not name:
-                return {"ok": False, "error": "missing thread name"}
-            client.request("thread/name/set", {"threadId": thread_id, "name": name}, timeout=30)
-            return {"ok": True, "action": action, "thread_id": thread_id, "name": name}
-        if action == "goal_get":
-            res = client.request("thread/goal/get", {"threadId": thread_id}, timeout=30) or {}
-            return {"ok": True, "action": action, "thread_id": thread_id, "goal": res.get("goal") or res}
-        if action == "goal_set":
-            objective = str(objective or "").strip()
-            if not objective:
-                return {"ok": False, "error": "missing goal objective"}
-            params = {"threadId": thread_id, "objective": objective, "status": status or "active"}
-            res = client.request("thread/goal/set", params, timeout=30) or {}
-            return {"ok": True, "action": action, "thread_id": thread_id, "goal": res.get("goal") or res}
-        if action == "goal_clear":
-            client.request("thread/goal/clear", {"threadId": thread_id}, timeout=30)
-            return {"ok": True, "action": action, "thread_id": thread_id}
-        return {"ok": False, "error": "unsupported Codex history action: %s" % action}
+        return codex_thread_history.history_action(
+            thread_id, action, name=name, objective=objective, status=status,
+            user=user, uid=uid, state_dir=state_dir, codex_home=codex_home,
+            get_client_fn=get_app_client)
 
     def _tool_event_from_item(self, item):
         return self._request_adapter().tool_event_from_item(item)

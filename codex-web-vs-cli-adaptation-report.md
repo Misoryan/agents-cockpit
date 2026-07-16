@@ -2,7 +2,7 @@
 
 生成日期：2026-07-16；最新校准：2026-07-17
 项目：`E:\tools\codex-web`
-当前代码：`main` / `520a05c Add Codex MCP passthrough smoke`，本次校准前工作树为 clean
+当前代码：`main` (see latest checkpoint at end of this file)
 对照对象：本机 `codex-cli 0.142.4`、`codex app-server --stdio`、本机生成的 app-server JSON Schema
 当前快照：更完整、可执行的当前版差距分析见 `docs/codex-cli-gap-adaptation-plan.md`；本文件保留早期分析和连续 checkpoint。
 
@@ -708,3 +708,10 @@ Immediate next commit candidate:
 - `CodexSession._broadcast()`, `_broadcast_transient()`, `_send_one()`, and `_push()` remain as compatibility wrappers, preserving replay facade, manager WebSocket, and notification caller behavior.
 - Added `tests/check_codex_broadcast_helpers.py` to cover broadcast persistence, dead-client pruning, transient sends, one-shot send failure cleanup, notification throttling, and disabled notification events.
 - Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so validation bundles include `codex_broadcast.py`.
+
+## 49. 2026-07-17 Codex thread history action facade checkpoint
+
+- Moved the Codex history-row lifecycle action implementation from `CodexSession.history_action()` into `codex_thread_history.history_action()`.
+- `CodexSession.history_action()` remains as the compatibility wrapper used by `/api/codex_history_action`, preserving sidebar/history behavior while reducing session-core logic.
+- Extended `tests/check_codex_history_helpers.py` to cover direct fork/archive/unarchive/rename/goal history actions, missing-input errors, unsupported actions, and app-server request mapping.
+- Re-ran targeted history/config checks so the existing launch/slash/lifecycle behavior remains unchanged before wider validation.

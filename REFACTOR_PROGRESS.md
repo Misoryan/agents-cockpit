@@ -10,7 +10,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `manager.py` is now a thin HTTP/WebSocket shell; session lifecycle lives in `manager_sessions.py`, internal gate/control endpoints in `manager_internal_api.py`, and browser APIs in `manager_user_api.py`.
 - `common.py` is now mostly a compatibility facade over focused helpers such as `common_auth.py`, `common_process.py`, `common_history.py`, `common_registry.py`, and `common_http.py`.
 - `native.py` keeps the Claude session class while delegating CLI argv/process/replay/gate helpers to `native_*.py` modules.
-- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, pending request state, replay facade/helpers, broadcast/push coordination, turn/thread lifecycle, notification adapter, session state persistence/recovery, user input/file mention/image helpers, slash/lifecycle/manual MCP helpers, text/form/history, thread-history conversion, and terminal interaction helpers to `codex_*.py` modules.
+- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, pending request state, replay facade/helpers, broadcast/push coordination, turn/thread lifecycle, notification adapter, session state persistence/recovery, user input/file mention/image helpers, slash/lifecycle/manual MCP helpers, text/form/history, thread-history conversion/actions, and terminal interaction helpers to `codex_*.py` modules.
 - `index.html` is now mostly markup. Frontend assets live under `assets/`, split into app shell/sidebar/state/native/replay/socket/action/auth/icon files, with Codex text/thinking, tool helper, tool-use, tool-result, pending-card, terminal-card, sidebar lifecycle-action, and sidebar row renderers in dedicated files.
 
 ## Completed Items
@@ -242,6 +242,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   and external push notification throttling moved from `codex_native.py` into
   `codex_broadcast.py`, leaving `CodexSession` with compatibility wrappers
   while centralizing dead-client pruning and notify throttling behavior.
+- Codex history row actions (`Fork`, `Archive`, `Unarchive`, `Rename`, and
+  `Goal`) now live in `codex_thread_history.py`, leaving
+  `CodexSession.history_action()` as a compatibility wrapper for
+  `/api/codex_history_action`.
 - The Codex launch modal now shows a read-only `config/read` status line with
   high-frequency fields plus model/profile counts, making it clearer which
   Codex defaults the Web session will inherit when launch overrides are blank.
@@ -258,7 +262,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 
 ## Optional Follow-ups
 
-- Reduce `codex_native.py` further only if the remaining session core grows again; thread-history conversion is now in `codex_thread_history.py`.
+- Reduce `codex_native.py` further only if the remaining session core grows again; thread-history conversion and history actions are now in `codex_thread_history.py`.
 - Decide whether `web.py` should be split into auth, proxy, and lifecycle helpers; current size is acceptable but still mixed.
 - Continue structure work with notification adapter cleanup or backend session core seams before adding more markup to `native_events.js`, `native_stage.js`, or `app_sidebar.js`.
 - For release hardening, restart web/manager and manually exercise login, launch, replay, ask/approve, and reconnect flows.

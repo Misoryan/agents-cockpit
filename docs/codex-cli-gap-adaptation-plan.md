@@ -2,7 +2,7 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 Codex broadcast adapter extraction checkpoint）
+当前基线：`main`（截至 2026-07-17 Codex thread history action facade checkpoint）
 Codex CLI：`codex-cli 0.142.4`
 协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=27/not_integrated=60。
 
@@ -18,7 +18,7 @@ Codex CLI：`codex-cli 0.142.4`
 | Codex CLI TUI 高频替代 | 72-78% | 高频会话能力覆盖较好；profile/config layer、插件/skills、账号闭环、非交互命令仍明显缺失。 |
 | 多访问源同步与重连体验 | 82-86% | `seq/event_id`、`after=<lastSeq>`、去重、state snapshot、open-WS catch-up、headless 双页 smoke 已完成；手机/窄屏/长会话手工记录仍缺。 |
 | app-server 协议高价值覆盖 | 65-70% | 会话核心 request/notification 覆盖较好；完整 schema 数量上仍有大量 account/config/plugin/windows sandbox/remote-control 能力未集成。 |
-| 代码可维护性 | 75-77% | manager/common/native/frontend 已多轮拆分；工具卡、结果卡、pending 卡、terminalInteraction 卡、text/thinking、tool helper、sidebar renderers 和 Codex broadcast/push helper 已拆出；`CodexSession`、web 入口和协议路由仍是复杂热点。 |
+| 代码可维护性 | 75-77% | manager/common/native/frontend 已多轮拆分；工具卡、结果卡、pending 卡、terminalInteraction 卡、text/thinking、tool helper、sidebar renderers 和 Codex broadcast/push helper + thread history action facade 已拆出；`CodexSession`、web 入口和协议路由仍是复杂热点。 |
 | 共享/公网暴露硬化 | 65-70% | 多用户、workspace root、Origin/Referer、内部 gate auth、hardened verifier 已有；默认配置仍偏本地兼容，public profile 需要继续收紧和验收。 |
 
 ## 2. 当前 Codex 会话链路
@@ -175,7 +175,7 @@ Browser / Android WebView
 ### P2：结构和维护性热点
 
 11. `codex_native.py` 仍是最大后端热点。
-    当前约 585 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history，但 `CodexSession` 仍保留 push 协调和大量兼容 wrapper。
+    当前约 690 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history，但 `CodexSession` 仍保留 push 协调和大量兼容 wrapper。
 12. replay/timeline 的主链路已收进 facade，但 session 仍保留较多兼容 wrapper。
     下一步应避免新增逻辑回流到 wrapper，可继续把 frontend renderer 或 push/notification 边界拆出，而不是继续扩大 `CodexSession`。
 13. `common.py` 仍是 818 行兼容 facade。
@@ -227,7 +227,7 @@ Browser / Android WebView
 - 抽 `CodexInputAdapter`：cwd-bounded file mention、`fuzzyFileSearch` 结果整形、image upload、`localImage` turn input、用户消息图片 replay block。（第一刀已落地：`codex_input.py` 负责上述输入链路，`CodexSession` 保留兼容 wrapper。）
 - 抽 `CodexSlashAdapter`：slash dispatch、session config tuning、thread lifecycle、goal、steer、manual MCP resource/tool 调用。（第一刀已落地：`codex_slash.py` 负责上述命令链路，`CodexSession` 保留兼容 wrapper。）
 - 收口 `CodexRequestAdapter`：tool event/result、tool output append、approval/ask/form wait、dynamic MCP passthrough/reject、unsupported account/attestation recovery、approve/answer。（第一刀已落地：`codex_requests.py` 负责上述 server request 链路，`CodexSession` 保留兼容 wrapper。）
-- 前端 renderer 继续收口：tool-use、tool-result、tool helpers、pending cards、terminalInteraction cards、text/thinking helpers、sidebar Codex action helpers、sidebar rows 已拆出；后端 broadcast/push helper 已拆出；下一刀优先评估 notification adapter cleanup 或 backend session core seams。
+- 前端 renderer 继续收口：tool-use、tool-result、tool helpers、pending cards、terminalInteraction cards、text/thinking helpers、sidebar Codex action helpers、sidebar rows 已拆出；后端 broadcast/push helper + thread history action facade 已拆出；下一刀优先评估 notification adapter cleanup 或 backend session core seams。
 - 保持兼容 wrapper，避免一次修改所有调用点。
 
 验收：新增一种 notification、server request 或前端 card 时，不需要同时理解持久化、WebSocket replay、事件分发和 UI markup。
@@ -282,7 +282,7 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar renderers、Codex broadcast/push helper 已完成，下一步优先拆 notification adapter cleanup 或 backend session core seams 中最容易回归的部分，保持行为不变。
+1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar renderers、Codex broadcast/push helper + thread history action facade 已完成，下一步优先拆 notification adapter cleanup 或 backend session core seams 中最容易回归的部分，保持行为不变。
 2. 每一刀都跑完整轻量验证：`py_compile`、所有 helper tests、JS `node --check`、`git diff --check`。
 3. 跑行为 smoke：WS 双客户端、browser 双页、terminalInteraction；如时间允许补一次手机 visual checklist。
 4. 再做 Phase 3 的只读 profile/config/account status 面板，避免继续盲补 CLI 控件。

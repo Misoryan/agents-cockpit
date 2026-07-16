@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import codex_history  # noqa: E402
 import codex_native  # noqa: E402
+import codex_thread_history  # noqa: E402
 
 
 def main():
@@ -66,6 +67,80 @@ def main():
             assert wrapped[0]["thread_id"] == "cached-1"
         finally:
             codex_native.STATE_DIR = old_state
+
+    class FakeHistoryClient:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params, timeout=0):
+            self.calls.append((method, params, timeout))
+            if method == "thread/fork":
+                return {"thread": {"id": "fork-thread"}}
+            if method == "thread/goal/get":
+                return {"goal": {"objective": "Keep parity", "status": "active"}}
+            if method == "thread/goal/set":
+                return {"goal": {
+                    "objective": params.get("objective"),
+                    "status": params.get("status"),
+                }}
+            return {}
+
+    fake = FakeHistoryClient()
+
+    def fake_client(**kwargs):
+        assert kwargs == {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"}
+        return fake
+
+    assert codex_thread_history.history_action("", "archive", get_client_fn=fake_client) == {
+        "ok": False, "error": "missing thread_id",
+    }
+    assert codex_thread_history.history_action(
+        "thread-1", "fork", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client) == {
+            "ok": True, "action": "fork", "thread_id": "fork-thread",
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "archive", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client) == {
+            "ok": True, "action": "archive", "thread_id": "thread-1",
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "unarchive", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client) == {
+            "ok": True, "action": "unarchive", "thread_id": "thread-1",
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "rename", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client)["ok"] is False
+    assert codex_thread_history.history_action(
+        "thread-1", "rename", name="Better", user="alice", uid="u1",
+        state_dir="state", codex_home="home", get_client_fn=fake_client) == {
+            "ok": True, "action": "rename", "thread_id": "thread-1", "name": "Better",
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "goal_get", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client)["goal"]["objective"] == "Keep parity"
+    assert codex_thread_history.history_action(
+        "thread-1", "goal_set", objective="Finish", status="paused", user="alice",
+        uid="u1", state_dir="state", codex_home="home", get_client_fn=fake_client) == {
+            "ok": True,
+            "action": "goal_set",
+            "thread_id": "thread-1",
+            "goal": {"objective": "Finish", "status": "paused"},
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "goal_set", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client)["ok"] is False
+    assert codex_thread_history.history_action(
+        "thread-1", "goal_clear", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client) == {
+            "ok": True, "action": "goal_clear", "thread_id": "thread-1",
+        }
+    assert codex_thread_history.history_action(
+        "thread-1", "bad", user="alice", uid="u1", state_dir="state",
+        codex_home="home", get_client_fn=fake_client)["ok"] is False
+    assert ("thread/name/set", {"threadId": "thread-1", "name": "Better"}, 30) in fake.calls
+    assert ("thread/goal/clear", {"threadId": "thread-1"}, 30) in fake.calls
 
     print("codex history helper checks passed")
 

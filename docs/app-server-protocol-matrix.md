@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; degraded=1, not_integrated=54, supported=32
+- Total: 87; degraded=3, not_integrated=52, supported=32
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -107,10 +107,10 @@ plus static Agents Cockpit coverage labels.
 | `account/login/start` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/logout` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/rateLimitResetCredit/consume` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `account/rateLimits/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `account/read` | `supported` | Read-only account status is shown in the Codex launch modal; login/logout are not integrated. |
+| `account/rateLimits/read` | `degraded` | Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated. |
+| `account/read` | `supported` | Read-only account status is shown in the launch modal and /account-status; login/logout are not integrated. |
 | `account/sendAddCreditsNudgeEmail` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `account/usage/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `account/usage/read` | `degraded` | Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated. |
 | `account/workspaceMessages/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `app/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `command/exec` | `degraded` | Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet. |

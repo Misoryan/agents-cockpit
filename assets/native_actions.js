@@ -33,6 +33,7 @@ var nativeSlashCommands=[
   {cmd:"/mcp-tool", fill:"/mcp-tool ", desc:"Call an MCP tool: server tool {json}"},
   {cmd:"/skills", fill:"/skills", desc:"List available Codex skills for this workspace"},
   {cmd:"/plugins", fill:"/plugins", desc:"List installed Codex plugins read-only"},
+  {cmd:"/account-status", fill:"/account-status", desc:"Read Codex account, usage, and rate-limit status"},
   {cmd:"/steer", fill:"/steer ", desc:"Send guidance to the currently running Codex turn"}
 ];
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;

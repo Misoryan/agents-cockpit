@@ -325,6 +325,38 @@ function nCodexInventoryResultHtml(obj, toolName){
   if(name==="codex.plugins" || (obj && Array.isArray(obj.marketplaces) && obj.mode)) return nCodexPluginsResultHtml(obj||{});
   return "";
 }
+function nCodexAccountStatusLine(account){
+  account=account||{};
+  if(account.signed_in){
+    return [account.type||"signed in", account.plan_type||"", account.credential_source||"", account.email||""].filter(Boolean).join(" | ");
+  }
+  if(account.requires_openai_auth) return "login required";
+  return "not signed in";
+}
+function nCodexAccountBlock(label, value){
+  if(!value || (typeof value==="object" && !Object.keys(value).length)) return "";
+  var pretty=typeof value==="string"?value:JSON.stringify(value,null,2);
+  return '<div class="mcp-section"><h4>'+nEsc(label)+'</h4><pre class="json-result">'+nEsc(pretty)+'</pre></div>';
+}
+function nCodexAccountResultHtml(obj, toolName){
+  var name=String(toolName||"").toLowerCase();
+  if(name!=="codex.accountstatus" && !(obj && obj.account && (obj.rateLimits||obj.usage||obj.errors))) return "";
+  obj=obj||{};
+  var account=obj.account||{}, errors=Array.isArray(obj.errors)?obj.errors:[];
+  var summary="Codex Account | "+nCodexAccountStatusLine(account);
+  if(errors.length) summary+=" | "+errors.length+" warnings";
+  var body='<div class="mcp-server-card"><div class="mcp-card-head"><div><b>Account</b><span>'+nEsc(nCodexAccountStatusLine(account))+'</span></div></div>';
+  if(errors.length){
+    body+='<div class="mcp-section"><h4>Warnings</h4>'+errors.map(function(err){
+      err=err||{};
+      return '<div class="mcp-row passive"><div class="mcp-row-main"><b>'+nEsc(err.method||"read")+'</b><small>'+nEsc(err.error||"request failed")+'</small></div></div>';
+    }).join("")+'</div>';
+  }
+  body+=nCodexAccountBlock("Rate limits", obj.rateLimits);
+  body+=nCodexAccountBlock("Usage", obj.usage);
+  body+='</div>';
+  return '<details class="tres-det mcp-det" open><summary>'+nEsc(summary)+'</summary><div class="mcp-status-card codex-account-card">'+body+nMcpRawDetails(obj)+'</div></details>';
+}
 function nJsonResultHtml(txt, toolName){
   var obj=nTryJson(txt);
   if(obj==null) return "";
@@ -332,6 +364,8 @@ function nJsonResultHtml(txt, toolName){
   if(mcp) return mcp;
   var codexInventory=nCodexInventoryResultHtml(obj, toolName);
   if(codexInventory) return codexInventory;
+  var codexAccount=nCodexAccountResultHtml(obj, toolName);
+  if(codexAccount) return codexAccount;
   var pretty;
   try{ pretty=JSON.stringify(obj,null,2); }catch(e){ pretty=txt; }
   var summary=nJsonResultSummary(obj, toolName);

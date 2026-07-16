@@ -119,6 +119,8 @@ SUPPORT = {
         },
         "degraded": {
             "command/exec",
+            "account/rateLimits/read",
+            "account/usage/read",
         },
         "planned_high_value": set(),
     },
@@ -137,7 +139,11 @@ METHOD_NOTES = {
     ("server_requests", "item/tool/call"):
         "Allowlisted MCP passthrough is implemented; unmapped tools fail visibly.",
     ("client_requests", "account/read"):
-        "Read-only account status is shown in the Codex launch modal; login/logout are not integrated.",
+        "Read-only account status is shown in the launch modal and /account-status; login/logout are not integrated.",
+    ("client_requests", "account/rateLimits/read"):
+        "Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated.",
+    ("client_requests", "account/usage/read"):
+        "Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated.",
     ("client_requests", "command/exec"):
         "Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet.",
     ("server_notifications", "command/exec/outputDelta"):

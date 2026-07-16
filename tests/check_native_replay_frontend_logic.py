@@ -33,6 +33,7 @@ const {
   nJsonResultHtml,
   nMcpStatusResultHtml,
   nCodexInventoryResultHtml,
+  nCodexAccountResultHtml,
   nTerminalCardHtml,
   nSpecialToolBody,
   nStructuredToolBody
@@ -174,6 +175,20 @@ const pluginsHtml = nCodexInventoryResultHtml({
 }, "codex.plugins");
 assert.ok(pluginsHtml.includes("Codex Plugins"));
 assert.ok(pluginsHtml.includes("Browser"));
+const accountHtml = nCodexAccountResultHtml({
+  account: {signed_in:true, type:"chatgpt", plan_type:"pro", email:"p***n@example.com"},
+  rateLimits: {primary:{used:1, limit:10}},
+  usage: {inputTokens:100},
+  errors: [{method:"account/usage/read", error:"auth required"}]
+}, "codex.accountStatus");
+assert.ok(accountHtml.includes("Codex Account"));
+assert.ok(accountHtml.includes("codex-account-card"));
+assert.ok(accountHtml.includes("Rate limits"));
+assert.ok(accountHtml.includes("Warnings"));
+assert.ok(nToolResultMarkup("codex-account", JSON.stringify({
+  account: {requires_openai_auth:true},
+  errors: []
+}), "codex.accountStatus").includes("login required"));
 assert.ok(nSpecialToolBody("sleep", {durationMs: 1200, reason: "wait"}).includes("sleep-card"));
 assert.ok(nSpecialToolBody("contextcompaction", {status: "started", summary: "compact"}).includes("compact-card"));
 assert.ok(nSpecialToolBody("imagegeneration", {prompt: "a cat", size: "1024x1024"}).includes("image-card"));

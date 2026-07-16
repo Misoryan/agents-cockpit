@@ -37,6 +37,8 @@ def main():
     assert matrix.classify("client_requests", "thread/unarchive") == "supported"
     assert matrix.classify("client_requests", "thread/goal/set") == "supported"
     assert matrix.classify("client_requests", "account/read") == "supported"
+    assert matrix.classify("client_requests", "account/rateLimits/read") == "degraded"
+    assert matrix.classify("client_requests", "account/usage/read") == "degraded"
     assert matrix.classify("client_requests", "fuzzyFileSearch") == "supported"
     assert matrix.classify("client_requests", "mcpServer/resource/read") == "supported"
     assert matrix.classify("client_requests", "mcpServer/tool/call") == "supported"
@@ -57,7 +59,7 @@ def main():
             json.dumps(_schema("item/tool/call")), encoding="utf-8")
         (root / "ClientRequest.json").write_text(
             json.dumps(_schema(
-                "thread/start", "thread/fork", "account/read", "command/exec",
+                "thread/start", "thread/fork", "account/read", "account/usage/read", "command/exec",
                 "mcpServerStatus/list", "plugin/list", "skills/list"
             )),
             encoding="utf-8")
@@ -70,7 +72,9 @@ def main():
         assert "Allowlisted MCP passthrough is implemented" in doc
         assert "| `thread/fork` | `supported` |" in doc
         assert "| `account/read` | `supported` |" in doc
-        assert "Read-only account status is shown" in doc
+        assert "launch modal and /account-status" in doc
+        assert "| `account/usage/read` | `degraded` |" in doc
+        assert "auth-required errors visibly" in doc
         assert "| `command/exec` | `degraded` |" in doc
         assert "Live smoke and connection-scoped output handling" in doc
         assert "| `mcpServerStatus/list` | `supported` |" in doc

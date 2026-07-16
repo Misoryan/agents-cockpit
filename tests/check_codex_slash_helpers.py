@@ -30,6 +30,12 @@ class FakeClient:
             return {"data": [{"cwd": os.getcwd(), "skills": [{"name": "openai-docs", "enabled": True}]}]}
         if method == "plugin/installed":
             return {"marketplaces": [{"id": "local", "plugins": [{"id": "browser", "name": "Browser"}]}]}
+        if method == "account/read":
+            return {"requiresOpenaiAuth": False, "account": {"type": "chatgpt", "email": "u@example.com"}}
+        if method == "account/rateLimits/read":
+            return {"limit": 10}
+        if method == "account/usage/read":
+            return {"inputTokens": 1}
         return {}
 
 
@@ -145,6 +151,15 @@ def main():
         "plugins": 1,
     }
     assert session.client.calls[-1][0] == "plugin/installed"
+    account = slash.handle_slash_command("/account-status basic")
+    assert account == {
+        "ok": True,
+        "command": "account-status",
+        "mode": "basic",
+        "signed_in": True,
+        "errors": 0,
+    }
+    assert session.client.calls[-1][0] == "account/read"
 
     print("codex slash helper checks passed")
 

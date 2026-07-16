@@ -404,6 +404,9 @@ class CodexSession:
     def list_plugins(self, arg):
         return self._slash.list_plugins(arg)
 
+    def account_status(self, arg):
+        return self._slash.account_status(arg)
+
     def call_mcp_tool(self, arg):
         return self._slash.call_mcp_tool(arg)
 

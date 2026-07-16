@@ -351,7 +351,7 @@ Current verified baseline:
 - Branch/worktree: `main...origin/main`, clean before this documentation update.
 - Latest pushed checkpoint: `d6e7f68 Exercise live broadcast in Codex WS smoke`.
 - Local CLI baseline: `codex-cli 0.142.4`.
-- Protocol matrix baseline: app-server schema currently records 68 server notifications, 10 server requests, and 87 client requests. The web adapter labels 30 notifications as supported, 9 as degraded, 29 as generic visible, 5 server requests as supported, 3 as degraded, 2 as generic visible, and 32 client requests as supported.
+- Protocol matrix baseline: app-server schema currently records 68 server notifications, 10 server requests, and 87 client requests. The web adapter labels 30 notifications as supported, 9 as degraded, 29 as generic visible, 5 server requests as supported, 3 as degraded, 2 as generic visible, 32 client requests as supported, and 3 client requests as degraded.
 
 ### 14.1 Current product position
 
@@ -366,16 +366,16 @@ The project is now a credible remote Codex session host, not just a web terminal
 - Manual MCP resource/tool slash calls, dynamic tool allowlist passthrough, and web stdin cards for terminal interaction.
 - Multi-user state/home/workspace isolation with documented hardened deployment guidance.
 
-It is still not a full Codex CLI replacement. The remaining gap is less about basic chat and more about tail behavior: stale-open WebSocket reconciliation, real-world browser/mobile visual QA, richer Codex-native tool cards, deep MCP/terminal validation, Web-native account recovery, plugin/skills write/install/read-detail coverage, and security hardening for tunneled/shared exposure.
+It is still not a full Codex CLI replacement. The remaining gap is less about basic chat and more about tail behavior: stale-open WebSocket reconciliation, real-world browser/mobile visual QA, richer Codex-native tool cards, deep MCP/terminal validation, Web-native account recovery, account usage/rate-limit auth closure, plugin/skills write/install/read-detail coverage, and security hardening for tunneled/shared exposure.
 
 Updated rough progress estimate:
 
 | Area | Current estimate | Notes |
 | --- | ---: | --- |
 | Remote usable Codex agent session | 85% | Core chat, approvals, Plan, history, replay, image input, and multi-client protocol smoke are usable. |
-| Full Codex CLI TUI replacement | 66-71% | High-frequency session operations are covered; plugin/skills inventory is read-only; account/doctor/cloud/exec/review/apply-style workflows remain mostly outside the web UI. |
+| Full Codex CLI TUI replacement | 66-71% | High-frequency session operations are covered; plugin/skills inventory and account status are read-only; account login/refresh, doctor/cloud/exec/review/apply-style workflows remain mostly outside the web UI. |
 | Multi-access and sync | 75% | Incremental reconnect and two-client smoke are strong; open-but-stale WS catch-up and real browser/mobile visual tests are still needed. |
-| app-server protocol coverage | 62% | 32/87 client requests are supported; plugin/skills inventory is read-only, while many long-tail account/config/fs/plugin-write/skills-write/windows sandbox methods remain intentionally not integrated. |
+| app-server protocol coverage | 62% | 32/87 client requests are supported and 3/87 are degraded; plugin/skills inventory and account usage/rate reads are read-only/degraded, while many long-tail account/config/fs/plugin-write/skills-write/windows sandbox methods remain intentionally not integrated. |
 | Frontend maintainability | 65% | JS/CSS are split, but `index.html` still holds large native-stage style blocks and the JS state model remains global. |
 | Backend maintainability | 70% | Manager/common/native modules are split; `CodexSession`, `common.py`, and some app-server routing fallbacks remain complexity hotspots. |
 | Security/release hardening | 55% | Auth/multi-user/hardened docs exist; CSRF/Origin checks and stricter default deployment profiles still need implementation. |
@@ -404,7 +404,7 @@ Updated rough progress estimate:
 
 5. Account and non-session CLI capabilities:
    - Covered: account refresh and attestation now fail visibly with safe CLI recovery steps.
-   - Remaining gap: Web-native account login/logout/token refresh, usage/rate-limit details, `doctor`, plugin/skills write/install/read-detail, `cloud`, `review`, `apply`, and noninteractive `exec` are mostly not integrated.
+   - Remaining gap: Web-native account login/logout/token refresh, full usage/rate-limit closure, `doctor`, plugin/skills write/install/read-detail, `cloud`, `review`, `apply`, and noninteractive `exec` are mostly not integrated.
    - Required adaptation: treat these as lower priority than session stability unless the user workflow depends on them; start with read-only account/status/plugin/skills views before write/install actions.
 
 6. Security and deployment:
@@ -811,3 +811,11 @@ Immediate next commit candidate:
 - The payload intentionally strips local skill/plugin paths and icon paths before replay, keeping the browser card focused on name, scope, enabled/installed state, version, and descriptions.
 - Added dedicated `codex.skills` and `codex.plugins` result-card rendering in `assets/native_tool_results.js`, so plugin/skills inventory is replayable across clients without falling back to raw JSON.
 - Updated the protocol matrix to mark `skills/list`, `plugin/installed`, and `plugin/list` as supported read-only client requests; write/install/read-detail plugin and skills flows remain documented gaps.
+
+
+## 60. 2026-07-17 Codex account-status read-only checkpoint
+
+- Added `codex_account.py` and `/account-status [basic|full]`, backed by read-only app-server `account/read`, `account/rateLimits/read`, and `account/usage/read`.
+- The helper masks account email, strips token/secret/credential-like fields from replay payloads, and turns auth-required usage/rate-limit failures into visible warnings instead of fake success.
+- Added a dedicated `codex.accountStatus` result card so account, usage, and rate-limit status replay across clients as a structured card rather than raw JSON.
+- Updated the protocol matrix to keep `account/read` supported and mark `account/rateLimits/read` plus `account/usage/read` as degraded read-only paths; Web-native login/logout/token refresh remains a gap.

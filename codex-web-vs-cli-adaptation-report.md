@@ -585,3 +585,9 @@ Immediate next commit candidate:
 - Moved the next replay/broadcast seam into `CodexReplayFacade`: broadcast preparation now decorates timeline events and records trimmed `poll_events` in one place.
 - Persistence throttling also moved behind the facade. `CodexSession._persist_if_due()` remains as a compatibility wrapper, but important-event detection and the 1.5s non-important-event throttle now live with replay/broadcast coordination.
 - Extended `tests/check_codex_replay_facade_helpers.py` to cover poll-event exclusion for snapshots/usage-style events, incremental replay after polled broadcasts, important-event persistence, and throttled non-important persistence.
+
+## 31. 2026-07-17 replay facade client attach checkpoint
+
+- Moved `CodexSession.add_client()` internals behind `CodexReplayFacade.add_client()` while keeping the public `CodexSession.add_client(sock, after_seq=0)` entrypoint unchanged for manager/WebSocket callers.
+- The facade now owns the client attach replay sequence: optional `replay_batch`, `state_snapshot`, pending approval/ask/form events, client registration, keepalive ping loop, WebSocket recv loop, client discard, and socket close cleanup.
+- Extended `tests/check_codex_replay_facade_helpers.py` with a fake socket/thread path so initial replay ordering, pending-card replay on attach, close/discard cleanup, and keepalive thread startup are covered without opening a real socket.

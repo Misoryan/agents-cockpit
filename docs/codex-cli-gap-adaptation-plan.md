@@ -211,7 +211,7 @@ Browser / Android WebView
 
 1. 新增 `codex_replay_facade.py`，先只封装 timeline/event identity/merge/events_after/replay_payload/pending snapshot 的调用，`CodexSession` 保留原 public wrapper。（第一刀已落地：event identity、timeline recording/merge、history replay adoption、events_after、replay_payload 已走 facade。）
 2. 第二刀把 `poll_events`、`_decorate_for_broadcast()`、`_persist_if_due()` 的协作收进 facade，避免一口气移动 WS loop。（第二刀已落地：broadcast preparation、poll-event trimming、important-event persistence 和节流持久化已走 facade。）
-3. 第三刀再评估是否移动 `add_client()` 初始 replay + state snapshot + pending events + keepalive；如果移动，需要先补 socket/replay facade 测试。
+3. 第三刀再评估是否移动 `add_client()` 初始 replay + state snapshot + pending events + keepalive。（第三刀已落地：`add_client()` 委托 facade，facade helper 测试覆盖初始 replay、pending card、client discard 和 close。）
 
 验收：`seq/event_id`、`after=<lastSeq>`、pending snapshot、state snapshot、poll events、持久化节流、双客户端 smoke 全部不变。
 

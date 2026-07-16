@@ -1325,40 +1325,13 @@ class CodexSession:
         return self._replay.replay_payload(after_seq)
 
     def add_client(self, sock, after_seq=0):
-        snapshot = self._events_after_seq(after_seq)
-        if snapshot:
-            self._send_one(sock, {"type": "replay_batch", "events": snapshot})
-        self._send_one(sock, self._state_snapshot())
-        for ev in self._pending_events_snapshot():
-            self._send_one(sock, ev)
-        with self.clients_lock:
-            self.clients.add(sock)
-
-        def keepalive():
-            while not self._closed:
-                time.sleep(15)
-                if self._closed:
-                    break
-                try:
-                    ws_send(sock, b"", 0x9)
-                except OSError:
-                    break
-
-        threading.Thread(target=keepalive, daemon=True).start()
-        try:
-            while not self._closed:
-                op, _payload = ws_recv(sock)
-                if op is None or op == 0x8:
-                    break
-        except OSError:
-            pass
-        finally:
-            with self.clients_lock:
-                self.clients.discard(sock)
-            try:
-                sock.close()
-            except OSError:
-                pass
+        return self._replay.add_client(
+            sock,
+            after_seq=after_seq,
+            send_one=self._send_one,
+            ws_send_fn=ws_send,
+            ws_recv_fn=ws_recv,
+        )
 
     def _state_snapshot(self):
         return codex_pending.state_snapshot(self)

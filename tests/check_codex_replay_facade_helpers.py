@@ -7,6 +7,7 @@ if "--help" not in sys.argv:
     sys.argv.append("--help")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import codex_replay  # noqa: E402
 from codex_replay_facade import CodexReplayFacade  # noqa: E402
 
 
@@ -16,6 +17,9 @@ class FakeSession:
         self._lock = threading.Lock()
         self._pending_lock = threading.Lock()
         self._pending = {}
+        self.clients_lock = threading.Lock()
+        self.clients = set()
+        self._closed = False
         self._next_seq = 1
         self.timeline = []
         self.events = []
@@ -39,10 +43,30 @@ class FakeSession:
         return {"type": "state_snapshot", "state": self.state(), "last_seq": self._next_seq - 1}
 
     def _pending_events_snapshot(self):
-        return []
+        with self._pending_lock:
+            return codex_replay.pending_events_snapshot(list(self._pending.items()))
 
     def _persist(self):
         self.persisted.append(self._last_persist)
+
+
+class FakeSock:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class FakeThread:
+    started = []
+
+    def __init__(self, target=None, daemon=False):
+        self.target = target
+        self.daemon = daemon
+
+    def start(self):
+        self.started.append(self.daemon)
 
 
 def main():
@@ -71,6 +95,12 @@ def main():
     assert payload["ok"] is True
     assert [event["seq"] for event in payload["events"]] == [2]
     assert payload["snapshot"]["type"] == "state_snapshot"
+    session._pending = {
+        "approve": {"kind": "approve", "name": "Run", "params": {"cmd": "x"}}
+    }
+    initial = session.facade.initial_client_events(after_seq=1)
+    assert [event["type"] for event in initial] == ["replay_batch", "state_snapshot", "pending_approval"]
+    assert [event["seq"] for event in initial[0]["events"]] == [2]
 
     assert session.facade.persist_if_due({"type": "mode_state"}, now_fn=lambda: 1.0) is False
     assert session.persisted == []
@@ -87,6 +117,27 @@ def main():
         {"type": "result", "error": "Codex app-server exited. restart"},
         {"type": "result", "error": "real failure"},
     ]) == [{"type": "result", "error": "real failure"}]
+
+    client_session = FakeSession()
+    client_session.facade.prepare_broadcast({"type": "assistant"})
+    client_session._pending = {
+        "approve": {"kind": "approve", "name": "Run", "params": {"cmd": "x"}}
+    }
+    sock = FakeSock()
+    sent = []
+    FakeThread.started = []
+    client_session.facade.add_client(
+        sock,
+        after_seq=0,
+        send_one=lambda _sock, event: sent.append(event),
+        ws_send_fn=lambda *_args: None,
+        ws_recv_fn=lambda _sock: (0x8, b""),
+        thread_factory=FakeThread,
+    )
+    assert [event["type"] for event in sent] == ["replay_batch", "state_snapshot", "pending_approval"]
+    assert sock not in client_session.clients
+    assert sock.closed is True
+    assert FakeThread.started == [True]
 
     print("codex replay facade helper checks passed")
 

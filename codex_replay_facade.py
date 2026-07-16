@@ -4,6 +4,7 @@
 This keeps CodexSession's public compatibility methods intact while moving the
 replay-specific seams behind one small object.
 """
+import threading
 import time
 
 import codex_replay
@@ -85,6 +86,57 @@ class CodexReplayFacade:
             self.session._persist()
             return True
         return False
+
+    def initial_client_events(self, after_seq=0):
+        events = []
+        snapshot = self.events_after_seq(after_seq)
+        if snapshot:
+            events.append({"type": "replay_batch", "events": snapshot})
+        events.append(self.session._state_snapshot())
+        events.extend(self.session._pending_events_snapshot())
+        return events
+
+    def send_initial_replay(self, sock, send_one, after_seq=0):
+        for event in self.initial_client_events(after_seq):
+            send_one(sock, event)
+
+    def add_client(self, sock, after_seq=0, send_one=None, ws_send_fn=None,
+                   ws_recv_fn=None, sleep_fn=None, thread_factory=None):
+        send_one = send_one or self.session._send_one
+        sleep_fn = sleep_fn or time.sleep
+        thread_factory = thread_factory or threading.Thread
+        if ws_send_fn is None or ws_recv_fn is None:
+            raise ValueError("ws_send_fn and ws_recv_fn are required")
+
+        self.send_initial_replay(sock, send_one, after_seq=after_seq)
+        with self.session.clients_lock:
+            self.session.clients.add(sock)
+
+        def keepalive():
+            while not self.session._closed:
+                sleep_fn(15)
+                if self.session._closed:
+                    break
+                try:
+                    ws_send_fn(sock, b"", 0x9)
+                except OSError:
+                    break
+
+        thread_factory(target=keepalive, daemon=True).start()
+        try:
+            while not self.session._closed:
+                op, _payload = ws_recv_fn(sock)
+                if op is None or op == 0x8:
+                    break
+        except OSError:
+            pass
+        finally:
+            with self.session.clients_lock:
+                self.session.clients.discard(sock)
+            try:
+                sock.close()
+            except OSError:
+                pass
 
     def events_after_seq(self, after_seq=0):
         return codex_replay.events_after_seq(self.session, after_seq)

@@ -53,8 +53,13 @@ def main():
         "message"]["content"][0]["name"] == "unknown"
 
     result = codex_events.tool_result_from_item(
-        {"type": "commandExecution", "id": "cmd-1", "aggregatedOutput": "out", "exitCode": 2})
-    assert result["message"]["content"][0]["content"] == "out\nexit code: 2"
+        {"type": "commandExecution", "id": "cmd-1", "aggregatedOutput": "out", "exitCode": 2,
+         "durationMs": 1234})
+    result_block = result["message"]["content"][0]
+    assert result_block["content"] == "out\nexit code: 2\nduration ms: 1234"
+    assert result_block["exit_code"] == 2
+    assert result_block["duration_ms"] == 1234
+    assert result_block["aggregated_output"] == "out"
     assert codex_events.tool_result_from_item({"type": "fileChange", "id": "f1",
                                               "changes": [{"kind": "modify", "path": "a.py", "diff": "@@"}],
                                               "status": "done"})[

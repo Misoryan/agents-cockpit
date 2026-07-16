@@ -722,3 +722,10 @@ Immediate next commit candidate:
 - Updated `assets/app_launch.js` so the Codex launch status line combines inherited `config/read` defaults, model/profile counts, and masked account/plan/auth status instead of only showing config fields.
 - Marked `account/read` as supported in `docs/app-server-protocol-matrix.md` with a read-only note; login/logout/token refresh remain intentionally outside this slice.
 - Added config/frontend/protocol tests covering account status shaping, UI helper entrypoints, and matrix classification.
+
+## 51. 2026-07-17 Codex command result card checkpoint
+
+- Added command-result metadata to Codex `commandExecution` tool results: `exit_code`, `duration_ms`, and aggregated output now travel with replayed tool-result blocks.
+- Enhanced `assets/native_tool_results.js` so Bash/PowerShell results show CLI-like summaries with exit status, duration, output line count, section labels, future stdout/stderr split support, and large-output auto-collapse.
+- Updated the native event dispatcher to pass the whole tool-result block to the result renderer without changing the replay event shape for other tools.
+- Added frontend and conversion tests for command duration parsing, split stdout/stderr rendering, metadata preservation, and updated static script contracts.

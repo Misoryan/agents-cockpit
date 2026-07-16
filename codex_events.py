@@ -52,6 +52,8 @@ def tool_result_from_item(item):
             pieces.append(out)
         if item.get("exitCode") is not None:
             pieces.append("exit code: %s" % item.get("exitCode"))
+        if item.get("durationMs") is not None:
+            pieces.append("duration ms: %s" % item.get("durationMs"))
         text = "\n".join(pieces).strip()
     elif typ == "fileChange":
         text = codex_text.changes_to_diff(item.get("changes") or [])
@@ -65,6 +67,12 @@ def tool_result_from_item(item):
         text = codex_text.json_text(item)
     else:
         return None
-    return {"type": "user", "message": {"content": [
-        {"type": "tool_result", "tool_use_id": item_id, "content": text}
-    ]}}
+    block = {"type": "tool_result", "tool_use_id": item_id, "content": text}
+    if typ == "commandExecution":
+        if item.get("exitCode") is not None:
+            block["exit_code"] = item.get("exitCode")
+        if item.get("durationMs") is not None:
+            block["duration_ms"] = item.get("durationMs")
+        if item.get("aggregatedOutput"):
+            block["aggregated_output"] = item.get("aggregatedOutput")
+    return {"type": "user", "message": {"content": [block]}}

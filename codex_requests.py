@@ -41,9 +41,18 @@ class CodexRequestAdapter:
         return codex_events.tool_event_from_item(item, cwd=self.session.cwd)
 
     def tool_result_from_item(self, item):
-        return codex_events.tool_result_from_item(item)
+        event = codex_events.tool_result_from_item(item)
+        if event and item.get("type") == "commandExecution":
+            streams = getattr(self.session, "_item_stream_output", {}).get(item.get("id") or "") or {}
+            if streams:
+                block = event["message"]["content"][0]
+                if streams.get("stdout"):
+                    block["stdout"] = streams.get("stdout")
+                if streams.get("stderr"):
+                    block["stderr"] = streams.get("stderr")
+        return event
 
-    def append_tool_output(self, item_id, delta, replace=False):
+    def append_tool_output(self, item_id, delta, replace=False, stream=None):
         if not item_id:
             return
         session = self.session
@@ -52,13 +61,28 @@ class CodexRequestAdapter:
         else:
             text = session._item_output.get(item_id, "") + (delta or "")
         session._item_output[item_id] = text
+        stream = str(stream or "").lower()
+        streams = None
+        if stream in ("stdout", "stderr"):
+            stream_state = getattr(session, "_item_stream_output", None)
+            if stream_state is None:
+                session._item_stream_output = {}
+                stream_state = session._item_stream_output
+            streams = stream_state.setdefault(item_id, {"stdout": "", "stderr": ""})
+            streams[stream] = (delta or "") if replace else (streams.get(stream, "") + (delta or ""))
+        block = {
+            "type": "tool_result",
+            "tool_use_id": item_id,
+            "content": text,
+        }
+        if streams:
+            if streams.get("stdout"):
+                block["stdout"] = streams.get("stdout")
+            if streams.get("stderr"):
+                block["stderr"] = streams.get("stderr")
         session._broadcast({
             "type": "user",
-            "message": {"content": [{
-                "type": "tool_result",
-                "tool_use_id": item_id,
-                "content": text,
-            }]},
+            "message": {"content": [block]},
         })
 
     def handle_server_request(self, req_id, method, params):

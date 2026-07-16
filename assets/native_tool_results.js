@@ -4,22 +4,52 @@ function nToolResultHtml(txt){
   var _resSum='Result ('+_lines+' lines)';
   return '<details class="tres-det"><summary>'+nEsc(_resSum)+'</summary><pre>'+nEsc(txt)+'</pre></details>';
 }
-function nCommandResultHtml(txt, toolName){
+function nCommandResultParts(txt, meta){
+  var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
+  var exitCode=(meta && (meta.exit_code!=null ? meta.exit_code : meta.exitCode));
+  var durationMs=(meta && (meta.duration_ms!=null ? meta.duration_ms : meta.durationMs));
+  var bodyLines=lines.slice();
+  while(bodyLines.length){
+    var last=String(bodyLines[bodyLines.length-1]||"").trim(), m;
+    m=/^duration ms:\s*(\d+)$/i.exec(last);
+    if(m){ if(durationMs==null || durationMs==="") durationMs=Number(m[1]); bodyLines.pop(); continue; }
+    m=/^exit code:\s*(-?\d+)$/i.exec(last);
+    if(m){ if(exitCode==null || exitCode==="") exitCode=m[1]; bodyLines.pop(); continue; }
+    break;
+  }
+  return {
+    exitCode: exitCode,
+    durationMs: durationMs,
+    output: bodyLines.join(String.fromCharCode(10)).trim(),
+    stdout: meta && meta.stdout,
+    stderr: meta && meta.stderr
+  };
+}
+function nCommandLineCount(txt){
+  txt=String(txt==null?"":txt).trim();
+  return txt ? txt.split(String.fromCharCode(10)).length : 0;
+}
+function nCommandSectionHtml(label, txt, cls){
+  txt=String(txt==null?"":txt);
+  if(!txt.trim()) return "";
+  return '<div class="cmd-section '+cls+'"><div class="cmd-section-label">'+nEsc(label)+'</div><pre>'+nEsc(txt.trim())+'</pre></div>';
+}
+function nCommandResultHtml(txt, toolName, meta){
   var name=String(toolName||"").toLowerCase();
   if(name!=="bash" && name!=="powershell") return "";
-  var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
-  var exitCode="", bodyLines=lines.slice();
-  if(bodyLines.length){
-    var last=String(bodyLines[bodyLines.length-1]||"").trim();
-    var m=/^exit code:\s*(-?\d+)$/i.exec(last);
-    if(m){ exitCode=m[1]; bodyLines.pop(); }
-  }
-  var body=bodyLines.join(String.fromCharCode(10)).trim();
-  var bodyCount=body ? body.split(String.fromCharCode(10)).length : 0;
+  var parts=nCommandResultParts(txt, meta||{}), stdout=parts.stdout, stderr=parts.stderr;
+  var hasSplit=(stdout!=null && String(stdout).trim()) || (stderr!=null && String(stderr).trim());
+  var output=hasSplit?"":parts.output;
+  var bodyCount=hasSplit ? (nCommandLineCount(stdout)+nCommandLineCount(stderr)) : nCommandLineCount(output);
   var summary="Command";
-  if(exitCode!=="") summary+=" · exit "+exitCode;
+  if(parts.exitCode!=null && parts.exitCode!=="") summary+=" · exit "+parts.exitCode;
+  if(parts.durationMs!=null && parts.durationMs!=="" && typeof nFmtDur==="function") summary+=" · "+nFmtDur(parts.durationMs);
   summary+=" · "+bodyCount+" output line"+(bodyCount===1?"":"s");
-  return '<details class="tres-det cmd-det" open><summary>'+nEsc(summary)+'</summary><pre>'+nEsc(body || "(no output)")+'</pre></details>';
+  var body=hasSplit
+    ? (nCommandSectionHtml("stdout", stdout, "cmd-stdout")+nCommandSectionHtml("stderr", stderr, "cmd-stderr"))
+    : nCommandSectionHtml("output", output || "(no output)", "cmd-output");
+  var openAttr=(bodyCount>80 && String(parts.exitCode||"0")==="0")?"":" open";
+  return '<details class="tres-det cmd-det"'+openAttr+'><summary>'+nEsc(summary)+'</summary>'+body+'</details>';
 }
 function nDiffStats(txt){
   var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
@@ -100,10 +130,10 @@ function nJsonResultHtml(txt, toolName){
   var summary=nJsonResultSummary(obj, toolName);
   return '<details class="tres-det json-det" open><summary>'+nEsc(summary)+'</summary>'+nJsonResultPreview(obj)+'<pre class="json-result">'+nEsc(pretty)+'</pre></details>';
 }
-function nToolResultMarkup(toolId, txt, toolName){
+function nToolResultMarkup(toolId, txt, toolName, meta){
   if(toolId==="turn-diff" || nLooksLikeDiff(txt)) return nDiffResultHtml(txt);
   var json=nJsonResultHtml(txt, toolName);
-  return json || nCommandResultHtml(txt, toolName) || nToolResultHtml(txt);
+  return json || nCommandResultHtml(txt, toolName, meta) || nToolResultHtml(txt);
 }
 function nFindToolResultHost(st, tuid){
   var root=st.turnCard||st.root, nodes=root.querySelectorAll('.tool-entry,.nmsg.tool');
@@ -116,10 +146,10 @@ function nFindStandaloneResultHost(st, tuid){
   for(var i=nodes.length-1;i>=0;i--){ if(nodes[i].dataset && nodes[i].dataset.tuid===String(tuid)) return nodes[i]; }
   return null;
 }
-function nRenderToolResult(st, tuid, txt){
+function nRenderToolResult(st, tuid, txt, meta){
   var tu=nFindToolResultHost(st, tuid);
   var toolName=tu&&tu.dataset?tu.dataset.tname:"";
-  var html=nToolResultMarkup(tuid, txt, toolName);
+  var html=nToolResultMarkup(tuid, txt, toolName, meta);
   if(tu){
     var r=tu.querySelector('.tres'); if(r){ r.innerHTML=html; }
     return;

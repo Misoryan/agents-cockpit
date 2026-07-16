@@ -130,7 +130,8 @@ def handle_notification(session, method, params):
     elif method == "item/completed":
         on_item_completed(session, params.get("item") or {})
     elif method == "item/commandExecution/outputDelta":
-        session._append_tool_output(params.get("itemId"), params.get("delta") or "")
+        session._append_tool_output(
+            params.get("itemId"), params.get("delta") or "", stream=params.get("stream"))
     elif method == "item/fileChange/patchUpdated":
         item_id = params.get("itemId")
         changes = params.get("changes") or []

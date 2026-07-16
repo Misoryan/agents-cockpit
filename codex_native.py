@@ -208,6 +208,7 @@ class CodexSession:
         self._last_notify = {}
         self._thread_ready = False
         self._item_output = {}
+        self._item_stream_output = {}
         self._item_changes = {}
         self._plan_output = {}
         self._terminal_processes = {}
@@ -539,8 +540,8 @@ class CodexSession:
     def _tool_result_from_item(self, item):
         return self._request_adapter().tool_result_from_item(item)
 
-    def _append_tool_output(self, item_id, delta, replace=False):
-        return self._request_adapter().append_tool_output(item_id, delta, replace=replace)
+    def _append_tool_output(self, item_id, delta, replace=False, stream=None):
+        return self._request_adapter().append_tool_output(item_id, delta, replace=replace, stream=stream)
 
     def handle_server_request(self, req_id, method, params):
         return self._request_adapter().handle_server_request(req_id, method, params)

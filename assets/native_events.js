@@ -111,7 +111,7 @@ function nHandle(sid, obj){
         humanImages.push(b);
       } else if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
-        nRenderToolResult(st, b.tool_use_id, txt);
+        nRenderToolResult(st, b.tool_use_id, txt, b);
       }
     });
     if(humanParts.length || humanImages.length){ nAddHumanContent(st,humanParts.join("\n"), humanImages, sid); }

@@ -30,6 +30,7 @@ class FakeSession:
         self.ask_calls = []
         self.form_calls = []
         self._item_output = {}
+        self._item_stream_output = {}
         self.dynamic_mappings = {}
         self.mcp_calls = []
         self.mcp_result = {"content": [{"type": "text", "text": "mcp ok"}], "isError": False}
@@ -231,6 +232,20 @@ def main():
     adapter.append_tool_output("item-1", " world")
     assert session._item_output["item-1"] == "hello world"
     assert session.broadcasts[-1]["message"]["content"][0]["content"] == "hello world"
+    adapter.append_tool_output("item-2", "ok\n", stream="stdout")
+    adapter.append_tool_output("item-2", "warn\n", stream="stderr")
+    assert session._item_stream_output["item-2"] == {"stdout": "ok\n", "stderr": "warn\n"}
+    streamed_block = session.broadcasts[-1]["message"]["content"][0]
+    assert streamed_block["stdout"] == "ok\n"
+    assert streamed_block["stderr"] == "warn\n"
+    completed = adapter.tool_result_from_item({
+        "id": "item-2",
+        "type": "commandExecution",
+        "aggregatedOutput": "ok\nwarn\n",
+        "exitCode": 1,
+    })["message"]["content"][0]
+    assert completed["stdout"] == "ok\n"
+    assert completed["stderr"] == "warn\n"
     assert adapter.handle_server_request("req-6", "currentTime/read", {})["utcTimestampMs"] > 0
     assert adapter.handle_dynamic_tool_call(
         "req-7", "item/tool/call",

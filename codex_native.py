@@ -6,20 +6,18 @@ stream-json events, while speaking Codex app-server JSONL/JSON-RPC on the
 backend.
 """
 import atexit
-import base64
 import json
 import os
-import re
 import shlex
 import threading
 import time
-import uuid
 
 from codex_client import AppServerRequestError, CodexAppServerClient
 import codex_config
 import codex_events
 import codex_forms
 import codex_history
+import codex_input
 import codex_notifications
 import codex_pending
 import codex_replay_facade
@@ -39,17 +37,6 @@ _CLIENTS = {}
 
 _REPLAY_MAX_EVENTS = 400
 _REPLAY_STREAM_MAX_CHARS = 24000
-_MENTION_RE = re.compile(r'(?<!\S)@(?:"([^"]+)"|([^\s@"]+))')
-_IMAGE_MIME_EXT = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-}
-_IMAGE_DETAIL = {"auto", "low", "high", "original"}
-_MAX_IMAGES_PER_TURN = 8
-_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def _push_notify_worker(title, body, event, webhook_body=None):
@@ -241,6 +228,7 @@ class CodexSession:
         self._state = codex_state.CodexSessionState(self, _REPLAY_MAX_EVENTS)
         self._notifications = codex_notifications.CodexNotificationAdapter(self)
         self._turn = codex_turn.CodexTurnRunner(self)
+        self._input = codex_input.CodexInputAdapter(self)
         self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
@@ -749,184 +737,31 @@ class CodexSession:
         return {"ok": True, "command": "mcp-tool", "server": server, "tool": tool}
 
     def _path_within_cwd(self, path):
-        try:
-            cwd = os.path.normcase(os.path.abspath(self.cwd))
-            candidate = os.path.normcase(os.path.abspath(path))
-            return os.path.commonpath([cwd, candidate]) == cwd
-        except Exception:
-            return False
+        return self._input.path_within_cwd(path)
 
     def _resolve_mention_path(self, raw_path):
-        raw_path = str(raw_path or "").strip().strip("\"'")
-        if not raw_path:
-            return ""
-        candidate = raw_path if os.path.isabs(raw_path) else os.path.join(self.cwd, raw_path)
-        candidate = os.path.abspath(candidate)
-        if not self._path_within_cwd(candidate):
-            return ""
-        if self.user and not common.path_allowed_for_user(self.user, candidate):
-            return ""
-        if not os.path.exists(candidate):
-            return ""
-        return candidate
+        return self._input.resolve_mention_path(raw_path)
 
     def _image_upload_dir(self):
-        return os.path.join(self.state_dir, "codex_uploads", self.sid)
+        return self._input.image_upload_dir()
 
     def image_file(self, image_id):
-        image_id = os.path.basename(str(image_id or ""))
-        if not image_id:
-            return ""
-        root = os.path.abspath(self._image_upload_dir())
-        path = os.path.abspath(os.path.join(root, image_id))
-        try:
-            if os.path.commonpath([root, path]) != root:
-                return ""
-        except Exception:
-            return ""
-        return path if os.path.isfile(path) else ""
+        return self._input.image_file(image_id)
 
     def prepare_image_inputs(self, images):
-        if not images:
-            return []
-        if not isinstance(images, list):
-            raise ValueError("images must be an array")
-        if len(images) > _MAX_IMAGES_PER_TURN:
-            raise ValueError("too many images; max %d" % _MAX_IMAGES_PER_TURN)
-        root = self._image_upload_dir()
-        os.makedirs(root, exist_ok=True)
-        out = []
-        for idx, image in enumerate(images):
-            if not isinstance(image, dict):
-                raise ValueError("image %d is invalid" % (idx + 1))
-            data_url = str(image.get("data_url") or image.get("dataUrl") or "")
-            raw_b64 = str(image.get("data") or "")
-            mime = str(image.get("mime") or image.get("type") or "").split(";", 1)[0].lower().strip()
-            if data_url.startswith("data:"):
-                header, sep, payload = data_url.partition(",")
-                if not sep or ";base64" not in header:
-                    raise ValueError("image %d must be base64 data URL" % (idx + 1))
-                mime = header[5:].split(";", 1)[0].lower().strip()
-                raw_b64 = payload
-            if mime not in _IMAGE_MIME_EXT:
-                raise ValueError("unsupported image type: %s" % (mime or "unknown"))
-            try:
-                raw = base64.b64decode(raw_b64, validate=True)
-            except Exception:
-                raise ValueError("image %d has invalid base64 data" % (idx + 1))
-            if not raw:
-                raise ValueError("image %d is empty" % (idx + 1))
-            if len(raw) > _MAX_IMAGE_BYTES:
-                raise ValueError("image %d exceeds %d MB" % (idx + 1, _MAX_IMAGE_BYTES // (1024 * 1024)))
-            image_id = uuid.uuid4().hex + _IMAGE_MIME_EXT[mime]
-            path = os.path.join(root, image_id)
-            with open(path, "wb") as handle:
-                handle.write(raw)
-            detail = str(image.get("detail") or "auto").strip().lower()
-            if detail not in _IMAGE_DETAIL:
-                detail = "auto"
-            out.append({
-                "type": "localImage",
-                "path": os.path.abspath(path),
-                "name": str(image.get("name") or image_id),
-                "image_id": image_id,
-                "mime": mime,
-                "size": len(raw),
-                "detail": detail,
-            })
-        return out
+        return self._input.prepare_image_inputs(images)
 
     def _display_user_content(self, text, image_inputs=None):
-        blocks = []
-        if str(text or "").strip():
-            blocks.append({"type": "text", "text": str(text or "")})
-        for image in image_inputs or []:
-            if not isinstance(image, dict):
-                continue
-            blocks.append({
-                "type": "localImage",
-                "path": image.get("path") or "",
-                "name": image.get("name") or os.path.basename(image.get("path") or ""),
-                "image_id": image.get("image_id") or "",
-                "mime": image.get("mime") or "",
-                "size": image.get("size") or 0,
-            })
-        return blocks if blocks else str(text or "")
+        return self._input.display_user_content(text, image_inputs=image_inputs)
 
     def _user_input_items(self, text, image_inputs=None):
-        text = str(text or "")
-        items = []
-        if text.strip() or not image_inputs:
-            items.append({"type": "text", "text": text, "text_elements": []})
-        seen = set()
-        for match in _MENTION_RE.finditer(text):
-            raw_path = match.group(1) or match.group(2) or ""
-            path = self._resolve_mention_path(raw_path)
-            if not path or path in seen:
-                continue
-            seen.add(path)
-            items.append({
-                "type": "mention",
-                "path": path,
-                "name": os.path.basename(path) or path,
-            })
-        for image in image_inputs or []:
-            if not isinstance(image, dict):
-                continue
-            path = image.get("path") or ""
-            if not path:
-                continue
-            item = {"type": "localImage", "path": path}
-            detail = image.get("detail")
-            if detail in _IMAGE_DETAIL:
-                item["detail"] = detail
-            items.append(item)
-        return items
+        return self._input.user_input_items(text, image_inputs=image_inputs)
 
     def _search_file_result(self, item):
-        if not isinstance(item, dict):
-            return None
-        root = item.get("root") or self.cwd
-        path = item.get("path") or ""
-        if not path:
-            return None
-        abs_path = path if os.path.isabs(path) else os.path.abspath(os.path.join(root, path))
-        if not self._path_within_cwd(abs_path):
-            return None
-        rel = os.path.relpath(abs_path, self.cwd)
-        if rel == ".":
-            rel = os.path.basename(abs_path)
-        rel = rel.replace(os.sep, "/")
-        return {
-            "path": abs_path,
-            "insert": rel,
-            "name": item.get("file_name") or os.path.basename(abs_path) or rel,
-            "match_type": item.get("match_type") or ("directory" if os.path.isdir(abs_path) else "file"),
-            "score": item.get("score") or 0,
-        }
+        return self._input.search_file_result(item)
 
     def search_files(self, query, limit=20):
-        query = str(query or "").strip()
-        if not query:
-            return {"ok": True, "files": []}
-        try:
-            limit = max(1, min(50, int(limit or 20)))
-        except Exception:
-            limit = 20
-        self._client().ensure()
-        res = self._client().request(
-            "fuzzyFileSearch",
-            {"query": query, "roots": [self.cwd]},
-            timeout=15,
-        ) or {}
-        files = []
-        for item in (res.get("files") or []):
-            result = self._search_file_result(item)
-            if result:
-                files.append(result)
-            if len(files) >= limit:
-                break
-        return {"ok": True, "files": files}
+        return self._input.search_files(query, limit=limit)
 
     def terminal_interaction_event(self, params):
         return codex_terminal.terminal_interaction_event(self, params)

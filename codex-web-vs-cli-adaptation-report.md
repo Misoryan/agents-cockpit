@@ -617,3 +617,10 @@ Immediate next commit candidate:
 - `CodexSession._state_path()`, `_persist()`, and `recover()` remain as compatibility wrappers, so manager/session callers and replay recovery behavior keep the same public entrypoints.
 - Added `tests/check_codex_state_helpers.py` to cover state path/payload persistence, recovery field application, recovery-noise filtering, next-sequence restoration, and local-only client registration during startup recovery.
 - Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the state helper slice and includes `codex_state.py` in the validation bundle.
+
+## 36. 2026-07-17 input adapter extraction checkpoint
+
+- Added `codex_input.py` with `CodexInputAdapter`, moving cwd-bounded `@` mention resolution, app-server `fuzzyFileSearch` result shaping, per-session image upload storage, `localImage` turn input creation, and user-message image replay blocks out of `codex_native.py`.
+- `CodexSession._path_within_cwd()`, `_resolve_mention_path()`, `_image_upload_dir()`, `image_file()`, `prepare_image_inputs()`, `_display_user_content()`, `_user_input_items()`, `_search_file_result()`, and `search_files()` remain as compatibility wrappers, preserving manager API and turn runner behavior.
+- Added `tests/check_codex_input_helpers.py` to cover mention de-duplication, cwd boundary filtering, image validation/storage/detail fallback, replay block creation, and filtered fuzzy-file results.
+- Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the input adapter slice and includes `codex_input.py` in the validation bundle.

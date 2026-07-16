@@ -19,7 +19,7 @@ Codex CLI：`codex-cli 0.142.4`
 | 多端同步与重连体验 | 75% | `seq`、`after=<lastSeq>`、去重、双客户端 smoke 和 open-WS catch-up 已完成；仍缺真实浏览器/手机视觉验证。 |
 | app-server 协议覆盖 | 60% | 重点路径覆盖较好，长尾 account/config/fs/plugin/skills/windows sandbox 方法仍多为降级或泛化可见。 |
 | 代码可维护性 | 65-70% | 后端和前端都已拆分，但 `CodexSession`、前端全局状态、事件渲染器和安全边界仍是热点。 |
-| 共享/公网暴露硬化 | 55% | 多用户、workspace root、hardened 配置文档已有；Origin/CSRF、默认 profile 和管理端边界还需要继续收紧。 |
+| 共享/公网暴露硬化 | 60% | 多用户、workspace root、hardened 配置文档已有；browser POST/WebSocket Origin/Referer 检查已有第一版，默认 profile 和管理端边界还需要继续收紧。 |
 
 ## 2. 当前 Codex 会话链路
 
@@ -191,7 +191,7 @@ Browser / Android WebView
     - 对缺 thread/turn/item id 的通知，single busy session fallback 有用，但多会话并发下需要 schema/trace fixture 证明哪些方法允许 fallback。
 
 13. 安全边界还没有完成公网化标准。
-    - 已有 auth、workspace root、多用户 home、hardened docs；还缺 Origin/CSRF 检查、state-changing API 分级、manager/internal endpoint 审计。
+    - 已有 auth、workspace root、多用户 home、hardened docs，以及 browser POST/WebSocket Origin/Referer 检查；还缺更细的 state-changing API 分级、manager/internal endpoint 审计和 hardened profile 自动验证。
 
 ## 5. 适配路线图
 
@@ -253,7 +253,7 @@ Browser / Android WebView
 
 任务：
 
-- 对 state-changing JSON API 增加 Origin/CSRF 检查。
+- 对 state-changing JSON API 增加 Origin/CSRF 检查。第一版已覆盖 browser POST 和 WebSocket handshake，后续继续细分 API 分级与 hardened profile 验证。
 - 将 hardened profile 做成可验证配置，而不只是 README 建议。
 - 审计 manager/internal API，只允许内部 token 和预期来源。
 - 对 per-user Codex/Claude home、workspace root、upload dir、MCP config 写入做边界测试。

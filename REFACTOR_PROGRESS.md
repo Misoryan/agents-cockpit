@@ -169,6 +169,11 @@ checkout. It is intentionally concise so future changes can stay incremental.
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and
   unknown-process rejection after close/terminate.
+- Browser-facing POST routes and native WebSocket handshakes now enforce a
+  configurable Origin/Referer check before cookie-auth state changes or WS
+  attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and
+  local internal-auth control calls are allowed; hardened deployments can reject
+  missing Origin/Referer with `csrf_allow_missing_origin = 0`.
 
 ## Optional Follow-ups
 

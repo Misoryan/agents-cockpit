@@ -94,3 +94,13 @@ max_fail = 5
 lockout_secs = 300
 # Set to 1 when the browser talks to this app over HTTPS. Keep 0 only for local HTTP.
 cookie_secure = 0
+# 1 = reject browser POST and WebSocket requests whose Origin/Referer does not
+# match Host/X-Forwarded-Host or [security] allowed_origins. Internal local
+# Authorization requests bypass this check.
+csrf_origin_check = 1
+# Compatibility mode for older clients/tools that omit both Origin and Referer.
+# Hardened tunnel/reverse-proxy deployments should set this to 0.
+csrf_allow_missing_origin = 1
+# Optional comma/semicolon-separated extra origins, e.g.
+# https://agents.example.com, https://phone-tunnel.example.com
+allowed_origins =

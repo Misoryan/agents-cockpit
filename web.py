@@ -181,6 +181,29 @@ class WebHandler(BaseHandler):
         self.wfile.write(b"auth required")
         return False
 
+    def _is_internal_auth_request(self):
+        return common._is_local_client(self.client_address) and \
+               hmac.compare_digest(self.headers.get("Authorization", ""), common.EXPECTED_AUTH)
+
+    def _origin_allowed(self):
+        if not getattr(common, "CSRF_ORIGIN_CHECK", True):
+            return True, "disabled"
+        if self._is_internal_auth_request():
+            return True, "internal auth"
+        return common.request_origin_allowed(self.headers)
+
+    def _check_origin(self, websocket=False):
+        ok, reason = self._origin_allowed()
+        if ok:
+            return True
+        if websocket:
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            self._json({"error": "origin rejected", "reason": reason}, 403)
+        return False
+
     def _whoami(self):
         tok = self._cookie("ac_session")
         user = common.verify_session_token(tok) if tok else None
@@ -338,6 +361,8 @@ class WebHandler(BaseHandler):
         if path.startswith(self.static_url_prefix):
             self._serve_static(path); return
         if path.startswith("/t/") and path.endswith("/ws"):
+            if not self._check_origin(websocket=True):
+                return
             self._proxy_manager_ws(); return
         if path.startswith("/t/") or path.startswith("/api/"):
             self._proxy_manager_http("GET"); return
@@ -385,6 +410,8 @@ class WebHandler(BaseHandler):
         path = urllib.parse.urlparse(self.path).path
         n = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(n) if n else b"{}"
+        if not self._check_origin():
+            return
         # 会话化登录启用后,登录/登出公开
         if hasattr(common, "USERS") and path == "/api/login":
             self._login(raw); return

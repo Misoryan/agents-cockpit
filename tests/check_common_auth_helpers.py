@@ -48,6 +48,22 @@ def main():
         assert "SameSite=Lax" in cookie
         assert "Secure" in cookie
 
+        assert common_auth.normalize_origin("https://Example.COM:443/path") == "https://example.com"
+        assert common_auth.normalize_origin("http://example.com:80/") == "http://example.com"
+        assert common_auth.split_allowed_origins("https://a.test, https://b.test;http://c.test") == [
+            "https://a.test", "https://b.test", "http://c.test"
+        ]
+        headers = {"Host": "app.example.test", "Origin": "https://app.example.test"}
+        assert common_auth.request_origin_allowed(headers) == (True, "same origin")
+        headers = {"Host": "app.example.test", "Referer": "https://app.example.test/x"}
+        assert common_auth.request_origin_allowed(headers) == (True, "same origin")
+        headers = {"Host": "internal.local", "Origin": "https://public.example.test"}
+        assert common_auth.request_origin_allowed(headers, ["https://public.example.test"]) == (True, "same origin")
+        headers = {"Host": "app.example.test", "Origin": "https://evil.example.test"}
+        assert common_auth.request_origin_allowed(headers)[0] is False
+        assert common_auth.request_origin_allowed({"Host": "app.example.test"}, allow_missing=True)[0] is True
+        assert common_auth.request_origin_allowed({"Host": "app.example.test"}, allow_missing=False)[0] is False
+
     old_users = common.USERS
     try:
         common.USERS = {"alice": "secret"}
@@ -56,6 +72,7 @@ def main():
         assert common.verify_internal_auth(common.INTERNAL_AUTH)
         assert common.session_cookie_header("x", "y", max_age=1).startswith("x=y;")
         assert common.codex_dynamic_tool_mappings() == {}
+        assert common.request_origin_allowed({"Host": "example.test", "Origin": "https://example.test"})[0]
     finally:
         common.USERS = old_users
 

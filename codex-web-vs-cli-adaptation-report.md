@@ -533,3 +533,11 @@ Immediate next commit candidate:
 - The smoke verifies multiple stdin writes are base64-encoded into `command/exec/write`, resize maps to `command/exec/resize`, close-stdin emits a replayable `terminal_closed`, terminate maps to `command/exec/terminate`, and closed/terminated processes reject later actions.
 - Added `tests/check_codex_terminal_smoke_helpers.py` so this long-path contract is covered by the fast test bundle while the standalone smoke remains runnable with `python tools\codex_terminal_smoke.py --cwd .`.
 - This closes the first repeatable terminalInteraction validation gap; a later smoke can still add a real app-server `command/exec` launch once that method is productized instead of only supporting write/resize/terminate for existing Codex-owned processes.
+
+
+## 24. 2026-07-17 Origin/CSRF hardening checkpoint
+
+- Added browser-facing Origin/Referer validation for state-changing POST requests and Codex/Claude WebSocket handshakes in `web.py`. Internal local requests with the existing `Authorization` secret still bypass this check, so local restart/manager control tooling remains usable.
+- Added `[security] csrf_origin_check`, `csrf_allow_missing_origin`, and `allowed_origins` config knobs. Defaults keep compatibility for clients that omit Origin/Referer while still rejecting explicit cross-origin browser requests; hardened deployments should set `csrf_allow_missing_origin = 0`.
+- The check accepts same Host or `X-Forwarded-Host`, plus configured extra origins for reverse proxy/tunnel deployments.
+- Added helper coverage in `tests/check_common_auth_helpers.py` and `tests/check_web_security_helpers.py`, and updated README/config guidance so the hardened profile is now executable rather than only conceptual.

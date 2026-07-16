@@ -61,6 +61,9 @@ Common keys:
 | `[codex_dynamic_tools] <tool>` | empty | Explicitly map safe Codex dynamic tools to `mcp:<server>/<tool>` passthrough targets |
 | `[security] session_ttl` | `86400` | Login cookie lifetime in seconds |
 | `[security] cookie_secure` | `0` | Set `1` only behind HTTPS |
+| `[security] csrf_origin_check` | `1` | Check browser POST/WebSocket Origin or Referer against Host/allowed origins |
+| `[security] csrf_allow_missing_origin` | `1` | Allow clients that omit Origin/Referer; set `0` for hardened exposure |
+| `[security] allowed_origins` | empty | Extra comma/semicolon-separated browser origins allowed through reverse proxies |
 
 `[codex_dynamic_tools]` is an allowlist, not a wildcard execution mode. Use
 keys like `namespace.tool`, `namespace.*`, or `tool`; unmapped dynamic tools
@@ -108,6 +111,9 @@ auto_approve = 0
 
 [security]
 cookie_secure = 1
+csrf_origin_check = 1
+csrf_allow_missing_origin = 0
+# allowed_origins = https://agents.example.com
 session_ttl = 28800
 ```
 

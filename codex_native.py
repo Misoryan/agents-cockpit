@@ -25,6 +25,7 @@ import codex_pending
 import codex_replay_facade
 import codex_requests
 import codex_routing
+import codex_state
 import codex_terminal
 import codex_text
 import codex_thread_history
@@ -237,6 +238,7 @@ class CodexSession:
         self.poll_events = []
         self._replay = codex_replay_facade.CodexReplayFacade(
             self, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
+        self._state = codex_state.CodexSessionState(self, _REPLAY_MAX_EVENTS)
         self._notifications = codex_notifications.CodexNotificationAdapter(self)
         self._turn = codex_turn.CodexTurnRunner(self)
         self._next_seq = 1
@@ -1246,63 +1248,17 @@ class CodexSession:
             self._broadcast({"type": "result", "error": "Codex app-server exited. It will be restarted on the next send."})
 
     def _state_path(self):
-        return os.path.join(self.state_dir, "codex_%s.json" % self.sid)
+        return self._state.path()
 
     def _persist(self):
-        try:
-            os.makedirs(self.state_dir, exist_ok=True)
-            with open(self._state_path(), "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "thread_id": self.thread_id,
-                        "last_turn_id": self.last_turn_id,
-                        "cwd": self.cwd,
-                        "yolo": self.yolo,
-                        "cfg": self.cfg,
-                        "user": self.user, "uid": self.uid,
-                        "codex_home": self.codex_home,
-                        "model": self.model,
-                        "model_provider": self.model_provider,
-                        "service_tier": self.service_tier,
-                        "events": self.events[-50:],
-                        "timeline": self.timeline[-_REPLAY_MAX_EVENTS:],
-                        "next_seq": self._next_seq,
-                    },
-                    f,
-                    ensure_ascii=False,
-                )
-        except OSError:
-            pass
+        return self._state.persist()
 
     @classmethod
     def recover(cls, sid, cwd, expected_thread_id=None, user="", uid="", state_dir=None, codex_home=None):
-        state_dir = state_dir or STATE_DIR
-        try:
-            with open(os.path.join(state_dir, "codex_%s.json" % sid), "r", encoding="utf-8") as f:
-                data = json.load(f)
-            ns = cls(sid, data.get("cwd") or cwd, yolo=bool(data.get("yolo")),
-                     cfg=data.get("cfg") or {},
-                     user=user or data.get("user", ""), uid=uid or data.get("uid", ""),
-                     state_dir=state_dir,
-                     codex_home=codex_home or data.get("codex_home"))
-            ns.thread_id = expected_thread_id or data.get("thread_id")
-            ns.last_turn_id = data.get("last_turn_id")
-            ns.model = data.get("model") or ""
-            ns.model_provider = data.get("model_provider") or ""
-            ns.service_tier = data.get("service_tier") or ""
-            ns.events = cls._drop_recover_noise(data.get("events") or [])
-            ns.timeline = cls._drop_recover_noise(data.get("timeline") or list(ns.events))
-            try:
-                ns._next_seq = max([int(e.get("seq") or 0) for e in ns.timeline] + [int(data.get("next_seq") or 1) - 1]) + 1
-            except Exception:
-                ns._next_seq = int(data.get("next_seq") or 1)
-            if ns.thread_id:
-                # Startup recovery must stay local-only; thread/read starts the
-                # Codex app-server and can stall the whole manager on boot.
-                ns._client().register(ns.thread_id, ns)
-            return ns
-        except (OSError, ValueError):
-            return None
+        return codex_state.recover_session(
+            cls, sid, cwd, expected_thread_id=expected_thread_id, user=user, uid=uid,
+            state_dir=state_dir, codex_home=codex_home, default_state_dir=STATE_DIR,
+            replay_max_events=_REPLAY_MAX_EVENTS, drop_noise_fn=cls._drop_recover_noise)
 
 
 def list_thread_history(limit=60, archived=False, search=None, user="", uid="", state_dir=None, codex_home=None, live=True):

@@ -610,3 +610,10 @@ Immediate next commit candidate:
 - Moved the Codex notification helper implementation into `codex_notifications.py` so `CodexNotificationAdapter` now owns the notification/notice behavior rather than only wrapping `codex_session_events.py`.
 - Kept `codex_session_events.py` as a compatibility import layer for existing helper tests and any older imports, preserving the public helper function names while making the adapter module the implementation home.
 - Re-ran targeted notification/session-event tests to confirm visible notices, silent debug notices, compacted-thread handling, pending plan flushing, goal notifications, terminal interaction events, and usage metadata still behave the same.
+
+## 35. 2026-07-17 state persistence extraction checkpoint
+
+- Added `codex_state.py` with `CodexSessionState`, moving Codex state path construction, persisted JSON payload construction, state writes, recovered thread/model/timeline application, and startup recovery into a focused helper.
+- `CodexSession._state_path()`, `_persist()`, and `recover()` remain as compatibility wrappers, so manager/session callers and replay recovery behavior keep the same public entrypoints.
+- Added `tests/check_codex_state_helpers.py` to cover state path/payload persistence, recovery field application, recovery-noise filtering, next-sequence restoration, and local-only client registration during startup recovery.
+- Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the state helper slice and includes `codex_state.py` in the validation bundle.

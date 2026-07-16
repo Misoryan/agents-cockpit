@@ -425,6 +425,22 @@ def _wait_text(page, sid, text, timeout=10):
     )
 
 
+def _force_reconnect(page, sid, timeout=15):
+    escaped_sid = json.dumps(sid)
+    page.eval("""(function(){
+      var sid=%s;
+      if(typeof nativeConnect !== 'function') return false;
+      nativeConnect(sid, {force:true});
+      return true;
+    })()""" % escaped_sid)
+    _wait_eval(
+        page,
+        "!!(window.nativeWs && nativeWs[%s] && nativeWs[%s].readyState === 1)" % (escaped_sid, escaped_sid),
+        True,
+        timeout=timeout,
+    )
+
+
 def run_smoke(args):
     user = _user_from_config(args.user)
     password = args.password or _password_from_auth_file(user)
@@ -474,8 +490,17 @@ def run_smoke(args):
         second_name = first_name + " recovered"
         _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + second_name})
         _wait_text(page_b, sid, second_name, timeout=15)
+        after_catchup = _page_summary(page_b, sid)
+
+        _force_reconnect(page_b, sid)
+        third_name = second_name + " reconnected"
+        _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + third_name})
+        _wait_text(page_b, sid, third_name, timeout=15)
+        _wait_text(page_a, sid, third_name, timeout=15)
         after = _page_summary(page_b, sid)
         primary = _page_summary(page_a, sid)
+        catchup_dom_preserved = bool(after_catchup and after_catchup.get("firstNodeMarker") == marker)
+        catchup_text_preserved = bool(before_text and after_catchup and before_text in (after_catchup.get("text") or ""))
         dom_preserved = bool(after and after.get("firstNodeMarker") == marker)
         text_preserved = bool(before_text and after and before_text in (after.get("text") or ""))
         narrow_layout_ok = _layout_ok(after, expected_mobile=not args.mirror_desktop)
@@ -483,12 +508,18 @@ def run_smoke(args):
 
         ok = bool(
             before
+            and after_catchup
             and after
             and primary
-            and after["childCount"] >= before["childCount"]
-            and second_name in after["text"]
-            and second_name in primary["text"]
-            and after["lastSeq"] >= before["lastSeq"]
+            and after_catchup["childCount"] >= before["childCount"]
+            and after["childCount"] >= after_catchup["childCount"]
+            and second_name in after_catchup["text"]
+            and third_name in after["text"]
+            and third_name in primary["text"]
+            and after_catchup["lastSeq"] >= before["lastSeq"]
+            and after["lastSeq"] >= after_catchup["lastSeq"]
+            and catchup_dom_preserved
+            and catchup_text_preserved
             and dom_preserved
             and text_preserved
             and narrow_layout_ok
@@ -506,9 +537,12 @@ def run_smoke(args):
             "narrow_layout_ok": narrow_layout_ok,
             "temporary_session": temp_sid or None,
             "dom_marker": marked,
+            "dom_preserved_after_catchup": catchup_dom_preserved,
+            "text_preserved_after_catchup": catchup_text_preserved,
             "dom_preserved_after_reconnect": dom_preserved,
             "text_preserved_after_reconnect": text_preserved,
             "before_reconnect": before,
+            "after_catchup": after_catchup,
             "after_reconnect": after,
             "primary": primary,
         }

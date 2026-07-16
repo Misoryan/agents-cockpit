@@ -124,7 +124,7 @@ Browser / Android WebView
 - 前端对 live/replay 使用统一去重 key，不清 DOM 恢复状态。
 - `state_snapshot` 能收敛 stale thinking/turn UI。
 - open-WS catch-up polling 能在 socket 显示 open 但漏事件时静默补增量。
-- `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层、headless 双页层与默认窄屏/mobile mirror；browser smoke 会标记既有 DOM 节点并验证重连后未被清空重建，同时检查窄屏 composer/input/submit 和移动抽屉布局仍可用。
+- `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层、headless 双页层与默认窄屏/mobile mirror；browser smoke 会标记既有 DOM 节点，分别验证断线 catch-up 和强制 `nativeConnect(..., {force:true})` 重连后未被清空重建，同时检查窄屏 composer/input/submit 和移动抽屉布局仍可用。
 
 仍缺：
 

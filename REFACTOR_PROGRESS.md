@@ -186,6 +186,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   phone-like mirror tab, then checks native composer/input/submit controls plus
   mobile drawer layout, covering the first repeatable headless mobile-reflow
   smoke before manual device QA.
+- The same smoke now separates disconnected catch-up from an actual forced
+  `nativeConnect(..., {force:true})` WebSocket reconnect, verifying the marked
+  DOM node survives both phases before another backend-confirmed notice lands.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

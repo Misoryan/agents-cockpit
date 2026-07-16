@@ -533,6 +533,12 @@ Immediate next commit candidate:
 - This does not replace real phone/manual background-foreground QA, but it closes the first repeatable headless narrow-screen evidence gap for reconnect-without-flicker and multi-client content sync.
 - Updated `tests/check_codex_browser_smoke_helpers.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so the narrow-layout contract remains visible in the fast checks and current plan.
 
+## 22.2. 2026-07-17 forced reconnect browser smoke checkpoint
+
+- Extended the same browser smoke to distinguish disconnected catch-up from an actual WebSocket reconnect: after the mirror tab silently catches up a missed notice, it calls `nativeConnect(sid, {force:true})`, waits for an open socket, and sends another backend-confirmed `/rename`.
+- The smoke now records both `after_catchup` and `after_reconnect` summaries, and fails unless the pre-existing marked DOM node plus prior text survive both phases.
+- This turns the reconnect anti-flicker claim into stronger rendered-browser evidence: the UI can recover missed events while disconnected and then reconnect without clearing/rebuilding the conversation DOM.
+
 
 ## 23. 2026-07-17 terminal interaction smoke checkpoint
 

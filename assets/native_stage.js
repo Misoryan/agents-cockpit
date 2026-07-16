@@ -151,6 +151,53 @@ function nToolResultMarkup(toolId, txt, toolName){
   var json=nJsonResultHtml(txt, toolName);
   return json || nToolResultHtml(txt);
 }
+function nFirstValue(obj, keys){
+  obj=obj||{};
+  for(var i=0;i<keys.length;i++){
+    var v=obj[keys[i]];
+    if(v!=null && v!=="") return v;
+  }
+  return "";
+}
+function nMiniKvHtml(rows){
+  rows=(rows||[]).filter(function(r){ return r && r[1]!=null && r[1]!==""; });
+  if(!rows.length) return "";
+  return '<div class="special-kv">'+rows.map(function(r){
+    return '<div><span>'+nEsc(r[0])+'</span><b>'+nEsc(r[1])+'</b></div>';
+  }).join("")+'</div>';
+}
+function nSafeLinkHtml(url, cls){
+  url=String(url||"");
+  var safe=url.indexOf("http://")===0 || url.indexOf("https://")===0 || url.indexOf("/api/")===0;
+  return safe ? '<a class="'+cls+'" href="'+nEscAttr(url)+'" target="_blank" rel="noopener">'+nEsc(url)+'</a>'
+              : '<div class="'+cls+'">'+nEsc(url)+'</div>';
+}
+function nSpecialToolBody(name, input){
+  name=String(name||"").toLowerCase(); input=input||{};
+  if(name==="sleep"){
+    var dur=nFirstValue(input, ["durationMs","duration_ms","milliseconds","ms","seconds","duration"]);
+    return '<div class="special-card sleep-card"><div class="special-title">'+_I('hourglass')+' Sleep</div>'+
+           nMiniKvHtml([["duration", dur], ["reason", input.reason||input.message||""]])+'</div>';
+  }
+  if(name==="contextcompaction"){
+    return '<div class="special-card compact-card"><div class="special-title">'+_I('archive')+' Context compaction</div>'+
+           nMiniKvHtml([["status", input.status||input.phase||""], ["tokens", input.tokens||input.tokenCount||input.inputTokens||""], ["summary", input.summary||input.message||""]])+'</div>';
+  }
+  if(name==="imagegeneration"){
+    var prompt=input.prompt||input.description||input.text||"";
+    var imageSize=input.size || ((input.width&&input.height)?(input.width+"x"+input.height):"");
+    return '<div class="special-card image-card"><div class="special-title">'+_I('sparkles')+' Image generation</div>'+
+           (prompt?'<div class="special-prompt">'+nEsc(prompt)+'</div>':'')+
+           nMiniKvHtml([["size", imageSize], ["model", input.model||""]])+'</div>';
+  }
+  if(name==="imageview"){
+    var path=input.path||input.file||input.url||input.imageUrl||"";
+    return '<div class="special-card image-card"><div class="special-title">'+_I('file-text')+' Image view</div>'+
+           (path?nSafeLinkHtml(path, "special-path"):"")+
+           nMiniKvHtml([["mime", input.mimeType||input.mime||""], ["size", input.size||""]])+'</div>';
+  }
+  return "";
+}
 function nShellGroupKey(name){
   name=String(name||"").toLowerCase();
   return (name==="bash"||name==="powershell")?name:"";

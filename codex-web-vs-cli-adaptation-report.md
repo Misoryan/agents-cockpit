@@ -484,3 +484,11 @@ Immediate next commit candidate:
 - Tool cards now keep the originating tool name in `data-tname`, so MCP/manual tool results can display summaries such as `JSON · server.tool` rather than an anonymous `Result (...)` blob.
 - The renderer still preserves the same replay contract (`tool_result` events with `tool_use_id`); this is a frontend-only display improvement that works for live events, replay, reconnect, and catch-up polling.
 - Added static and Node-level checks for `nJsonResultHtml`, JSON previews, and the JSON branch in `nToolResultMarkup`.
+
+
+## 18. 2026-07-17 special tool start card checkpoint
+
+- Added dedicated compact start cards for Codex `sleep`, `contextCompaction`, `imageGeneration`, and `imageView` tool-use events. These no longer fall back to a raw JSON input dump in the conversation.
+- The cards expose the most useful fields directly: sleep duration/reason, compaction status/summary/tokens, image prompt/size/model, and viewed image path or URL.
+- This is display-only and keeps the same replay event shape, so multi-client live rendering, history replay, reconnect, and catch-up polling continue to use the same event stream.
+- Added frontend contract and Node helper checks for `nSpecialToolBody` and the new tool-use branches.

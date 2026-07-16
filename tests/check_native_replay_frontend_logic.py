@@ -11,7 +11,7 @@ def main():
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
-let ctx = {console, setTimeout, clearTimeout, window: {}};
+let ctx = {console, setTimeout, clearTimeout, window: {}, _I: () => ""};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
@@ -24,7 +24,8 @@ const {
   nDiffResultHtml,
   nDiffStats,
   nToolResultMarkup,
-  nJsonResultHtml
+  nJsonResultHtml,
+  nSpecialToolBody
 } = ctx;
 
 let st = {renderedEvents: {}, lastSeq: 0};
@@ -75,6 +76,10 @@ assert.ok(jsonHtml.includes("JSON · demo.tool"));
 assert.ok(jsonHtml.includes("json-preview"));
 assert.ok(jsonHtml.includes("json-result"));
 assert.ok(nToolResultMarkup("mcp-tool-demo", '{"error":"bad"}', "demo.tool").includes("JSON · demo.tool · error"));
+assert.ok(nSpecialToolBody("sleep", {durationMs: 1200, reason: "wait"}).includes("sleep-card"));
+assert.ok(nSpecialToolBody("contextcompaction", {status: "started", summary: "compact"}).includes("compact-card"));
+assert.ok(nSpecialToolBody("imagegeneration", {prompt: "a cat", size: "1024x1024"}).includes("image-card"));
+assert.ok(nSpecialToolBody("imageview", {path: "https://example.test/a.png"}).includes("special-path"));
 
 (async function(){
   let catchupEvents = [];

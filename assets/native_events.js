@@ -143,7 +143,10 @@ function nHandle(sid, obj){
         // 任务模式:TodoWrite 每次更新都刷新顶栏持久进度面板(最新快照)。仅当前可见会话渲染。
         if(_isTodo && _todoList.length){ st.todos=_todoList; if(currentSid===sid) nRenderTasks(st); }
         var _body;
-        if(_n==="bash"||_n==="powershell"){
+        var _special=nSpecialToolBody(_n, _inp);
+        if(_special){
+          _body=_special;
+        } else if(_n==="bash"||_n==="powershell"){
           _body='<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>';
         } else if(_isTodo){
           _body='<div class="todo">'+_todoList.map(function(x){
@@ -195,7 +198,8 @@ function nHandle(sid, obj){
         }
         var _icons={bash:_I('terminal'),powershell:_I('terminal'),read:_I('book-open'),edit:_I('pencil'),str_replace_edit:_I('pencil'),
                     write:_I('file-text'),write_file:_I('file-text'),multiedit:_I('pencil'),webfetch:_I('globe'),websearch:_I('search'),
-                    glob:_I('folder'),grep:_I('search'),todowrite:_I('clipboard-list'),todo_write:_I('clipboard-list'),exitplanmode:_I('clipboard-list')};
+                    glob:_I('folder'),grep:_I('search'),todowrite:_I('clipboard-list'),todo_write:_I('clipboard-list'),exitplanmode:_I('clipboard-list'),
+                    sleep:_I('hourglass'),contextcompaction:_I('archive'),imagegeneration:_I('sparkles'),imageview:_I('file-text')};
         var _ic=_icons[_n]||_I('wrench');
         var _sum=_isTodo?(_I('clipboard-list')+' 待办 ('+_todoDone+'/'+_todoList.length+')'):(_ic+' '+nEsc(b.name||""));
         var _hint=_inp.description||"";
@@ -211,6 +215,10 @@ function nHandle(sid, obj){
           else if(_n==="multiedit" && (_inp.file_path||_inp.path)){ _hint=_inp.file_path||_inp.path; }
           else if(_n==="websearch" && _inp.query){ _hint=_inp.query; }
           else if(_n==="glob" && _inp.pattern){ _hint=_inp.pattern; }
+          else if(_n==="sleep"){ _hint=_inp.reason||_inp.message||""; }
+          else if(_n==="imagegeneration"){ _hint=_inp.prompt||_inp.description||""; }
+          else if(_n==="imageview"){ _hint=_inp.path||_inp.file||_inp.url||""; }
+          else if(_n==="contextcompaction"){ _hint=_inp.status||_inp.summary||_inp.message||""; }
         }
         if(_hint){ _sum+=' <span class="tcdesc">'+nEsc(_hint)+'</span>'; }
         if(_isTodo){

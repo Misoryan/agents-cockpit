@@ -145,6 +145,8 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - JSON-shaped tool results now render as structured result cards with a short
   preview and pretty JSON body, improving MCP/dynamic/tool result readability
   without changing the replay event contract.
+- Codex sleep, context-compaction, image-generation, and image-view tool starts
+  now use dedicated compact cards instead of raw JSON input dumps.
 
 ## Optional Follow-ups
 

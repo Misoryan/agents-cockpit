@@ -694,3 +694,10 @@ Immediate next commit candidate:
 - `assets/native_stage.js` now stays focused on session stage containers plus shared row/meta helpers, while `assets/native_tool_cards.js` consumes the dedicated helper module for tool-specific markup.
 - Updated `index.html`, `tests/check_replay_loading_frontend.py`, `tests/check_native_replay_frontend_logic.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so script order and helper coverage include the new module.
 - This reduces the risk that future CLI-parity tool card work touches session/replay stage lifecycle code.
+
+## 47. 2026-07-17 sidebar row renderer extraction checkpoint
+
+- Added `assets/app_sidebar_rows.js` and moved sidebar directory rows, directory bodies, conversation rows, resume/delete/close row actions, and history row rendering out of `assets/app_sidebar.js`.
+- `assets/app_sidebar.js` now stays focused on session/history model loading, polling, filters, tab state, and pending visibility; row layout lives in the dedicated sidebar row module.
+- Updated `index.html`, `tests/check_replay_loading_frontend.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so script order and static contracts include the new row renderer.
+- This makes future sidebar UX work safer for multi-client refresh and long-history loading because list model updates and row markup are no longer mixed in one file.

@@ -11,7 +11,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `common.py` is now mostly a compatibility facade over focused helpers such as `common_auth.py`, `common_process.py`, `common_history.py`, `common_registry.py`, and `common_http.py`.
 - `native.py` keeps the Claude session class while delegating CLI argv/process/replay/gate helpers to `native_*.py` modules.
 - `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, pending request state, replay facade/helpers, turn/thread lifecycle, notification adapter, session state persistence/recovery, user input/file mention/image helpers, slash/lifecycle/manual MCP helpers, text/form/history, thread-history conversion, and terminal interaction helpers to `codex_*.py` modules.
-- `index.html` is now mostly markup. Frontend assets live under `assets/`, split into app shell/sidebar/state/native/replay/socket/action/auth/icon files, with Codex text/thinking, tool helper, tool-use, tool-result, pending-card, terminal-card, and sidebar lifecycle-action renderers in dedicated files.
+- `index.html` is now mostly markup. Frontend assets live under `assets/`, split into app shell/sidebar/state/native/replay/socket/action/auth/icon files, with Codex text/thinking, tool helper, tool-use, tool-result, pending-card, terminal-card, sidebar lifecycle-action, and sidebar row renderers in dedicated files.
 
 ## Completed Items
 
@@ -234,6 +234,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `assets/native_tool_helpers.js`, leaving the stage module focused on session
   containers and shared row/meta helpers while tool-specific grouping and
   structured bodies stay near the tool renderers.
+- Sidebar directory/body/conversation row rendering moved from
+  `assets/app_sidebar.js` into `assets/app_sidebar_rows.js`, leaving the
+  sidebar core focused on session/history models, polling, filters, and tab
+  state.
 - The Codex launch modal now shows a read-only `config/read` status line with
   high-frequency fields plus model/profile counts, making it clearer which
   Codex defaults the Web session will inherit when launch overrides are blank.
@@ -252,7 +256,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 
 - Reduce `codex_native.py` further only if the remaining session core grows again; thread-history conversion is now in `codex_thread_history.py`.
 - Decide whether `web.py` should be split into auth, proxy, and lifecycle helpers; current size is acceptable but still mixed.
-- Continue frontend structure work with sidebar list/history row rendering or push/notification boundaries before adding more markup to `native_events.js`, `native_stage.js`, or `app_sidebar.js`.
+- Continue structure work with push/notification boundaries or backend session core seams before adding more markup to `native_events.js`, `native_stage.js`, or `app_sidebar.js`.
 - For release hardening, restart web/manager and manually exercise login, launch, replay, ask/approve, and reconnect flows.
 
 ## Validation Bundle

@@ -666,3 +666,10 @@ Immediate next commit candidate:
 - `nHandle()` now dispatches pending events to `nHandlePendingApproval`, `nHandlePendingAsk`, `nHandlePendingForm`, and `nHandlePendingResolved`, keeping live/replay event flow unchanged while isolating confirmation-card markup.
 - Updated `index.html`, `REFACTOR_PROGRESS.md`, and `tests/check_replay_loading_frontend.py` so script order and static frontend contracts include the new renderer.
 - Refreshed the CLI gap plan to mark pending/form renderer extraction complete and make terminalInteraction/stage/sidebar renderer seams the next structure candidates.
+
+## 43. 2026-07-17 native terminal-card renderer extraction checkpoint
+
+- Added `assets/native_terminal_cards.js` and moved terminalInteraction card rendering, `/api/nterminal` posting, input-sent cleanup, and close/terminate summaries out of `assets/native_events.js`.
+- `nHandle()` now dispatches `terminal_interaction`, `terminal_input_sent`, and `terminal_closed` to dedicated terminal-card helpers, keeping replay/live event routing unchanged while isolating terminal UI behavior.
+- Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so the current structure map and static frontend contracts include the new renderer.
+- This leaves `assets/native_events.js` more focused on event routing; the next frontend seams are stage text/thinking helpers, sidebar lifecycle action rendering, or push/notification boundaries.

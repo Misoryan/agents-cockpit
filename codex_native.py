@@ -1670,6 +1670,29 @@ class CodexSession:
             return ""
         return str(first.get("tool_use_id") or "")
 
+    @staticmethod
+    def _replay_content_score(events):
+        """Score replay usefulness; mode/notices alone are not conversation history."""
+        score = 0
+        for ev in events or []:
+            if not isinstance(ev, dict):
+                continue
+            typ = ev.get("type")
+            if typ in ("assistant", "user", "result", "stream_event", "interrupted"):
+                score += 1
+            elif typ in ("pending_approval", "pending_ask", "pending_form", "compacted"):
+                score += 1
+        return score
+
+    def _adopt_history_replay(self, events):
+        if not events:
+            return
+        self.events = list(events)[-200:]
+        # thread/read is the source of truth after a manager restart. Prefer it
+        # whenever the persisted timeline has little/no actual conversation.
+        if self._replay_content_score(events) > self._replay_content_score(self.timeline):
+            self.timeline = list(events)[-_REPLAY_MAX_EVENTS:]
+
     def _decorate_for_broadcast(self, obj):
         with self._lock:
             return self._record_timeline_locked(obj)
@@ -1869,7 +1892,6 @@ class CodexSession:
             ns.model_provider = data.get("model_provider") or ""
             ns.service_tier = data.get("service_tier") or ""
             ns.events = data.get("events") or []
-            had_timeline = bool(data.get("timeline"))
             ns.timeline = data.get("timeline") or list(ns.events)
             try:
                 ns._next_seq = max([int(e.get("seq") or 0) for e in ns.timeline] + [int(data.get("next_seq") or 1) - 1]) + 1
@@ -1879,9 +1901,7 @@ class CodexSession:
                 try:
                     snap = cls.history_snapshot(ns.thread_id, user=ns.user, uid=ns.uid, state_dir=ns.state_dir, codex_home=ns.codex_home)
                     if snap.get("events"):
-                        ns.events = snap.get("events") or ns.events
-                        if not had_timeline:
-                            ns.timeline = list(ns.events)
+                        ns._adopt_history_replay(snap.get("events") or [])
                         ns.cwd = os.path.abspath(snap.get("cwd") or ns.cwd)
                 except Exception:
                     pass

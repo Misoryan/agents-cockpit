@@ -68,10 +68,47 @@ function renderCodexConfig(){
   if($("lm-codex-service-tier")) $("lm-codex-service-tier").value=lmCodexServiceTier||"";
   if($("lm-codex-writable-roots")) $("lm-codex-writable-roots").value=lmCodexWritableRoots||"";
 }
+function codexStatusFirst(cfg, keys){
+  cfg=cfg||{};
+  for(var i=0;i<keys.length;i++){
+    var v=cfg[keys[i]];
+    if(v!=null && v!=="") return v;
+  }
+  return "";
+}
+function codexStatusText(r){
+  if(!r) return "";
+  var cfg=r.config||{}, rows=[
+    ["model", ["model"]],
+    ["approval", ["approval_policy"]],
+    ["sandbox", ["sandbox_mode", "sandbox"]],
+    ["search", ["web_search"]],
+    ["reasoning", ["model_reasoning_effort", "reasoning_effort"]],
+    ["summary", ["model_reasoning_summary", "reasoning_summary"]],
+    ["tier", ["service_tier"]]
+  ];
+  var parts=[];
+  rows.forEach(function(row){
+    var v=codexStatusFirst(cfg, row[1]);
+    if(Array.isArray(v)) v=v.join(", ");
+    if(v && typeof v==="object") v=JSON.stringify(v);
+    if(v) parts.push(row[0]+"="+v);
+  });
+  var meta=[];
+  if(Array.isArray(r.models)) meta.push("models="+r.models.length);
+  if(Array.isArray(r.permission_profiles)) meta.push("permission profiles="+r.permission_profiles.length);
+  var body=parts.length?parts.join(" · "):"未返回高频字段";
+  return "只读 Codex config/read: "+body+(meta.length?" · "+meta.join(" · "):"");
+}
+function renderCodexStatus(r){
+  var box=$("lm-codex-status"); if(!box) return;
+  box.textContent=codexStatusText(r);
+}
 function loadCodexOptions(){
   if(!isCodexBackend(lmBackend) || !lmDir) return;
   var key=lmDir+"|"+lmBackend; if(lmCodexOptionsKey===key) return; lmCodexOptionsKey=key;
   var hint=$("lm-codex-hint"); if(hint) hint.textContent="正在读取 Codex app-server 可用模型/配置，不影响启动。";
+  renderCodexStatus({config:{}, models:[], permission_profiles:[]});
   api("/api/codex_options?dir="+encodeURIComponent(lmDir)).then(function(r){
     if(lmCodexOptionsKey!==key) return;
     var dl=$("lm-codex-model-list"); if(dl){ dl.innerHTML=""; (r.models||[]).forEach(function(m){
@@ -88,8 +125,9 @@ function loadCodexOptions(){
       if(!lmCodexServiceTier && r.config.service_tier) lmCodexServiceTier=r.config.service_tier;
       renderCodexConfig();
     }
+    renderCodexStatus(r);
     if(hint) hint.textContent=r.error ? ("Codex 配置读取部分失败："+r.error) : "这些字段直接透传给 Codex app-server；留空则使用 CODEX_HOME/config.toml。";
-  }).catch(function(e){ if(hint) hint.textContent="Codex 配置读取失败："+e; });
+  }).catch(function(e){ if(hint) hint.textContent="Codex 配置读取失败："+e; renderCodexStatus(null); });
 }
 function openLaunchModal(){
   updateLmStart(); renderBackend("lm-backend"); setYolo(lmYolo, false); renderCodexConfig(); loadCodexOptions();

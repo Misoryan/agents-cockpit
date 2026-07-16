@@ -161,8 +161,8 @@ Browser / Android WebView
 
 ### P1：CLI parity 用户体验缺口
 
-6. profile/config/account status 可见性不足。
-   用户仍难判断 Web session 实际继承了哪些 Codex 配置，哪些 UI 控件只是 Web 层覆盖。
+6. profile/config/account status 可见性仍需继续增强。
+   启动弹窗已有第一版只读 `config/read` 状态行，能展示 model/approval/sandbox/search/reasoning/service tier 和 model/profile 数量；后续还需要完整 layer/profile/account 状态页。
 7. terminalInteraction 还缺真实复杂命令场景。
    adapter 层 smoke 已有，但还需要用真实 Codex command exec 验证长命令、多次 stdin、移动端输入和异常断开。
 8. tool card 仍需接近 CLI 的摘要能力。
@@ -237,7 +237,7 @@ Browser / Android WebView
 
 任务：
 
-- 做只读 profile/config/account status 面板：展示 `config/read`、model、approval、sandbox、web search、reasoning、service tier、writable roots、Codex home、workspace roots。
+- 做只读 profile/config/account status 面板：展示 `config/read`、model、approval、sandbox、web search、reasoning、service tier、writable roots、Codex home、workspace roots。（第一刀已落地：launch modal 显示只读 `config/read` 高频字段和 model/profile 数量。）
 - 增强 slash palette：命令说明、参数模板、错误反馈、历史参数复用。
 - 优化 lifecycle 结果：fork 后一键打开，rollback 显示保留 turn，compact 显示 summary，goal 显示 status/budget/usage。
 

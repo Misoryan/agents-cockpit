@@ -212,6 +212,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   into `assets/native_tool_cards.js`, leaving the event dispatcher focused on
   event routing while shell/edit/todo/web/MCP/special tool card markup stays in
   a dedicated renderer file.
+- The Codex launch modal now shows a read-only `config/read` status line with
+  high-frequency fields plus model/profile counts, making it clearer which
+  Codex defaults the Web session will inherit when launch overrides are blank.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

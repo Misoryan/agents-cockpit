@@ -59,6 +59,7 @@ def main():
     assert 'id="lm-codex-summary"' in html
     assert 'id="lm-codex-service-tier"' in html
     assert 'id="lm-codex-writable-roots"' in html
+    assert 'id="lm-codex-status"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
@@ -213,6 +214,9 @@ def main():
         "serviceTier:lmCodexServiceTier",
         "writableRoots:lmCodexWritableRoots",
         "webSearch:lmCodexSearch",
+        "function codexStatusText(r)",
+        "function renderCodexStatus(r)",
+        "permission_profiles",
         "function appendCodexRunActions(el, s)",
         'postJSON("/api/nslash", {sid:sid, command:command})',
         '{label:"Fork", title:"Fork this Codex thread", command:"/fork"}',

@@ -645,3 +645,10 @@ Immediate next commit candidate:
 - `nHandle()` now dispatches assistant tool-use blocks to `nRenderToolUseBlock(sid, st, b)`, keeping replay/live event flow unchanged while isolating shell/edit/todo/web/MCP/special tool-card markup for future CLI-parity upgrades.
 - Updated `index.html` to load the new renderer between shared native stage helpers and the event dispatcher, preserving dependency order.
 - Updated `tests/check_replay_loading_frontend.py` so the static frontend contract verifies the new script order and `nRenderToolUseBlock` entrypoint.
+
+## 40. 2026-07-17 Codex config status visibility checkpoint
+
+- Added a read-only Codex `config/read` status line to the launch modal via `#lm-codex-status`.
+- `assets/app_launch.js` now summarizes high-frequency inherited fields from app-server config (`model`, approval, sandbox, web search, reasoning effort/summary, and service tier) plus available model/profile counts.
+- This does not add unsafe profile/config writes; it only makes the current inherited Codex defaults more visible before launch, aligning with the plan's read-only-first config strategy.
+- Updated `tests/check_replay_loading_frontend.py` to lock the new DOM id and status-rendering helper entrypoints.

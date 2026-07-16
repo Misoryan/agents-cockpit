@@ -160,66 +160,19 @@ function nHandle(sid, obj){
     return;
   }
   if(t==="pending_approval"){
-    nFinalizeThinking(st); nStopThinking(st);
-    st.lastPendingResync=0; st.pendingExpectedAt=0;
-    // ExitPlanMode(计划模式提交计划)→ 计划审批卡:markdown 计划 + 批准/拒绝。
-    // 批准后后端自动退出计划模式并广播 mode_state(同步前端开关),与 claude cli 行为一致。
-    if(obj.name==="ExitPlanMode"){
-      emitAndroidSessionNotice("plan", sid, "Codex plan needs review", "Tap to review and decide whether to continue.");
-      var oldPlan=(st.turnCard||st.root).querySelector('.nmsg.plan[data-tuid="'+obj.tool_use_id+'"],.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
-      if(oldPlan) oldPlan.remove();
-      var pcard=document.createElement("div"); pcard.className="nmsg plan"; pcard.dataset.tuid=obj.tool_use_id;
-      var _planMd=(obj.input&&obj.input.plan)||"";
-      pcard.innerHTML='<div class="plan-head">'+_I('clipboard-list')+' 计划方案 · 请审阅后决定</div><div class="plan-body">'+renderMd(_planMd)+'</div>'+
-        '<div class="abtns"><button class="allow">'+_I('circle-check')+' 批准并执行</button><button class="deny">'+_I('pencil')+' 让它继续完善</button></div>';
-      nHljs(pcard.querySelector(".plan-body"));
-      pcard.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); pcard.remove(); });
-      pcard.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); pcard.remove(); });
-      nTurnCard(st).appendChild(pcard); st.curTxt=null; nScrollBottom(); return;
-    }
-    emitAndroidSessionNotice("confirm", sid, (obj.danger?"Dangerous action needs confirmation":"Action needs confirmation"), obj.preview||obj.name||"Tap to confirm.");
-    var old=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"],.nmsg.plan[data-tuid="'+obj.tool_use_id+'"]');
-    if(old) old.remove();
-    var dng=obj.danger?" danger":"";
-    var card=document.createElement("div"); card.className="nmsg approval"+dng; card.dataset.tuid=obj.tool_use_id;
-    var _btns='<div class="abtns"><button class="allow">允许</button>';
-    // 高危命令不能被「不再询问」(后端对高危仍强制审批,按钮也无意义),故高危卡不显示此项
-    if(!obj.danger){ _btns+='<button class="always" title="本会话内同类操作自动放行(高危命令仍会确认)">允许并不再询问</button>'; }
-    _btns+='<button class="deny">拒绝</button></div>';
-    card.innerHTML=(obj.danger?_I('alert')+" <b>高危命令,请仔细确认</b> ":"")+nEsc(obj.name||"")+"<pre>"+nEsc(obj.preview||JSON.stringify(obj.input||{}))+"</pre>"+_btns;
-    card.querySelector(".allow").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true); card.remove(); });
-    var _al=card.querySelector(".always");
-    if(_al){ _al.addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, true, true); card.remove(); }); }
-    card.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); card.remove(); });
-    nTurnCard(st).appendChild(card); st.curTxt=null; nScrollBottom(); return;
+    nHandlePendingApproval(sid, st, obj);
+    return;
   }
   if(t==="pending_ask"){
-    nFinalizeThinking(st); nStopThinking(st);
-    emitAndroidSessionNotice("confirm", sid, "Agent waits for input", obj.question||"Tap to answer.");
-    st.lastPendingResync=0; st.pendingExpectedAt=0;
-    nRenderAsk(sid, st, obj);
+    nHandlePendingAsk(sid, st, obj);
     return;
   }
   if(t==="pending_form"){
-    nFinalizeThinking(st); nStopThinking(st);
-    emitAndroidSessionNotice("confirm", sid, "Form input required", obj.message||"Tap to fill the form.");
-    st.lastPendingResync=0; st.pendingExpectedAt=0;
-    nRenderForm(sid, st, obj);
+    nHandlePendingForm(sid, st, obj);
     return;
   }
-  if(t==="approval_decision"){
-    var c2=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
-    if(c2) c2.remove();
-    return;
-  }
-  if(t==="ask_answered"){
-    var a2=(st.turnCard||st.root).querySelector('.nmsg.ask[data-tuid="'+obj.tool_use_id+'"]');
-    if(a2) a2.remove();
-    return;
-  }
-  if(t==="form_answered"){
-    var f2=(st.turnCard||st.root).querySelector('.nmsg.form[data-tuid="'+obj.tool_use_id+'"]');
-    if(f2) f2.remove();
+  if(t==="approval_decision" || t==="ask_answered" || t==="form_answered"){
+    nHandlePendingResolved(sid, st, obj, t);
     return;
   }
   if(t==="auto_allow_added"){

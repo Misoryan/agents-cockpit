@@ -659,3 +659,10 @@ Immediate next commit candidate:
 - `nRenderToolResult()` keeps the same public entrypoint for replay/live tool results, but diff stats, JSON previews, generic result markup, and standalone result host lookup now live in the dedicated result renderer.
 - Improved command readability: shell command cards show `cwd` when present, and Bash/PowerShell results now summarize exit code and output line count instead of only showing a generic line count.
 - Updated `index.html`, `tests/check_native_replay_frontend_logic.py`, and `tests/check_replay_loading_frontend.py` to load and validate the new result renderer.
+
+## 42. 2026-07-17 native pending-card renderer extraction checkpoint
+
+- Added `assets/native_pending_cards.js` and moved pending approval, Plan review, ask, form, and resolved-card cleanup handling out of `assets/native_events.js`.
+- `nHandle()` now dispatches pending events to `nHandlePendingApproval`, `nHandlePendingAsk`, `nHandlePendingForm`, and `nHandlePendingResolved`, keeping live/replay event flow unchanged while isolating confirmation-card markup.
+- Updated `index.html`, `REFACTOR_PROGRESS.md`, and `tests/check_replay_loading_frontend.py` so script order and static frontend contracts include the new renderer.
+- Refreshed the CLI gap plan to mark pending/form renderer extraction complete and make terminalInteraction/stage/sidebar renderer seams the next structure candidates.

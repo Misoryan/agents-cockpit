@@ -771,3 +771,10 @@ Immediate next commit candidate:
 - Added `/mcp-status [full|tools]` and `/mcp-resources <server>`; both call app-server `mcpServerStatus/list` and surface visible replayable notices with auth status, tool counts, resources, templates, and detail JSON.
 - `mcpServer/startupStatus/updated` and `mcpServer/oauthLogin/completed` now produce explicit visible notices instead of generic status updates; OAuth remains a degraded notice path, not a Web-owned token/login flow.
 - Updated the slash palette, protocol matrix, helper tests, frontend static contract, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so Phase 4 MCP gaps are tracked as first-slice complete with richer UI/admin work still open.
+
+## 58. 2026-07-17 MCP status result-card checkpoint
+
+- Updated `codex_mcp_status.py` so `/mcp-status` and `/mcp-resources` emit replayable `tool_use` / `tool_result` pairs in addition to concise Codex notices.
+- MCP inventory now shows up as the same structured JSON result cards used for other Codex tool outputs, so reconnecting or second clients do not depend on a transient notice detail panel to inspect resources/tools.
+- Extended MCP status helper tests to verify the emitted result-card payloads while keeping the existing `mcpServerStatus/list` request shape and slash command results unchanged.
+- Extended the live MCP smoke to call `mcpServerStatus/list` against the temporary stdio server, so the status path is verified alongside direct MCP tool calls and dynamic-tool passthrough.

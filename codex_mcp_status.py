@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """MCP status and resource-list helpers for Codex sessions."""
 import shlex
+import time
 
 import codex_text
 
@@ -131,6 +132,38 @@ def status_detail_payload(response, include_items=False):
     }
 
 
+def status_request_params(session, detail="full", cursor=None, limit=50):
+    params = {
+        "threadId": getattr(session, "thread_id", None),
+        "limit": limit,
+        "detail": detail,
+    }
+    if cursor:
+        params["cursor"] = cursor
+    return params
+
+
+def emit_result_events(session, call_id, name, input_obj, result):
+    if hasattr(session, "_mcp_result_events"):
+        session._mcp_result_events(call_id, name, input_obj, result, "mcpServerStatus/list")
+        return True
+    if not hasattr(session, "_record_and_broadcast"):
+        return False
+    session._record_and_broadcast({
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": input_obj or {}}]},
+    })
+    session._record_and_broadcast({
+        "type": "user",
+        "message": {"content": [{
+            "type": "tool_result",
+            "tool_use_id": call_id,
+            "content": codex_text.compact_json(result or {}, 5000),
+        }]},
+    })
+    return True
+
+
 def status_notice_message(response):
     data = response.get("data") if isinstance(response, dict) else []
     if not data:
@@ -153,13 +186,7 @@ def status_notice_message(response):
 
 
 def _request_status_page(session, detail="full", cursor=None, limit=50):
-    params = {
-        "threadId": getattr(session, "thread_id", None),
-        "limit": limit,
-        "detail": detail,
-    }
-    if cursor:
-        params["cursor"] = cursor
+    params = status_request_params(session, detail=detail, cursor=cursor, limit=limit)
     return session._client().request("mcpServerStatus/list", params, timeout=30) or {}
 
 
@@ -172,11 +199,16 @@ def list_mcp_status(session, arg):
         return {"ok": False, "error": "usage: /mcp-status [full|tools]"}
     response = _request_status_page(session, detail=detail)
     include_items = detail == "full"
-    session._codex_notice(
-        status_notice_message(response),
-        "mcpServerStatus/list",
-        status_detail_payload(response, include_items=include_items),
+    payload = status_detail_payload(response, include_items=include_items)
+    params = status_request_params(session, detail=detail)
+    emit_result_events(
+        session,
+        "mcp-status-%d" % int(time.time() * 1000),
+        "mcpServerStatus.list",
+        params,
+        payload,
     )
+    session._codex_notice(status_notice_message(response), "mcpServerStatus/list", payload)
     data = response.get("data") if isinstance(response, dict) else []
     return {
         "ok": True,
@@ -232,6 +264,13 @@ def list_mcp_resources(session, arg):
         hint = "Available MCP servers: %s" % ", ".join(available) if available else "No MCP servers returned"
         return {"ok": False, "error": "MCP server not found: %s. %s" % (server_name, hint)}
     payload = resource_browser_payload(server)
+    emit_result_events(
+        session,
+        "mcp-resources-%s-%d" % (display_name(server) or "server", int(time.time() * 1000)),
+        "mcpServerStatus.resources",
+        status_request_params(session, detail="full"),
+        payload,
+    )
     session._codex_notice(resource_browser_message(payload), "mcpServerStatus/list", payload)
     return {
         "ok": True,

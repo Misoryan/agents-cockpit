@@ -98,6 +98,23 @@ def first_text_content(result):
     return ""
 
 
+def server_status_summary(response, server_name):
+    for server in (response or {}).get("data") or []:
+        if not isinstance(server, dict) or server.get("name") != server_name:
+            continue
+        tools = server.get("tools") or {}
+        resources = server.get("resources") or []
+        templates = server.get("resourceTemplates") or []
+        return {
+            "name": server.get("name") or "",
+            "authStatus": server.get("authStatus") or "",
+            "tools": sorted(tools.keys()) if isinstance(tools, dict) else [],
+            "resource_count": len(resources) if isinstance(resources, list) else 0,
+            "resource_template_count": len(templates) if isinstance(templates, list) else 0,
+        }
+    return {}
+
+
 class DynamicSmokeSession:
     def __init__(self, client, thread_id, timeout=30):
         self.client = client
@@ -161,6 +178,15 @@ def run_smoke(cwd, timeout=30, keep_temp=False):
             if "direct smoke" not in direct_text or direct.get("isError"):
                 raise RuntimeError("direct MCP call returned unexpected result: %s" % json.dumps(direct))
 
+            status_res = client.request(
+                "mcpServerStatus/list",
+                {"threadId": thread_id, "detail": "full", "limit": 10},
+                timeout=timeout,
+            ) or {}
+            status_summary = server_status_summary(status_res, SERVER_NAME)
+            if TOOL_NAME not in (status_summary.get("tools") or []):
+                raise RuntimeError("MCP status list did not include smoke tool: %s" % json.dumps(status_res))
+
             call_id = "dynamic-smoke-call"
             dyn_session = DynamicSmokeSession(client, thread_id, timeout=timeout)
             dynamic = codex_requests.handle_dynamic_tool_call(
@@ -189,6 +215,7 @@ def run_smoke(cwd, timeout=30, keep_temp=False):
                 "tool": TOOL_NAME,
                 "direct_text": direct_text,
                 "dynamic_text": dynamic_text,
+                "status": status_summary,
                 "dynamic_records": len(dyn_session.records),
                 "mcp_calls": dyn_session.mcp_calls,
             }

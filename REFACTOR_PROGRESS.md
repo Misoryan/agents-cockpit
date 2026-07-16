@@ -118,6 +118,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `/mcp-resources <server>` call app-server `mcpServerStatus/list`, while
   startup and OAuth-completed notifications render visible Codex notices without
   pretending Web owns the OAuth token/login flow.
+- MCP status/resource browsing now also emits replayable tool_use/tool_result
+  pairs, so every connected client sees the same structured result card instead
+  of relying only on hidden notice details.
 - Codex dynamic tool calls now have a safe first passthrough slice:
   `[codex_dynamic_tools]` maps explicit `namespace.tool`, `namespace.*`, or
   bare `tool` keys to `mcp:<server>/<tool>` targets; mapped `item/tool/call`
@@ -156,6 +159,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `tools/codex_mcp_smoke.py` now runs a real temporary stdio MCP server through
   Codex app-server `mcpServer/tool/call` and the adapter dynamic-tool passthrough
   handler, giving MCP integration a repeatable end-to-end smoke.
+- The MCP smoke also checks app-server `mcpServerStatus/list`, proving the
+  temporary server appears in status inventory before relying on browser-facing
+  `/mcp-status` result cards.
 - `docs/codex-visual-smoke-checklist.md` and
   `tools/codex_visual_smoke_report.py` now define the browser/mobile visual QA
   gate for Codex multi-client sync, reconnect flicker, pending cards, tool

@@ -55,12 +55,16 @@ class FakeSession:
         self.thread_id = "thread-1"
         self.client = FakeClient()
         self.notices = []
+        self.result_events = []
 
     def _client(self):
         return self.client
 
     def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
         self.notices.append((message, method, params, level, silent))
+
+    def _mcp_result_events(self, call_id, name, input_obj, result, method):
+        self.result_events.append((call_id, name, input_obj, result, method))
 
 
 def main():
@@ -88,6 +92,8 @@ def main():
         "limit": 50,
         "detail": "toolsAndAuthOnly",
     }
+    assert session.result_events[-1][1] == "mcpServerStatus.list"
+    assert session.result_events[-1][3]["servers"][0]["name"] == "docs"
     assert session.notices[-1][1] == "mcpServerStatus/list"
 
     assert codex_mcp_status.list_mcp_resources(session, "docs") == {
@@ -98,6 +104,8 @@ def main():
         "resource_templates": 1,
         "tools": 1,
     }
+    assert session.result_events[-1][1] == "mcpServerStatus.resources"
+    assert session.result_events[-1][3]["resources"][0]["uri"] == "file://guide.md"
     assert session.notices[-1][2]["resources"][0]["uri"] == "file://guide.md"
     assert codex_mcp_status.list_mcp_resources(session, "missing")["ok"] is False
 

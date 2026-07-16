@@ -21,6 +21,22 @@ def main():
     assert smoke.first_text_content(result) == "hello"
     assert smoke.first_text_content({"content": [{"type": "inputText", "text": "hi"}]}) == "hi"
     assert smoke.first_text_content({"content": [{"type": "image"}]}) == ""
+    assert smoke.server_status_summary({
+        "data": [{
+            "name": "codex_smoke",
+            "authStatus": "unsupported",
+            "tools": {"echo": {"name": "echo"}},
+            "resources": [],
+            "resourceTemplates": [{"name": "template"}],
+        }]
+    }, "codex_smoke") == {
+        "name": "codex_smoke",
+        "authStatus": "unsupported",
+        "tools": ["echo"],
+        "resource_count": 0,
+        "resource_template_count": 1,
+    }
+    assert smoke.server_status_summary({"data": []}, "missing") == {}
 
     session = smoke.DynamicSmokeSession(client=None, thread_id="thread-1")
     session._record_and_broadcast({

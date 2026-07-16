@@ -6,12 +6,12 @@ stream-json events, while speaking Codex app-server JSONL/JSON-RPC on the
 backend.
 """
 import atexit
-import json
 import os
 import threading
 import time
 
 from codex_client import AppServerRequestError, CodexAppServerClient
+import codex_broadcast
 import codex_config
 import codex_forms
 import codex_history
@@ -36,13 +36,6 @@ _CLIENTS = {}
 
 _REPLAY_MAX_EVENTS = 400
 _REPLAY_STREAM_MAX_CHARS = 24000
-
-
-def _push_notify_worker(title, body, event, webhook_body=None):
-    try:
-        common.push_notify(title, body, event, webhook_body=webhook_body)
-    except Exception:
-        pass
 
 
 def _text_from_user_input(items):
@@ -231,6 +224,7 @@ class CodexSession:
         self._slash = codex_slash.CodexSlashAdapter(self)
         self._requests = codex_requests.CodexRequestAdapter(
             self, AppServerRequestError, common.codex_dynamic_tool_mappings)
+        self._broadcast_adapter = codex_broadcast.CodexBroadcastAdapter(self, ws_send, common)
         self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
@@ -443,19 +437,7 @@ class CodexSession:
         return codex_terminal.terminal_resize(self, process_id, cols, rows)
 
     def _broadcast_transient(self, obj):
-        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        with self.clients_lock:
-            clients = list(self.clients)
-        dead = []
-        for client in clients:
-            try:
-                ws_send(client, data, 0x1)
-            except OSError:
-                dead.append(client)
-        if dead:
-            with self.clients_lock:
-                for client in dead:
-                    self.clients.discard(client)
+        return self._broadcast_adapter.broadcast_transient(obj)
 
     def _replace_history_from_thread(self, thread):
         events = codex_thread_history.events_from_thread(thread)
@@ -671,31 +653,13 @@ class CodexSession:
         return self._replay.decorate_for_broadcast(obj)
 
     def _broadcast(self, obj):
-        obj = self._replay.prepare_broadcast(obj)
-        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        with self.clients_lock:
-            clients = list(self.clients)
-        dead = []
-        for c in clients:
-            try:
-                ws_send(c, data, 0x1)
-            except OSError:
-                dead.append(c)
-        if dead:
-            with self.clients_lock:
-                for c in dead:
-                    self.clients.discard(c)
-        self._persist_if_due(obj)
+        return self._broadcast_adapter.broadcast(obj)
 
     def _persist_if_due(self, obj):
         return self._replay.persist_if_due(obj)
 
     def _send_one(self, sock, obj):
-        try:
-            ws_send(sock, json.dumps(obj, ensure_ascii=False).encode("utf-8"), 0x1)
-        except OSError:
-            with self.clients_lock:
-                self.clients.discard(sock)
+        return self._broadcast_adapter.send_one(sock, obj)
 
     @staticmethod
     def _event_after_seq(ev, after_seq):
@@ -723,18 +687,7 @@ class CodexSession:
         return codex_pending.pending_events_snapshot(self)
 
     def _push(self, event, title, body, webhook_body=None):
-        try:
-            if not common._notify_enabled_for(event):
-                return
-            now = time.time()
-            if now - self._last_notify.get(event, 0.0) < common.NOTIFY_MIN_INTERVAL:
-                return
-            self._last_notify[event] = now
-        except Exception:
-            pass
-        threading.Thread(target=_push_notify_worker,
-                         args=(title or "", body or "", event, webhook_body),
-                         daemon=True).start()
+        return self._broadcast_adapter.push(event, title, body, webhook_body=webhook_body)
 
     def on_client_exit(self):
         was_busy = bool(self._busy)

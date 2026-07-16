@@ -2,7 +2,7 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 sidebar row renderer extraction checkpoint）
+当前基线：`main`（截至 2026-07-17 Codex broadcast adapter extraction checkpoint）
 Codex CLI：`codex-cli 0.142.4`
 协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=27/not_integrated=60。
 
@@ -18,7 +18,7 @@ Codex CLI：`codex-cli 0.142.4`
 | Codex CLI TUI 高频替代 | 72-78% | 高频会话能力覆盖较好；profile/config layer、插件/skills、账号闭环、非交互命令仍明显缺失。 |
 | 多访问源同步与重连体验 | 82-86% | `seq/event_id`、`after=<lastSeq>`、去重、state snapshot、open-WS catch-up、headless 双页 smoke 已完成；手机/窄屏/长会话手工记录仍缺。 |
 | app-server 协议高价值覆盖 | 65-70% | 会话核心 request/notification 覆盖较好；完整 schema 数量上仍有大量 account/config/plugin/windows sandbox/remote-control 能力未集成。 |
-| 代码可维护性 | 75-77% | manager/common/native/frontend 已多轮拆分；工具卡、结果卡、pending 卡、terminalInteraction 卡、text/thinking、tool helper、sidebar Codex lifecycle actions 和 sidebar row rendering 已从主事件/舞台/sidebar 模块继续拆出；`CodexSession`、web 入口和协议路由仍是复杂热点。 |
+| 代码可维护性 | 75-77% | manager/common/native/frontend 已多轮拆分；工具卡、结果卡、pending 卡、terminalInteraction 卡、text/thinking、tool helper、sidebar renderers 和 Codex broadcast/push helper 已拆出；`CodexSession`、web 入口和协议路由仍是复杂热点。 |
 | 共享/公网暴露硬化 | 65-70% | 多用户、workspace root、Origin/Referer、内部 gate auth、hardened verifier 已有；默认配置仍偏本地兼容，public profile 需要继续收紧和验收。 |
 
 ## 2. 当前 Codex 会话链路
@@ -227,7 +227,7 @@ Browser / Android WebView
 - 抽 `CodexInputAdapter`：cwd-bounded file mention、`fuzzyFileSearch` 结果整形、image upload、`localImage` turn input、用户消息图片 replay block。（第一刀已落地：`codex_input.py` 负责上述输入链路，`CodexSession` 保留兼容 wrapper。）
 - 抽 `CodexSlashAdapter`：slash dispatch、session config tuning、thread lifecycle、goal、steer、manual MCP resource/tool 调用。（第一刀已落地：`codex_slash.py` 负责上述命令链路，`CodexSession` 保留兼容 wrapper。）
 - 收口 `CodexRequestAdapter`：tool event/result、tool output append、approval/ask/form wait、dynamic MCP passthrough/reject、unsupported account/attestation recovery、approve/answer。（第一刀已落地：`codex_requests.py` 负责上述 server request 链路，`CodexSession` 保留兼容 wrapper。）
-- 前端 renderer 继续收口：tool-use、tool-result、tool helpers、pending cards、terminalInteraction cards、text/thinking helpers、sidebar Codex action helpers、sidebar rows 已拆出；下一刀优先评估 push/notification 边界或 backend session core seams。
+- 前端 renderer 继续收口：tool-use、tool-result、tool helpers、pending cards、terminalInteraction cards、text/thinking helpers、sidebar Codex action helpers、sidebar rows 已拆出；后端 broadcast/push helper 已拆出；下一刀优先评估 notification adapter cleanup 或 backend session core seams。
 - 保持兼容 wrapper，避免一次修改所有调用点。
 
 验收：新增一种 notification、server request 或前端 card 时，不需要同时理解持久化、WebSocket replay、事件分发和 UI markup。
@@ -282,7 +282,7 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar Codex actions、sidebar rows 已完成，下一步优先拆 push/notification 边界或 backend session core seams 中最容易回归的部分，保持行为不变。
+1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar renderers、Codex broadcast/push helper 已完成，下一步优先拆 notification adapter cleanup 或 backend session core seams 中最容易回归的部分，保持行为不变。
 2. 每一刀都跑完整轻量验证：`py_compile`、所有 helper tests、JS `node --check`、`git diff --check`。
 3. 跑行为 smoke：WS 双客户端、browser 双页、terminalInteraction；如时间允许补一次手机 visual checklist。
 4. 再做 Phase 3 的只读 profile/config/account status 面板，避免继续盲补 CLI 控件。
@@ -303,7 +303,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py codex_input.py codex_notifications.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_notifications.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

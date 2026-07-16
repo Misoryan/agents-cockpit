@@ -701,3 +701,10 @@ Immediate next commit candidate:
 - `assets/app_sidebar.js` now stays focused on session/history model loading, polling, filters, tab state, and pending visibility; row layout lives in the dedicated sidebar row module.
 - Updated `index.html`, `tests/check_replay_loading_frontend.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so script order and static contracts include the new row renderer.
 - This makes future sidebar UX work safer for multi-client refresh and long-history loading because list model updates and row markup are no longer mixed in one file.
+
+## 48. 2026-07-17 Codex broadcast adapter extraction checkpoint
+
+- Added `codex_broadcast.py` with `CodexBroadcastAdapter`, moving WebSocket broadcast, transient replay pushes, one-shot socket sends, dead-client pruning, and push-notification throttling out of `codex_native.py`.
+- `CodexSession._broadcast()`, `_broadcast_transient()`, `_send_one()`, and `_push()` remain as compatibility wrappers, preserving replay facade, manager WebSocket, and notification caller behavior.
+- Added `tests/check_codex_broadcast_helpers.py` to cover broadcast persistence, dead-client pruning, transient sends, one-shot send failure cleanup, notification throttling, and disabled notification events.
+- Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so validation bundles include `codex_broadcast.py`.

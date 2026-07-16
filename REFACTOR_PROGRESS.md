@@ -10,7 +10,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `manager.py` is now a thin HTTP/WebSocket shell; session lifecycle lives in `manager_sessions.py`, internal gate/control endpoints in `manager_internal_api.py`, and browser APIs in `manager_user_api.py`.
 - `common.py` is now mostly a compatibility facade over focused helpers such as `common_auth.py`, `common_process.py`, `common_history.py`, `common_registry.py`, and `common_http.py`.
 - `native.py` keeps the Claude session class while delegating CLI argv/process/replay/gate helpers to `native_*.py` modules.
-- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, pending request state, replay facade/helpers, turn/thread lifecycle, notification adapter, session state persistence/recovery, user input/file mention/image helpers, slash/lifecycle/manual MCP helpers, text/form/history, thread-history conversion, and terminal interaction helpers to `codex_*.py` modules.
+- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, pending request state, replay facade/helpers, broadcast/push coordination, turn/thread lifecycle, notification adapter, session state persistence/recovery, user input/file mention/image helpers, slash/lifecycle/manual MCP helpers, text/form/history, thread-history conversion, and terminal interaction helpers to `codex_*.py` modules.
 - `index.html` is now mostly markup. Frontend assets live under `assets/`, split into app shell/sidebar/state/native/replay/socket/action/auth/icon files, with Codex text/thinking, tool helper, tool-use, tool-result, pending-card, terminal-card, sidebar lifecycle-action, and sidebar row renderers in dedicated files.
 
 ## Completed Items
@@ -238,6 +238,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `assets/app_sidebar.js` into `assets/app_sidebar_rows.js`, leaving the
   sidebar core focused on session/history models, polling, filters, and tab
   state.
+- Codex WebSocket broadcast, transient replay pushes, one-shot socket sends,
+  and external push notification throttling moved from `codex_native.py` into
+  `codex_broadcast.py`, leaving `CodexSession` with compatibility wrappers
+  while centralizing dead-client pruning and notify throttling behavior.
 - The Codex launch modal now shows a read-only `config/read` status line with
   high-frequency fields plus model/profile counts, making it clearer which
   Codex defaults the Web session will inherit when launch overrides are blank.
@@ -256,7 +260,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 
 - Reduce `codex_native.py` further only if the remaining session core grows again; thread-history conversion is now in `codex_thread_history.py`.
 - Decide whether `web.py` should be split into auth, proxy, and lifecycle helpers; current size is acceptable but still mixed.
-- Continue structure work with push/notification boundaries or backend session core seams before adding more markup to `native_events.js`, `native_stage.js`, or `app_sidebar.js`.
+- Continue structure work with notification adapter cleanup or backend session core seams before adding more markup to `native_events.js`, `native_stage.js`, or `app_sidebar.js`.
 - For release hardening, restart web/manager and manually exercise login, launch, replay, ask/approve, and reconnect flows.
 
 ## Validation Bundle
@@ -264,7 +268,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 Run this bundle after behavior changes:
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py codex_input.py codex_notifications.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_notifications.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

@@ -12,6 +12,16 @@ DYNAMIC_TOOL_REJECTION = (
     "Agents Cockpit has no enabled MCP passthrough mapping for this dynamic tool. "
     "Add it under [codex_dynamic_tools] in config.ini if it is safe to run."
 )
+ATTESTATION_RECOVERY = (
+    "Codex requested client attestation, which this web adapter cannot generate yet. "
+    "Run the same task once in Codex CLI to complete the device/security check, then "
+    "return to Agents Cockpit and retry."
+)
+AUTH_REFRESH_RECOVERY = (
+    "Codex requested a ChatGPT auth token refresh, which this web adapter cannot perform yet. "
+    "Run `codex login` or open Codex CLI once under the same CODEX_HOME, complete login/refresh, "
+    "then restart or retry the web Codex session."
+)
 
 
 def approval_response(method, allow, always, params):
@@ -237,6 +247,37 @@ def dynamic_content_items_from_mcp(result):
     return items
 
 
+def recoverable_unsupported_request(method):
+    """Return safe user-facing recovery text for known unsupported app requests."""
+    if method == "attestation/generate":
+        return {
+            "message": ATTESTATION_RECOVERY,
+            "detail": {
+                "recovery": [
+                    "Open Codex CLI on this machine with the same CODEX_HOME.",
+                    "Let Codex complete the device/security attestation flow.",
+                    "Retry the web session after the CLI flow succeeds.",
+                ],
+                "adapter_status": "visible unsupported; no fake success returned",
+            },
+            "error": "client attestation is not supported by Agents Cockpit",
+        }
+    if method == "account/chatgptAuthTokens/refresh":
+        return {
+            "message": AUTH_REFRESH_RECOVERY,
+            "detail": {
+                "recovery": [
+                    "Run `codex login` or start Codex CLI with the same CODEX_HOME.",
+                    "Complete the browser/account refresh flow there.",
+                    "Restart or retry the web Codex session after credentials refresh.",
+                ],
+                "adapter_status": "visible unsupported; token material is not exposed in the web UI",
+            },
+            "error": "ChatGPT auth token refresh is not supported by Agents Cockpit",
+        }
+    return None
+
+
 def handle_dynamic_tool_call(session, req_id, method, params, mappings):
     target = dynamic_tool_target(params, mappings)
     if not target:
@@ -291,20 +332,10 @@ def handle_server_request(session, req_id, method, params, app_error_cls):
         return session._await_user_input(req_id, method, params)
     if method == "item/tool/call":
         return session._handle_dynamic_tool_call(req_id, method, params)
-    if method == "attestation/generate":
-        session._codex_notice(
-            "Codex requested client attestation; Agents Cockpit cannot generate it yet.",
-            method,
-            params,
-        )
-        raise app_error_cls(-32601, "client attestation is not supported by Agents Cockpit")
-    if method == "account/chatgptAuthTokens/refresh":
-        session._codex_notice(
-            "Codex requested ChatGPT auth token refresh; refresh the login in Codex CLI.",
-            method,
-            params,
-        )
-        raise app_error_cls(-32601, "ChatGPT auth token refresh is not supported by Agents Cockpit")
+    known_unsupported = recoverable_unsupported_request(method)
+    if known_unsupported:
+        session._codex_notice(known_unsupported["message"], method, known_unsupported["detail"])
+        raise app_error_cls(-32601, known_unsupported["error"])
     if method == "currentTime/read":
         return {"utcTimestampMs": int(time.time() * 1000)}
     session._codex_notice("Unsupported app-server request: " + str(method or "unknown"), method, params)

@@ -91,11 +91,49 @@ fail visibly instead of being executed or reported as successful.
 
 This app can execute commands on the host through Codex or Claude tools. Use a strong password and expose it only on trusted networks or behind HTTPS/VPN.
 
+Recommended hardened settings for anything beyond a trusted personal LAN:
+
+```ini
+[server]
+host = 127.0.0.1
+use_https = 1
+http_port = 0
+
+[users]
+allow_unconfigured_paths = 0
+primary_user_uses_default_homes = 0
+
+[approval]
+auto_approve = 0
+
+[security]
+cookie_secure = 1
+session_ttl = 28800
+```
+
+When exposing through a tunnel or reverse proxy, terminate HTTPS before the
+browser reaches Agents Cockpit and keep the manager port private.
+
 For password hashes:
 
 ```bash
 python -c "import common; print(common.hash_password('your-password'))"
 ```
+
+## Codex Account Recovery
+
+Codex sessions use `codex app-server --stdio` and therefore share the local
+Codex account state under the active `CODEX_HOME`. Most normal turns run
+directly in the web UI, but two account/security flows still require the CLI:
+
+- `account/chatgptAuthTokens/refresh`: run `codex login` or open Codex CLI once
+  with the same `CODEX_HOME`, complete the account refresh, then retry or
+  restart the web session.
+- `attestation/generate`: run the same task once in Codex CLI so Codex can
+  complete the device/security attestation flow, then return to the web UI.
+
+Agents Cockpit reports these cases visibly in the conversation and does not
+pretend success or display token material in the browser.
 
 ## License
 

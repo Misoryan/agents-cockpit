@@ -2,11 +2,13 @@
 # Copy this file to config.ini and restart the service. Missing keys use defaults.
 
 [server]
-# Browser-facing host/port.
+# Browser-facing host/port. For tunneled/public access prefer host=127.0.0.1
+# behind HTTPS/VPN/reverse proxy instead of exposing this port directly.
 host = 0.0.0.0
 port = 7682
 
-# Optional HTTPS for browser access. Leave disabled for trusted LAN HTTP.
+# Optional HTTPS for browser access. Enable for non-local browser access and
+# pair it with [security] cookie_secure=1.
 use_https = 0
 cert_cn = agents-cockpit
 cert_file =
@@ -21,7 +23,8 @@ heartbeat = 2
 heartbeat_grace = 3
 
 [approval]
-# 1 = pass --dangerously-skip-permissions to Claude; 0 = use web approval gates.
+# 1 = auto-approve dangerous operations; 0 = use web approval gates.
+# Set 0 for shared machines, tunnels, or any hardened deployment.
 auto_approve = 1
 
 [binaries]
@@ -40,9 +43,11 @@ claude_home =
 data_dir = .agent-cockpit/users
 # Default workspace created for each login user. Use {user} or {uid}.
 default_workspace_root = .agent-cockpit/users/{uid}/workspace
-# 1 = compatibility mode, allow any local path; set 0 to restrict to workspace roots.
+# 1 = compatibility mode, allow any local path; set 0 to restrict to workspace
+# roots. Hardened deployments should use 0 and configure workspace_roots per user.
 allow_unconfigured_paths = 1
 # 1 = first auth.txt user keeps the normal Codex/Claude homes; other users use per-user homes.
+# Set 0 when multiple people share this service and should not share CLI state.
 primary_user_uses_default_homes = 1
 
 [ccswitch]
@@ -87,5 +92,5 @@ desktop_toast = 0
 session_ttl = 86400
 max_fail = 5
 lockout_secs = 300
-# Set to 1 only when the browser talks to this app over HTTPS.
+# Set to 1 when the browser talks to this app over HTTPS. Keep 0 only for local HTTP.
 cookie_secure = 0

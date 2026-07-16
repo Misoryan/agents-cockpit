@@ -116,6 +116,12 @@ checkout. It is intentionally concise so future changes can stay incremental.
   bare `tool` keys to `mcp:<server>/<tool>` targets; mapped `item/tool/call`
   requests call `mcpServer/tool/call` and return `DynamicToolCallResponse`,
   while unmapped tools still fail visibly instead of pretending success.
+- Unsupported Codex account/security requests now have safer recovery UX:
+  `account/chatgptAuthTokens/refresh` and `attestation/generate` show concrete
+  CLI recovery steps without exposing token material or returning fake success.
+- README/config now document a hardened profile for tunneled/shared use:
+  HTTPS-only cookies, workspace-root restrictions, per-user Codex/Claude homes,
+  and web approval gates instead of auto-approve.
 - Frontend `state_snapshot` handling now also clears stale thinking/turn UI
   when the server says the session is no longer running, covering missed result
   events during WebSocket 1006-style reconnects without repainting the whole

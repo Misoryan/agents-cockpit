@@ -333,3 +333,11 @@ git diff --check
 - Added `--launch-temp` so the same smoke can create and stop a temporary idle Codex session when no running Codex session is available, keeping the multi-client reconnect check repeatable after restarts.
 - The two-client probe verifies both clients receive a `state_snapshot`, agree on the latest replay `seq`, and can reconnect with their own `after=<lastSeq>` cursor without receiving duplicate replay batches.
 - This does not replace manual browser/mobile visual QA, but it turns the core multi-access invariant into a repeatable protocol-level smoke test that can be run before each checkpoint.
+
+
+## 13. 2026-07-17 account recovery and hardened profile checkpoint
+
+- Improved the known unsupported Codex account/security requests: `account/chatgptAuthTokens/refresh` and `attestation/generate` now produce explicit recovery notices with CLI steps instead of showing only a generic unsupported error.
+- These notices intentionally pass safe recovery metadata to the UI instead of raw request params, so token material is not exposed in the browser replay/detail panel.
+- Added README/config guidance for hardened deployments: HTTPS-only cookies, workspace-root restrictions, per-user Codex/Claude homes, and web approval gates instead of auto-approve.
+- The adapter still does not fake success for token refresh or attestation; full Web-native account refresh remains a later low-priority account integration task.

@@ -173,6 +173,9 @@ def main():
 
     assert codex_requests.dynamic_tool_target(
         {"namespace": "ns", "tool": "read"}, {"ns.*": "mcp:docs/{tool}"}) == ("docs", "read")
+    recovery = codex_requests.recoverable_unsupported_request("account/chatgptAuthTokens/refresh")
+    assert "codex login" in recovery["message"]
+    assert recovery["detail"]["adapter_status"].startswith("visible unsupported")
 
     session = FakeSession()
     assert codex_requests.handle_server_request(
@@ -194,6 +197,25 @@ def main():
     )
     assert result["success"] is True
     assert session.mcp_calls[-1]["server"] == "docs"
+    try:
+        codex_requests.handle_server_request(
+            session, "req-4c", "account/chatgptAuthTokens/refresh",
+            {"accessToken": "secret-token"}, AppError)
+        raise AssertionError("expected AppError")
+    except AppError as exc:
+        assert exc.code == -32601
+        assert "token refresh" in exc.message
+    assert session.notices[-1][1] == "account/chatgptAuthTokens/refresh"
+    assert "secret-token" not in str(session.notices[-1])
+    assert "Run `codex login`" in session.notices[-1][2]["recovery"][0]
+    try:
+        codex_requests.handle_server_request(session, "req-4d", "attestation/generate", {"nonce": "abc"}, AppError)
+        raise AssertionError("expected AppError")
+    except AppError as exc:
+        assert exc.code == -32601
+        assert "attestation" in exc.message
+    assert session.notices[-1][1] == "attestation/generate"
+    assert "device/security attestation" in session.notices[-1][2]["recovery"][1]
     try:
         codex_requests.handle_server_request(session, "req-5", "unknown/method", {}, AppError)
         raise AssertionError("expected AppError")

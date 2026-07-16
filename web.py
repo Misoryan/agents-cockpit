@@ -258,7 +258,12 @@ class WebHandler(BaseHandler):
             self.end_headers()
             self.wfile.write(data)
         except OSError as e:
-            self._json({"error": "manager proxy failed: %s" % e}, 502)
+            try:
+                self._json({"error": "manager proxy failed: %s" % e}, 502)
+            except OSError:
+                # Browser/frp clients often cancel polling requests; do not turn
+                # normal disconnects into noisy traceback storms.
+                pass
         finally:
             try:
                 if conn:
@@ -330,6 +335,8 @@ class WebHandler(BaseHandler):
     def _web_get(self, path):
         if path in ("/", "/index.html"):
             self._serve_index(); return
+        if path.startswith(self.static_url_prefix):
+            self._serve_static(path); return
         if path.startswith("/t/") and path.endswith("/ws"):
             self._proxy_manager_ws(); return
         if path.startswith("/t/") or path.startswith("/api/"):
@@ -366,6 +373,8 @@ class WebHandler(BaseHandler):
         if hasattr(common, "verify_session_token"):
             if path in ("/", "/index.html"):
                 self._serve_index(); return
+            if path.startswith(self.static_url_prefix):
+                self._serve_static(path); return
             if path == "/api/whoami":
                 self._whoami(); return
         if not self._auth():

@@ -1,0 +1,99 @@
+# -*- coding: utf-8 -*-
+"""Replay identity and snapshot helpers for Claude NativeSession."""
+
+
+def seq_value(obj):
+    try:
+        return int((obj or {}).get("seq") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def last_seq(session):
+    return max(0, int(session._next_seq) - 1)
+
+
+def decorate_event(session, obj):
+    event = dict(obj or {})
+    seq = seq_value(event)
+    if seq <= 0:
+        seq = session._next_seq
+        event["seq"] = seq
+    else:
+        event["seq"] = seq
+    if seq >= session._next_seq:
+        session._next_seq = seq + 1
+    if not event.get("event_id"):
+        event["event_id"] = "%s:%d" % (session.sid, seq)
+    return event
+
+
+def record_event(session, obj, limit=200):
+    event = decorate_event(session, obj)
+    session.events.append(event)
+    if len(session.events) > limit:
+        session.events = session.events[-limit:]
+    return event
+
+
+def events_after_seq(session, after_seq=0):
+    try:
+        after = int(after_seq or 0)
+    except (TypeError, ValueError):
+        after = 0
+    if after <= 0:
+        return list(session.events)
+    return [event for event in session.events if seq_value(event) > after]
+
+
+def load_events(session, events, next_seq=None):
+    session.events = []
+    session._next_seq = 1
+    for event in events or []:
+        if isinstance(event, dict):
+            record_event(session, event)
+    try:
+        stored_next = int(next_seq or 0)
+    except (TypeError, ValueError):
+        stored_next = 0
+    if stored_next > session._next_seq:
+        session._next_seq = stored_next
+
+
+def pending_events_snapshot(pending_items):
+    events = []
+    for tool_use_id, entry in pending_items:
+        kind = entry.get("kind")
+        if kind == "approve":
+            events.append({"type": "pending_approval",
+                           "tool_use_id": tool_use_id,
+                           "name": entry.get("tool") or "Approval",
+                           "input": entry.get("input") or {},
+                           "preview": entry.get("preview") or "",
+                           "danger": bool(entry.get("danger"))})
+        elif kind == "ask":
+            events.append({"type": "pending_ask",
+                           "tool_use_id": tool_use_id,
+                           "question": entry.get("question") or "",
+                           "questions": entry.get("questions") or []})
+    return events
+
+
+def replay_payload(session, events, pending, model="", after_seq=0, state_fn=None):
+    last = last_seq(session)
+    state = state_fn() if state_fn else "idle"
+    return {
+        "ok": True,
+        "events": events,
+        "snapshot": {
+            "type": "state_snapshot",
+            "state": state,
+            "running": bool(session._busy),
+            "plan": bool(session.plan_mode),
+            "task": bool(session.task_mode),
+            "pending": [{"id": event.get("tool_use_id"), "kind": event.get("type")} for event in pending],
+            "last_seq": last,
+        },
+        "pending": ([{"type": "system", "model": model}] if model and not after_seq else []) + pending,
+        "last_seq": last,
+    }

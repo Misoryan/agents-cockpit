@@ -32,6 +32,8 @@ try:
     MANAGER_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 except ValueError:
     MANAGER_PORT = 0
+USER = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("AGENT_COCKPIT_USER", "")
+INTERNAL_AUTH = sys.argv[4] if len(sys.argv) > 4 else os.environ.get("AGENT_COCKPIT_INTERNAL_AUTH", "")
 
 HTTP_TIMEOUT = 660  # 略大于 manager 侧 600s 门控超时,让 manager 先裁决
 
@@ -57,7 +59,12 @@ def _post(path, payload):
     conn = http.client.HTTPConnection("127.0.0.1", MANAGER_PORT, timeout=HTTP_TIMEOUT)
     try:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        conn.request("POST", path, body=body, headers={"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if INTERNAL_AUTH:
+            headers["Authorization"] = INTERNAL_AUTH
+        if USER:
+            headers["X-Agent-Cockpit-User"] = USER
+        conn.request("POST", path, body=body, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8", "replace")
         try:

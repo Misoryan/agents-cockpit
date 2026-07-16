@@ -9,25 +9,24 @@ port/PID helpers, and the manager-spawn helpers.
 This module must NOT import web.py / manager.py (keeps the dependency graph
 acyclic: app -> {web, manager} -> common).
 """
-import http.server
-import socketserver
-import json
 import os
-import subprocess
 import threading
-import urllib.parse
-import base64
 import sys
 import time
-import socket
 import configparser
-import http.client
-import hashlib
-import hmac
-import re
 import secrets
-import sqlite3
-from datetime import datetime
+
+import common_auth
+import common_binaries
+import common_browse
+import common_ccswitch
+import common_history
+import common_http
+import common_notify
+import common_process
+import common_registry
+import common_users
+from common_ws import WS_GUID, ws_accept_key, ws_recv, ws_send
 
 # ---- config: read everything from config.ini (no env vars) ----
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -111,8 +110,8 @@ def _cfg_get(section, key, fallback=""):
 HOST = (_CFG.get("server", "host") or "0.0.0.0").strip()
 PICKER_PORT = _CFG.getint("server", "port") or 7682
 INDEX = os.path.join(HERE, "index.html")
+ASSETS_DIR = os.path.join(HERE, "assets")
 CREATE_NO_WINDOW = 0x08000000
-WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 BUF_CAP = _CFG.getint("limits", "buf_cap") or 262144
 AUTO_APPROVE = _CFG.getboolean("approval", "auto_approve")  # Claude --dangerously-skip-permissions
 RUN_MODE = "manager" if "--manager" in sys.argv else "web"
@@ -133,7 +132,7 @@ DEFAULT_WORKSPACE_ROOT = (_cfg_get("users", "default_workspace_root") or "").str
 ALLOW_UNCONFIGURED_PATHS = _CFG.getboolean("users", "allow_unconfigured_paths")
 PRIMARY_USER_USES_DEFAULT_HOMES = _CFG.getboolean("users", "primary_user_uses_default_homes")
 STOP_SENTINEL = "stop.sentinel"   # written by app.py --stop when the web layer is unreachable
-REG_LOCK = threading.Lock()                       # only guards disk writes; never nest under manager._lock
+REG_LOCK = common_registry.REG_LOCK               # only guards disk writes; never nest under manager._lock
 STOPPING = False   # set True by web /api/_stop to freeze the watchdog + ensure_manager respawn
 MANAGER_HEARTBEAT_INTERVAL = _CFG.getfloat("manager", "heartbeat") or 2.0
 MANAGER_HEARTBEAT_GRACE = _CFG.getint("manager", "heartbeat_grace") or 3
@@ -189,351 +188,163 @@ COOKIE_SECURE = _CFG.getboolean("security", "cookie_secure")    # 1=带 Secure(�
 
 # ---------- binary discovery ----------
 def _prefer_windows_cmd(path):
-    if os.name != "nt" or not path:
-        return path
-    root, ext = os.path.splitext(path)
-    if ext.lower() in (".cmd", ".bat", ".exe"):
-        return path
-    for suffix in (".cmd", ".exe", ".bat", ".ps1"):
-        cand = path + suffix
-        if os.path.isfile(cand):
-            return cand
-    return path
+    return common_binaries.prefer_windows_cmd(path)
 
 
 def resolve_cli_bin(name, override=None):
-    if override and os.path.isfile(override):
-        return _prefer_windows_cmd(override)
-    try:
-        cmd = ("where %s" % name) if os.name == "nt" else ("command -v %s" % name)
-        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, timeout=10).decode(errors="replace")
-        for line in out.splitlines():
-            shim = _prefer_windows_cmd(line.strip())
-            if shim and os.path.isfile(shim):
-                return shim
-    except Exception:
-        pass
-    return None
+    return common_binaries.resolve_cli_bin(name, override)
 
 
 def resolve_claude_bin(override=None):
-    return resolve_cli_bin("claude", override)
+    return common_binaries.resolve_claude_bin(override)
 
 
 def resolve_codex_bin(override=None):
-    return resolve_cli_bin("codex", override)
+    return common_binaries.resolve_codex_bin(override)
 
 
 def _script_argv(path, *args):
-    if not path:
-        return []
-    ext = os.path.splitext(path)[1].lower()
-    if os.name == "nt" and ext == ".ps1":
-        return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path] + list(args)
-    return [path] + list(args)
+    return common_binaries.script_argv(path, *args)
 
 
 def codex_argv(*args):
-    if CODEX_BIN:
-        base = os.path.dirname(CODEX_BIN)
-        js = os.path.join(base, "node_modules", "@openai", "codex", "bin", "codex.js")
-        if os.path.isfile(js):
-            node = os.path.join(base, "node.exe") if os.name == "nt" else os.path.join(base, "node")
-            if not os.path.isfile(node):
-                node = "node"
-            return [node, js] + list(args)
-    return _script_argv(CODEX_BIN, *args)
+    return common_binaries.codex_argv(CODEX_BIN, *args)
 
 
 def is_codex_backend(backend):
-    return backend in ("codex", "codex_native")
+    return common_binaries.is_codex_backend(backend)
 
 
 def is_claude_backend(backend):
-    return backend in ("claude", "native", "claude_native")
+    return common_binaries.is_claude_backend(backend)
 
 
 def normalize_backend(backend):
-    if is_codex_backend(backend):
-        return "codex_native"
-    if is_claude_backend(backend):
-        return "claude_native"
-    if CODEX_BIN:
-        return "codex_native"
-    return "claude_native"
+    return common_binaries.normalize_backend(backend, CODEX_BIN)
 
 
-if _STOP_OR_HELP:
-    # stop/help must not require a working install (bins are irrelevant there)
-    CLAUDE_BIN = None
-    CODEX_BIN = None
-    BACKENDS = {}
-else:
-    CLAUDE_BIN = resolve_claude_bin(_cfg_get("binaries", "claude").strip() or None)
-    CODEX_BIN = resolve_codex_bin(_cfg_get("binaries", "codex").strip() or None)
-    BACKENDS = {}
-    if CLAUDE_BIN and os.path.isfile(CLAUDE_BIN):
-        BACKENDS["claude_native"] = {"bin": CLAUDE_BIN, "label": "Claude"}
-    if CODEX_BIN and os.path.isfile(CODEX_BIN):
-        BACKENDS["codex_native"] = {"bin": CODEX_BIN, "label": "Codex"}
-    if not BACKENDS:
-        print("ERROR: Neither Claude CLI nor Codex CLI was found. Install one or set [binaries] in config.ini.")
-        sys.exit(1)
+CLAUDE_BIN, CODEX_BIN, BACKENDS = common_binaries.discover_backends(
+    _cfg_get("binaries", "claude").strip() or None,
+    _cfg_get("binaries", "codex").strip() or None,
+    stop_or_help=_STOP_OR_HELP,
+)
+if not _STOP_OR_HELP and not BACKENDS:
+    print("ERROR: Neither Claude CLI nor Codex CLI was found. Install one or set [binaries] in config.ini.")
+    sys.exit(1)
 
 # ---------- auth: users, password hashing, session tokens ----------
-# auth.txt 每行一个用户 "用户名:凭证"。凭证可以是:
-#   * 明文(兼容旧版,如 claude:password123)
-#   * 哈希 "$pbkdf2$<iters>$<salt_b64>$<hash_b64>"(推荐;用 hash_password() 生成)
-# 行首 # 视为注释,空行忽略;多行 = 多用户。
-USERS = {}
-_legacy_user = None
-try:
-    with open(AUTH_FILE, "r", encoding="utf-8") as _f:
-        for _raw in _f:
-            ln = _raw.strip()
-            if not ln or ln.startswith("#") or ":" not in ln:
-                continue
-            _u, _p = ln.split(":", 1)
-            USERS[_u.strip()] = _p
-            if _legacy_user is None:
-                _legacy_user = _u.strip()
-except OSError:
-    pass
+# auth.txt format stays compatible: "user:credential", where credential may be
+# plaintext or "$pbkdf2$<iters>$<salt_b64>$<hash_b64>" from hash_password().
+USERS, _legacy_user = common_auth.load_users(AUTH_FILE)
 if not USERS and not _STOP_OR_HELP:
-    print("ERROR: %s 没有有效的 用户名:凭证 行" % AUTH_FILE); sys.exit(1)
-# 仅用于内部 web->manager 调用(manager 信任本机)与启动日志;对外登录走 USERS。
+    print("ERROR: %s has no valid user:credential lines" % AUTH_FILE); sys.exit(1)
+# Used only for local web->manager/control calls; browser login uses USERS.
 CRED = ("%s:%s" % (_legacy_user, USERS.get(_legacy_user, ""))) if _legacy_user else ":"
-EXPECTED_AUTH = "Basic " + base64.b64encode(CRED.encode()).decode()
+EXPECTED_AUTH = common_auth.expected_basic_auth(_legacy_user, USERS)
 
-
-def hash_password(password, iters=120000):
-    """生成 "$pbkdf2$iters$salt_b64$hash_b64" 哈希,写入 auth.txt 即可。命令行:
-       python -c "import common; print(common.hash_password('你的密码'))" """
-    salt = secrets.token_bytes(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
-    return "$pbkdf2$%d$%s$%s" % (iters, base64.b64encode(salt).decode(),
-                                 base64.b64encode(dk).decode())
-
-
-def verify_password(password, stored):
-    """校验密码;支持 $pbkdf2$ 哈希与明文(旧版)。常量时间比较。"""
-    if not stored or not password:
-        return False
-    if stored.startswith("$pbkdf2$"):
-        parts = stored.split("$")
-        if len(parts) != 5:
-            return False
-        try:
-            iters = int(parts[2])
-            salt = base64.b64decode(parts[3])
-            want = base64.b64decode(parts[4])
-        except Exception:
-            return False
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
-        return hmac.compare_digest(dk, want)
-    return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
+hash_password = common_auth.hash_password
+verify_password = common_auth.verify_password
 
 
 def _load_or_create_session_secret():
-    """会话签名密钥,持久化到 STATE_DIR,使已签发的 token 在 web 重启后仍有效。"""
-    path = os.path.join(STATE_DIR, "session_secret")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            sec = f.read().strip()
-        if sec:
-            return sec
-    except OSError:
-        pass
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        sec = secrets.token_hex(32)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(sec)
-        return sec
-    except OSError:
-        return ""   # 回退:用一次性临时密钥(token 不跨重启)
+    """Load or create the HMAC secret persisted under STATE_DIR."""
+    return common_auth.load_or_create_session_secret(STATE_DIR)
 
 
 _SESSION_SECRET = (_load_or_create_session_secret() or secrets.token_hex(32)).encode("utf-8")
+INTERNAL_AUTH = common_auth.internal_auth(_SESSION_SECRET)
+
+
+def verify_internal_auth(header):
+    """Validate the private web/manager/gate bearer token."""
+    return common_auth.verify_internal_auth(header, INTERNAL_AUTH)
 
 
 def make_session_token(user):
-    """签发无状态 HMAC token: base64(payload).sig,payload 含 user 与过期时间。"""
-    payload = {"u": user, "exp": int(time.time()) + SESSION_TTL}
-    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    pb = base64.urlsafe_b64encode(body).decode("ascii")
-    sig = hmac.new(_SESSION_SECRET, pb.encode("ascii"), hashlib.sha256).hexdigest()
-    return pb + "." + sig
+    """Sign a stateless HMAC token containing user and expiry."""
+    return common_auth.make_session_token(user, _SESSION_SECRET, SESSION_TTL)
 
 
 def verify_session_token(token):
-    """token 有效且未过期则返回用户名,否则 None。"""
-    if not token or "." not in token:
-        return None
-    pb, _, sig = token.partition(".")
-    expect = hmac.new(_SESSION_SECRET, pb.encode("ascii"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, expect):
-        return None
-    try:
-        payload = json.loads(base64.urlsafe_b64decode(pb.encode("ascii")).decode("utf-8"))
-        exp = int(payload.get("exp", 0))
-    except Exception:
-        return None
-    if exp < time.time():
-        return None
-    u = payload.get("u")
-    return u if (isinstance(u, str) and u in USERS) else None
+    """Return the user name for a valid, unexpired token; otherwise None."""
+    return common_auth.verify_session_token(token, _SESSION_SECRET, USERS)
 
 
 def session_cookie_header(name, value, max_age=SESSION_TTL, secure=COOKIE_SECURE):
-    """构造 Set-Cookie 值: HttpOnly + SameSite=Lax(+可选 Secure)。
-    secure 默认取 COOKIE_SECURE;明文 HTTP(局域网)监听器应传 False,否则浏览器不回传 Cookie。"""
-    parts = ["%s=%s" % (name, value), "Path=/", "HttpOnly", "SameSite=Lax",
-             "Max-Age=%d" % max_age]
-    if secure:
-        parts.append("Secure")
-    return "; ".join(parts)
+    """Build Set-Cookie with HttpOnly + SameSite=Lax and optional Secure."""
+    return common_auth.session_cookie_header(name, value, max_age, secure=secure)
 
 
 # ---------- per-user local state / workspace roots ----------
-def safe_user_id(user):
-    """Stable filesystem-safe id for a login name."""
-    raw = (user or "").strip() or "user"
-    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip(".-")[:32] or "user"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
-    return "%s-%s" % (slug, digest)
+def _user_settings():
+    return common_users.UserSettings(
+        base_dir=HERE,
+        user_data_dir=USER_DATA_DIR,
+        default_workspace_root=DEFAULT_WORKSPACE_ROOT,
+        allow_unconfigured_paths=ALLOW_UNCONFIGURED_PATHS,
+        primary_user_uses_default_homes=PRIMARY_USER_USES_DEFAULT_HOMES,
+        claude_home=CLAUDE_HOME,
+        users=USERS,
+    )
+
+
+safe_user_id = common_users.safe_user_id
 
 
 def _format_user_path(template, user, uid):
-    val = (template or "").replace("{user}", user or "").replace("{uid}", uid or "")
-    if not val:
-        return ""
-    return os.path.abspath(os.path.join(HERE, val) if not os.path.isabs(val) else val)
+    return common_users.format_user_path(template, user, uid, _user_settings())
 
 
 def user_state_dir(user):
-    uid = safe_user_id(user)
-    return os.path.join(USER_DATA_DIR, uid)
+    return common_users.user_state_dir(user, _user_settings())
 
 
 def primary_user():
-    try:
-        return next(iter(USERS.keys()))
-    except StopIteration:
-        return ""
+    return common_users.primary_user(_user_settings())
 
 
 def user_uses_default_homes(user):
-    return bool(PRIMARY_USER_USES_DEFAULT_HOMES and user and user == primary_user())
+    return common_users.user_uses_default_homes(user, _user_settings())
 
 
 def user_claude_home(user, state_dir=None):
-    if user_uses_default_homes(user):
-        return os.path.abspath(CLAUDE_HOME)
-    return os.path.join(state_dir or user_state_dir(user), "claude-home")
+    return common_users.user_claude_home(user, _user_settings(), state_dir=state_dir)
 
 
 def user_codex_home(user, state_dir=None):
-    if user_uses_default_homes(user):
-        return ""
-    return os.path.join(state_dir or user_state_dir(user), "codex-home")
+    return common_users.user_codex_home(user, _user_settings(), state_dir=state_dir)
 
 
 def user_profile_path(user):
-    return os.path.join(user_state_dir(user), "profile.json")
+    return common_users.user_profile_path(user, _user_settings())
 
 
 def load_user_profile(user):
-    try:
-        with open(user_profile_path(user), "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        return obj if isinstance(obj, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    return common_users.load_user_profile(user, _user_settings())
 
 
 def user_workspace_roots(user):
-    uid = safe_user_id(user)
-    roots = []
-    prof = load_user_profile(user)
-    raw = prof.get("workspace_roots")
-    if isinstance(raw, list):
-        roots.extend(x for x in raw if isinstance(x, str) and x.strip())
-    default_root = _format_user_path(DEFAULT_WORKSPACE_ROOT, user or "", uid)
-    if default_root:
-        roots.append(default_root)
-    out, seen = [], set()
-    for root in roots:
-        p = _format_user_path(root, user or "", uid)
-        key = os.path.normcase(os.path.abspath(p))
-        if key and key not in seen:
-            seen.add(key); out.append(os.path.abspath(p))
-    return out
+    return common_users.user_workspace_roots(user, _user_settings())
 
 
 def ensure_user_dirs(user):
-    sd = user_state_dir(user)
-    os.makedirs(sd, exist_ok=True)
-    for root in user_workspace_roots(user):
-        try:
-            os.makedirs(root, exist_ok=True)
-        except OSError:
-            pass
-    return sd
+    return common_users.ensure_user_dirs(user, _user_settings())
 
 
 def user_context(user):
-    user = (user or "").strip()
-    if not user or user not in USERS:
-        return None
-    ensure_user_dirs(user)
-    return {
-        "user": user,
-        "uid": safe_user_id(user),
-        "state_dir": user_state_dir(user),
-        "registry_path": os.path.join(user_state_dir(user), "sessions.json"),
-        "workspace_roots": user_workspace_roots(user),
-        "claude_home": user_claude_home(user),
-        "codex_home": user_codex_home(user),
-        "uses_default_homes": user_uses_default_homes(user),
-        "profile": load_user_profile(user),
-    }
+    return common_users.user_context(user, _user_settings())
 
 
 def request_user(handler):
-    """Return the authenticated user from a web cookie or trusted manager header."""
-    huser = (handler.headers.get("X-Agent-Cockpit-User") or "").strip()
-    if huser and huser in USERS:
-        return huser
-    cookie = handler.headers.get("Cookie", "")
-    tok = ""
-    for part in cookie.split(";"):
-        part = part.strip()
-        if part.partition("=")[0] == "ac_session":
-            tok = part.partition("=")[2]
-            break
-    return verify_session_token(tok) if tok else None
+    return common_users.request_user(handler, _user_settings(), verify_session_token)
 
 
 def path_allowed_for_user(user, path):
-    if ALLOW_UNCONFIGURED_PATHS:
-        return True
-    roots = user_workspace_roots(user)
-    if not roots:
-        return True
-    try:
-        target = os.path.normcase(os.path.abspath(path))
-        for root in roots:
-            r = os.path.normcase(os.path.abspath(root))
-            if target == r or target.startswith(r.rstrip("\\/") + os.sep):
-                return True
-    except (TypeError, ValueError):
-        pass
-    return False
+    return common_users.path_allowed_for_user(user, path, _user_settings())
 
 
 def workspace_overview(user):
-    return [{"name": os.path.basename(r.rstrip("\\/")) or r, "path": r} for r in user_workspace_roots(user)]
+    return common_users.workspace_overview(user, _user_settings())
 
 
 # ---------- 登录失败限速(按 访客标识/IP,内存) ----------
@@ -616,177 +427,53 @@ def ensure_self_signed_cert(cert_path, key_path, cn=None):
     print("已生成自签 HTTPS 证书(CN=%s): %s" % (cn, cert_path))
 
 
-# ---------- net helpers ----------
+# ---------- net / process / manager helpers ----------
+def _process_settings():
+    return common_process.ProcessSettings(
+        picker_port=PICKER_PORT,
+        manager_host=MANAGER_HOST,
+        manager_port=MANAGER_PORT,
+        run_mode=RUN_MODE,
+        base_dir=HERE,
+        create_no_window=CREATE_NO_WINDOW,
+        state_dir=STATE_DIR,
+        stop_sentinel=STOP_SENTINEL,
+        expected_auth=EXPECTED_AUTH,
+        manager_path=_manager_path(),
+    )
+
+
 def _is_local_client(addr):
-    host = addr[0] if addr else ""
-    return host in ("127.0.0.1", "::1", "localhost")
+    return common_process.is_local_client(addr)
 
 
 def lan_ip():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close()
-        return ip
-    except OSError:
-        return "127.0.0.1"
+    return common_process.lan_ip()
 
 
 def wait_port(port, timeout=5.0):
-    end = time.time() + timeout
-    while time.time() < end:
-        try:
-            s = socket.create_connection(("127.0.0.1", port), 0.5); s.close()
-            return True
-        except OSError:
-            time.sleep(0.15)
-    return False
+    return common_process.wait_port(port, timeout=timeout)
 
 
 def _port_alive(port, timeout=0.5):
-    try:
-        s = socket.create_connection(("127.0.0.1", port), timeout)
-        s.close()
-        return True
-    except OSError:
-        return False
+    return common_process.port_alive(port, timeout=timeout)
 
 
 def _kill_pid(pid):
-    """Kill a process by PID (used for re-attached sessions with no Popen handle).
-    Windows: taskkill /F /T reaps a whole process tree. POSIX: SIGTERM->SIGKILL."""
-    if not pid:
-        return
-    try:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                           creationflags=CREATE_NO_WINDOW,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-        else:
-            import signal as _sig
-            try:
-                os.kill(pid, _sig.SIGTERM)
-            except OSError:
-                pass
-            deadline = time.time() + 3
-            while time.time() < deadline:
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
-                time.sleep(0.15)
-            try:
-                os.kill(pid, _sig.SIGKILL)
-            except OSError:
-                pass
-    except Exception:
-        pass
+    return common_process.kill_pid(pid, CREATE_NO_WINDOW)
 
 
 def _pid_alive(pid):
-    """True if a process with this pid currently exists."""
-    if not pid:
-        return False
-    if os.name == "nt":
-        try:
-            import ctypes
-            k = ctypes.WinDLL("kernel32", use_last_error=True)
-            k.OpenProcess.restype = ctypes.c_void_p
-            k.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
-            k.CloseHandle.argtypes = [ctypes.c_void_p]
-            h = k.OpenProcess(0x1000, 0, int(pid))   # PROCESS_QUERY_LIMITED_INFORMATION
-            if not h:
-                return False
-            k.CloseHandle(h)
-            return True
-        except Exception:
-            return True   # unsure -> assume alive (a kill attempt is still safe)
-    try:
-        os.kill(pid, 0); return True
-    except OSError:
-        return False
+    return common_process.pid_alive(pid)
 
 
 # ---------- Win32 Job Object: kill the whole tree when this process dies ----------
-# The web process binds itself into a Job Object flagged KILL_ON_JOB_CLOSE. Every
-# child it then spawns (web -> manager -> claude) inherits job membership,
-# so if the web process dies for ANY reason (crash, window close, TerminateProcess)
-# the kernel terminates the entire job and nothing is orphaned. Without this those
-# children are detached (CREATE_NO_WINDOW, no console) and survive a web death.
-_JOB_HANDLE = [None]   # keep the handle alive for our whole lifetime; never close it
-
-
 def bind_to_kill_on_close_job():
-    """Windows only. Returns True on success. Best-effort: on any failure (e.g.
-    already inside a non-nestable job on an old host) it prints a line and returns
-    False, leaving the sentinel / `app.py --stop` path as the cleanup fallback.
-    POSIX: no-op (the start.sh trap + SIGTERM handlers cover it)."""
-    if os.name != "nt":
-        return False
-    _JOB_HANDLE[0] = _create_kill_on_close_job()
-    return _JOB_HANDLE[0] is not None
+    return common_process.bind_to_kill_on_close_job()
 
 
 def _create_kill_on_close_job():
-    try:
-        import ctypes
-        from ctypes import wintypes
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        k32.CreateJobObjectW.restype = wintypes.HANDLE
-        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
-        k32.AssignProcessToJobObject.restype = wintypes.BOOL
-        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
-        k32.SetInformationJobObject.restype = wintypes.BOOL
-        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
-                                                ctypes.c_void_p, wintypes.DWORD]
-        k32.GetCurrentProcess.restype = wintypes.HANDLE
-
-        h = k32.CreateJobObjectW(None, None)
-        if not h:
-            print("[job] CreateJobObject 失败(err=%d),仅依赖 stop 命令清理" % ctypes.get_last_error())
-            return None
-
-        class _IO_COUNTERS(ctypes.Structure):
-            _fields_ = [("ReadOperationCount", ctypes.c_ulonglong),
-                        ("WriteOperationCount", ctypes.c_ulonglong),
-                        ("OtherOperationCount", ctypes.c_ulonglong),
-                        ("ReadTransferCount", ctypes.c_ulonglong),
-                        ("WriteTransferCount", ctypes.c_ulonglong),
-                        ("OtherTransferCount", ctypes.c_ulonglong)]
-
-        class _BASIC_LIMITS(ctypes.Structure):
-            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
-                        ("PerJobUserTimeLimit", ctypes.c_int64),
-                        ("LimitFlags", wintypes.DWORD),
-                        ("MinimumWorkingSetSize", ctypes.c_size_t),
-                        ("MaximumWorkingSetSize", ctypes.c_size_t),
-                        ("ActiveProcessLimit", wintypes.DWORD),
-                        ("Affinity", ctypes.c_void_p),
-                        ("PriorityClass", wintypes.DWORD),
-                        ("SchedulingClass", wintypes.DWORD)]
-
-        class _EXT_LIMITS(ctypes.Structure):
-            _fields_ = [("BasicLimitInformation", _BASIC_LIMITS),
-                        ("IoInfo", _IO_COUNTERS),
-                        ("ProcessMemoryLimit", ctypes.c_size_t),
-                        ("JobMemoryLimit", ctypes.c_size_t),
-                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
-
-        info = _EXT_LIMITS()
-        info.BasicLimitInformation.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        JobObjectExtendedLimitInformation = 9
-        if not k32.SetInformationJobObject(h, JobObjectExtendedLimitInformation,
-                                           ctypes.byref(info), ctypes.sizeof(info)):
-            print("[job] SetInformationJobObject 失败(err=%d),仅依赖 stop 命令清理" % ctypes.get_last_error())
-            return None
-        if not k32.AssignProcessToJobObject(h, k32.GetCurrentProcess()):
-            print("[job] AssignProcessToJobObject 失败(err=%d) — 可能已在旧式 job 内;仅依赖 stop 命令清理"
-                  % ctypes.get_last_error())
-            return None
-        return h
-    except Exception as e:
-        print("[job] Job Object 建立失败(%s),仅依赖 stop 命令清理" % e)
-        return None
+    return common_process.create_kill_on_close_job()
 
 
 # ---------- manager spawn / liveness (used by web) ----------
@@ -795,260 +482,82 @@ def _manager_path():
 
 
 def _manager_argv():
-    # config is file-based, so the manager subprocess just needs the mode flag;
-    # both processes read the same config.ini from disk.
-    return [sys.executable, os.path.abspath(_manager_path()), "--manager"]
+    return common_process.manager_argv(_process_settings())
 
 
 def manager_available():
-    try:
-        conn = http.client.HTTPConnection(MANAGER_HOST, MANAGER_PORT, timeout=0.8)
-        conn.request("GET", "/api/backends")
-        resp = conn.getresponse()
-        resp.read()
-        conn.close()
-        return 200 <= resp.status < 500
-    except OSError:
-        return False
+    return common_process.manager_available(_process_settings())
 
 
 def ensure_manager():
-    if STOPPING:
-        return False
-    if RUN_MODE == "manager" or manager_available():
-        return True
-    subprocess.Popen(_manager_argv(), cwd=HERE, creationflags=CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        if manager_available():
-            return True
-        time.sleep(0.2)
-    return False
+    return common_process.ensure_manager(_process_settings(), is_stopping=lambda: STOPPING)
 
 
 # ---------- full-stop helpers (used by `app.py --stop`) ----------
 def _http_post(port, path, auth=""):
-    """POST {} to 127.0.0.1:port/path with the given Basic auth. Returns True on
-    any HTTP response, False on connection refused (server down). Best-effort."""
-    try:
-        c = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-        c.request("POST", path, body=b"{}",
-                  headers={"Authorization": auth, "Content-Type": "application/json"})
-        c.getresponse().read(); c.close()
-        return True
-    except OSError:
-        return False
+    return common_process.http_post(port, path, auth=auth)
 
 
 def _write_stop_sentinel():
-    """Drop STATE_DIR/stop.sentinel. The supervisor loop (start.cmd/start.sh)
-    consumes it on the next iteration and stops relaunching. Only written when
-    the web layer is already unreachable (so exit code 42 can't carry the stop)."""
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(os.path.join(STATE_DIR, STOP_SENTINEL), "w") as f:
-            f.write("stop\n")
-    except OSError:
-        pass
+    return common_process.write_stop_sentinel(_process_settings())
 
 
 def perform_shutdown():
-    """Full teardown, run by `app.py --stop` in a separate process. Compensating
-    steps — each covers for the ones above it failing:
-      1. POST web /api/_stop  -> web freezes its watchdog, asks manager to _exit,
-                                 exits code 42 (supervisor stops relaunching).
-         (web unreachable)     -> write stop.sentinel so the supervisor still stops.
-      2. POST manager /api/_exit -> kill_all() + manager exit (manager trusts localhost).
-      3. kill_registry_sessions  -> taskkill any recorded legacy session pid still alive
-                                    (soft-exit orphans / manager already dead).
-    Returns a port-free report."""
-    web_ok = _http_post(PICKER_PORT, "/api/_stop", EXPECTED_AUTH)
-    if not web_ok:
-        _write_stop_sentinel()
-    _http_post(MANAGER_PORT, "/api/_exit", EXPECTED_AUTH)
-    kill_registry_sessions()
-    # web exits with code 42 asynchronously AFTER its own manager-roundtrip, so
-    # poll for both ports to actually free (up to ~6s) rather than a fixed sleep
-    # that can report a misleading "still busy" while shutdown is mid-flight.
-    deadline = time.time() + 6.0
-    while time.time() < deadline:
-        if not _port_alive(PICKER_PORT) and not _port_alive(MANAGER_PORT):
-            break
-        time.sleep(0.25)
-    # last-resort: kill a detached background supervisor so stop.cmd leaves
-    # nothing behind. The supervisor normally exits on its own via exit-42 /
-    # stop.sentinel, but if it is stuck this guarantees teardown.
-    sup_pid_path = os.path.join(STATE_DIR, "supervisor.pid")
-    try:
-        with open(sup_pid_path, "r") as f:
-            sup_pid = int((f.read() or "0").strip())
-        if sup_pid:
-            _kill_pid(sup_pid)
-    except (OSError, ValueError):
-        pass
-    try:
-        os.unlink(sup_pid_path)
-    except OSError:
-        pass
-    return {"web_port_free": not _port_alive(PICKER_PORT),
-            "manager_port_free": not _port_alive(MANAGER_PORT)}
+    return common_process.perform_shutdown(_process_settings(), kill_registry_sessions)
 
 
 # ---------- websocket frame helpers (RFC 6455, minimal) ----------
-def _recv_exact(sock, n):
-    data = bytearray()
-    while len(data) < n:
-        c = sock.recv(n - len(data))
-        if not c:
-            raise OSError("socket closed")
-        data += c
-    return bytes(data)
-
-
-def ws_recv(sock):
-    """Read one ws message; transparently answers ping. Returns (opcode, payload) or (None,None)."""
-    while True:
-        hdr = _recv_exact(sock, 2)
-        b1, b2 = hdr[0], hdr[1]
-        op = b1 & 0x0f
-        masked = b2 & 0x80
-        ln = b2 & 0x7f
-        if ln == 126:
-            ln = int.from_bytes(_recv_exact(sock, 2), "big")
-        elif ln == 127:
-            ln = int.from_bytes(_recv_exact(sock, 8), "big")
-        mask = _recv_exact(sock, 4) if masked else b""
-        payload = _recv_exact(sock, ln) if ln else b""
-        if masked:
-            payload = bytes(payload[i] ^ mask[i % 4] for i in range(len(payload)))
-        if op == 0x9:  # ping -> pong
-            ws_send(sock, payload, 0xA); continue
-        if op == 0xA:  # pong
-            continue
-        return op, payload
-
-
-def ws_send(sock, payload, opcode=0x2, mask=False):
-    out = bytearray([0x80 | opcode])
-    ln = len(payload)
-    mflag = 0x80 if mask else 0x00
-    if ln < 126:
-        out.append(mflag | ln)
-    elif ln < 65536:
-        out.append(mflag | 126); out += ln.to_bytes(2, "big")
-    else:
-        out.append(mflag | 127); out += ln.to_bytes(8, "big")
-    if mask:
-        m = os.urandom(4); out += m
-        payload = bytes(payload[i] ^ m[i % 4] for i in range(len(payload)))
-    out += payload
-    sock.sendall(bytes(out))
-
-
-def ws_accept_key(key):
-    return base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+# Re-exported from common_ws for compatibility with existing imports.
 
 
 # ---------- persisted session registry (Phase B) ----------
+def _registry_settings():
+    return common_registry.RegistrySettings(
+        registry_path=REGISTRY_PATH,
+        scrollback_dir=SCROLLBACK_DIR,
+        user_state_dir=user_state_dir,
+    )
+
+
 def _registry_path(user=None, state_dir=None):
-    if state_dir:
-        return os.path.join(state_dir, "sessions.json")
-    if user:
-        return os.path.join(user_state_dir(user), "sessions.json")
-    return REGISTRY_PATH
+    return common_registry.registry_path(user, state_dir, _registry_settings())
 
 
 def registry_load(user=None, state_dir=None):
     """Return the raw registry object ({version, manager_pid, sessions:{sid->entry}}) or {}."""
-    path = _registry_path(user, state_dir)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        return obj or {}
-    except (OSError, ValueError):
-        return {}
+    return common_registry.registry_load(user, state_dir, _registry_settings())
 
 
 def _registry_write(obj, user=None, state_dir=None):
     """Atomic write under REG_LOCK. Never raises."""
-    path = _registry_path(user, state_dir)
-    with REG_LOCK:
-        tmp = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(obj, f)
-            os.replace(tmp, path)
-        except OSError:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+    return common_registry.registry_write(obj, user, state_dir, _registry_settings())
 
 
 def _registry_read_locked(user=None, state_dir=None):
-    path = _registry_path(user, state_dir)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-    except (OSError, ValueError):
-        obj = {"version": 1, "sessions": {}}
-    if not isinstance(obj, dict):
-        obj = {"version": 1, "sessions": {}}
-    if not isinstance(obj.get("sessions"), dict):
-        obj["sessions"] = {}
-    return obj
+    return common_registry.registry_read(user, state_dir, _registry_settings())
 
 
 def registry_save(entries, user=None, state_dir=None):
     """Overwrite the whole sessions map (used by soft-exit snapshot). entries: {sid -> entry}."""
-    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": entries}, user, state_dir)
+    return common_registry.registry_save(entries, os.getpid(), user, state_dir, _registry_settings())
 
 
 def registry_upsert(sid, entry, user=None, state_dir=None):
     """Read-modify-write a single sid (safe under concurrent launch calls)."""
-    with REG_LOCK:
-        obj = _registry_read_locked(user, state_dir)
-        obj["sessions"][sid] = entry
-        obj["manager_pid"] = os.getpid()
-        _registry_write_unlocked(obj, user, state_dir)
+    return common_registry.registry_upsert(sid, entry, os.getpid(), user, state_dir, _registry_settings())
 
 
 def _registry_write_unlocked(obj, user=None, state_dir=None):
-    path = _registry_path(user, state_dir)
-    tmp = path + ".tmp"
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(obj, f)
-        os.replace(tmp, path)
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+    return common_registry.registry_write_unlocked(obj, user, state_dir, _registry_settings())
 
 
 def registry_drop(sid, user=None, state_dir=None):
     """Remove one sid from registry + best-effort delete its scrollback log."""
-    with REG_LOCK:
-        obj = _registry_read_locked(user, state_dir)
-        if sid not in obj["sessions"]:
-            changed = False
-        else:
-            obj["sessions"].pop(sid, None)
-            changed = True
-        if changed:
-            _registry_write_unlocked(obj, user, state_dir)
-    try:
-        os.unlink(os.path.join(SCROLLBACK_DIR, "%s.log" % sid))
-    except OSError:
-        pass
+    return common_registry.registry_drop(sid, user, state_dir, _registry_settings())
 
 
 def registry_clear(user=None, state_dir=None):
-    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": {}}, user, state_dir)
+    return common_registry.registry_clear(os.getpid(), user, state_dir, _registry_settings())
 
 
 def _registry_safe_entry(sid, s):
@@ -1097,676 +606,181 @@ def kill_registry_sessions():
 
 
 # ---------- history ----------
+def _history_settings():
+    return common_history.HistorySettings(
+        claude_home=CLAUDE_HOME,
+        claude_scan_cap=CLAUDE_SCAN_CAP,
+        codex_enabled=bool(CODEX_BIN),
+    )
+
+
 def iso_to_epoch(s):
-    try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
-    except Exception:
-        return 0
+    return common_history.iso_to_epoch(s)
 
 
 def _claude_user_text(o):
-    """Pull the human-typed text out of a Claude 'user' record."""
-    msg = o.get("message") or {}
-    content = msg.get("content")
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts = []
-        for c in content:
-            if isinstance(c, dict) and c.get("type") == "text":
-                parts.append(c.get("text") or "")
-        return " ".join(p for p in parts if p).strip()
-    return ""
+    return common_history.claude_user_text(o)
 
 
 def _claude_projects_dir(ctx=None):
-    home = (ctx or {}).get("claude_home") if isinstance(ctx, dict) else None
-    return os.path.join(home or CLAUDE_HOME, "projects")
+    return common_history.claude_projects_dir(_history_settings(), ctx=ctx)
 
 
 def load_claude_transcript_events(claude_sid, cap=100, ctx=None):
-    """Reconstruct native replay events from ~/.claude/projects/*/<session>.jsonl."""
-    out = []
-    target = (claude_sid or "").strip() + ".jsonl"
-    projects_dir = _claude_projects_dir(ctx)
-    if not target or not os.path.isdir(projects_dir):
-        return out
-    path = None
-    for dp, _dirs, fs in os.walk(projects_dir):
-        if target in fs:
-            path = os.path.join(dp, target)
-            break
-    if not path:
-        return out
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except OSError:
-        return out
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            o = json.loads(line)
-        except ValueError:
-            continue
-        t = o.get("type")
-        if t not in ("user", "assistant"):
-            continue
-        if t == "user" and _transcript_is_human_turn(o) and out:
-            out.append({"type": "result"})
-        out.append(o)
-    if out:
-        out.append({"type": "result"})
-    return out[-cap:] if cap else out
+    return common_history.load_claude_transcript_events(claude_sid, _history_settings(), cap=cap, ctx=ctx)
 
 
 def _transcript_is_human_turn(o):
-    """True if a Claude transcript 'user' record is a human message, not tool_result."""
-    c = (o.get("message") or {}).get("content")
-    if isinstance(c, str):
-        return True
-    if isinstance(c, list):
-        has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in c)
-        has_result = any(isinstance(b, dict) and b.get("type") == "tool_result" for b in c)
-        return has_text and not has_result
-    return False
+    return common_history.transcript_is_human_turn(o)
 
 
 def load_claude_history(ctx=None):
-    """Scan Claude transcripts and mark every restorable item as a native web session."""
-    out = []
-    projects_dir = _claude_projects_dir(ctx)
-    if not os.path.isdir(projects_dir):
-        return out
-    for dp, _dirs, fs in os.walk(projects_dir):
-        for fn in fs:
-            if not fn.endswith(".jsonl"):
-                continue
-            if os.path.basename(dp) == "subagents" or fn.startswith("agent-"):
-                continue
-            sid = fn[:-6]
-            cwd = ts_str = first_user = ai_title = ""
-            try:
-                with open(os.path.join(dp, fn), "r", encoding="utf-8") as f:
-                    for i, line in enumerate(f):
-                        if i >= CLAUDE_SCAN_CAP:
-                            break
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            o = json.loads(line)
-                        except ValueError:
-                            continue
-                        if not cwd and o.get("cwd"):
-                            cwd = o["cwd"]
-                        if not ts_str and o.get("timestamp"):
-                            ts_str = o["timestamp"]
-                        t = o.get("type")
-                        if t == "ai-title" and not ai_title:
-                            ai_title = (o.get("aiTitle") or "").strip()
-                        elif t == "summary" and not ai_title:
-                            ai_title = (o.get("summary") or "").strip()
-                        elif t == "user" and not first_user:
-                            txt = _claude_user_text(o)
-                            if txt:
-                                first_user = txt
-                        if cwd and ts_str and ai_title:
-                            break
-            except OSError:
-                continue
-            if not cwd:
-                continue
-            title = (ai_title or first_user or "(Untitled)").strip()
-            out.append({
-                "session_id": sid,
-                "cwd": cwd,
-                "ts": iso_to_epoch(ts_str),
-                "title": title,
-                "originator": "",
-                "backend": "claude_native",
-            })
-    return out
+    return common_history.load_claude_history(_history_settings(), ctx=ctx)
 
 
-def load_history(limit=60, ctx=None):
-    out = load_claude_history(ctx=ctx)
-    if CODEX_BIN:
-        try:
-            from codex_native import list_thread_history
-            ctx = ctx or {}
-            out.extend(list_thread_history(limit=limit, archived=False,
-                                           user=ctx.get("user", ""),
-                                           uid=ctx.get("uid", ""),
-                                           state_dir=ctx.get("state_dir"),
-                                           codex_home=ctx.get("codex_home")))
-        except Exception as e:
-            print("WARN: failed to load Codex history: %s" % e)
-    out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
-    return out[:limit]
+def load_history(limit=60, ctx=None, live_codex=False):
+    return common_history.load_history(_history_settings(), limit=limit, ctx=ctx, live_codex=live_codex)
 
 
 def delete_history(sid, backend=None, ctx=None):
-    """Delete one Claude transcript by session id. Running sessions are not touched."""
-    sid = (sid or "").strip()
-    res = {"deleted": False, "session_file": None}
-    if is_codex_backend(backend):
-        if not sid:
-            return res
-        try:
-            from codex_native import delete_thread
-            ctx = ctx or {}
-            res["deleted"] = bool(delete_thread(sid, user=ctx.get("user", ""),
-                                                uid=ctx.get("uid", ""),
-                                                state_dir=ctx.get("state_dir"),
-                                                codex_home=ctx.get("codex_home")))
-            res["session_file"] = sid
-        except Exception:
-            pass
-        return res
-    projects_dir = _claude_projects_dir(ctx)
-    if not sid or not os.path.isdir(projects_dir):
-        return res
-    target = sid + ".jsonl"
-    for dp, _dirs, fs in os.walk(projects_dir):
-        if target in fs:
-            p = os.path.join(dp, target)
-            try:
-                os.unlink(p)
-                res["deleted"] = True
-                res["session_file"] = p
-            except OSError:
-                pass
-            break
-    return res
+    return common_history.delete_history(sid, _history_settings(), backend=backend, ctx=ctx,
+                                         is_codex_backend_fn=is_codex_backend)
 
 
 def recent_dirs(limit=30, ctx=None):
-    by = {}
-    for h in load_history(500, ctx=ctx):
-        c = h.get("cwd") or "(未知目录)"
-        e = by.get(c)
-        if e is None:
-            e = {"cwd": c, "count": 0, "last_ts": 0}; by[c] = e
-        e["count"] += 1
-        if (h.get("ts") or 0) > e["last_ts"]:
-            e["last_ts"] = h.get("ts") or 0
-    return sorted(by.values(), key=lambda x: x["last_ts"], reverse=True)[:limit]
+    return common_history.recent_dirs(_history_settings(), limit=limit, ctx=ctx)
 
 
 # ---------- CC Switch integration (optional, read-only) ----------
+def _ccswitch_settings():
+    return common_ccswitch.CCSwitchSettings(
+        db=CCSWITCH_DB,
+        usage_ttl=CCSWITCH_USAGE_TTL,
+        balance_ttl=CCSWITCH_BALANCE_TTL,
+    )
+
+
 def _toml_first(text, key):
-    m = re.search(r'(?m)^[ \t]*%s[ \t]*=[ \t]*"([^"]+)"' % re.escape(key), text or "")
-    return m.group(1) if m else None
+    return common_ccswitch.toml_first(text, key)
 
 
 def _ccswitch_provider_meta(sc_json, app_type):
-    """Parse one provider's settings_config into model/base_url/host/api_key."""
-    try:
-        sc = json.loads(sc_json) if sc_json else {}
-    except ValueError:
-        sc = {}
-    if not isinstance(sc, dict):
-        sc = {}
-    env = sc.get("env") if isinstance(sc.get("env"), dict) else {}
-    api_key = ""
-    if app_type == "claude":
-        model = env.get("ANTHROPIC_MODEL") or env.get("ANTHROPIC_DEFAULT_SONNET_MODEL_NAME") or ""
-        base_url = env.get("ANTHROPIC_BASE_URL") or ""
-        api_key = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY") or ""
-    else:  # Other providers may store config as TOML and auth separately.
-        cfg = sc.get("config") or ""
-        model = _toml_first(cfg, "model") or ""
-        base_url = _toml_first(cfg, "base_url") or ""
-        auth = sc.get("auth") if isinstance(sc.get("auth"), dict) else {}
-        api_key = auth.get("OPENAI_API_KEY") or ""
-    host = urllib.parse.urlparse(base_url).hostname if base_url else ""
-    return {"model": model, "base_url": base_url, "host": host or "", "api_key": api_key}
+    return common_ccswitch.provider_meta(sc_json, app_type)
 
 
 def _ccswitch_open():
-    uri = "file:%s?mode=ro" % CCSWITCH_DB.replace("\\", "/").replace("?", "")
-    con = sqlite3.connect(uri, uri=True, timeout=2.0)
-    con.row_factory = sqlite3.Row
-    return con
+    return common_ccswitch.open_db(_ccswitch_settings())
 
 
 def _day_start_epoch(now):
-    lt = time.localtime(now)
-    return time.mktime(time.struct_time((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+    return common_ccswitch.day_start_epoch(now)
 
 
 def _month_start_epoch(now):
-    lt = time.localtime(now)
-    return time.mktime(time.struct_time((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1)))
+    return common_ccswitch.month_start_epoch(now)
 
 
 def _usage_window(cur, since):
-    row = cur.execute(
-        "SELECT COUNT(*) n, TOTAL(CAST(total_cost_usd AS REAL)) cost, "
-        "TOTAL(input_tokens) it, TOTAL(output_tokens) ot, "
-        "TOTAL(COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0)) ct "
-        "FROM proxy_request_logs WHERE created_at>=? AND status_code<500", (since,)).fetchone()
-    return {"requests": int(row["n"] or 0), "cost": round(float(row["cost"] or 0.0), 4),
-            "input_tokens": int(row["it"] or 0), "output_tokens": int(row["ot"] or 0),
-            "cache_tokens": int(row["ct"] or 0)}
+    return common_ccswitch.usage_window(cur, since)
 
 
 def _usage_by_model(cur, since, limit=8):
-    rows = cur.execute(
-        "SELECT model, COUNT(*) n, TOTAL(CAST(total_cost_usd AS REAL)) cost, "
-        "TOTAL(input_tokens+output_tokens+COALESCE(cache_read_tokens,0)+COALESCE(cache_creation_tokens,0)) tok "
-        "FROM proxy_request_logs WHERE created_at>=? AND status_code<500 "
-        "GROUP BY model ORDER BY tok DESC LIMIT ?", (since, limit)).fetchall()
-    return [{"model": r["model"] or "(unknown)", "requests": int(r["n"] or 0),
-             "cost": round(float(r["cost"] or 0.0), 4), "tokens": int(r["tok"] or 0)} for r in rows]
-
-
-_ccswitch_usage_cache = {"ts": 0.0, "data": None}
+    return common_ccswitch.usage_by_model(cur, since, limit=limit)
 
 
 def ccswitch_overview():
-    if not os.path.isfile(CCSWITCH_DB):
-        return {"enabled": False}
-    now = time.time()
-    cached = _ccswitch_usage_cache["data"]
-    if cached and now - _ccswitch_usage_cache["ts"] < CCSWITCH_USAGE_TTL:
-        out = dict(cached); out["cached"] = True; return out
-    try:
-        con = _ccswitch_open()
-    except Exception as e:
-        return {"enabled": True, "error": "open db: %s" % e, "providers": [], "usage": {}}
-    try:
-        cur = con.cursor()
-        providers = []
-        for r in cur.execute("SELECT app_type,name,is_current,settings_config FROM providers "
-                             "ORDER BY is_current DESC, app_type"):
-            m = _ccswitch_provider_meta(r["settings_config"], r["app_type"])
-            providers.append({"app_type": r["app_type"], "name": r["name"],
-                              "is_current": bool(r["is_current"]),
-                              "model": m["model"], "host": m["host"]})
-        usage = {"today": _usage_window(cur, _day_start_epoch(now)),
-                 "month": _usage_window(cur, _month_start_epoch(now)),
-                 "by_model": _usage_by_model(cur, _day_start_epoch(now)),
-                 "last_ts": int(cur.execute("SELECT MAX(created_at) m FROM proxy_request_logs").fetchone()["m"] or 0)}
-        out = {"enabled": True, "providers": providers, "usage": usage, "cached": False}
-        _ccswitch_usage_cache["data"] = out
-        _ccswitch_usage_cache["ts"] = now
-        return dict(out)
-    except Exception as e:
-        return {"enabled": True, "error": str(e), "providers": [], "usage": {}}
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
+    return common_ccswitch.overview(_ccswitch_settings())
 
 
 def _zhipu_api_base(host):
-    h = (host or "").lower()
-    if "bigmodel.cn" in h:
-        return "https://open.bigmodel.cn"
-    if "z.ai" in h:
-        return "https://api.z.ai"
-    return None
+    return common_ccswitch.zhipu_api_base(host)
 
 
 def _ccswitch_current_zhipu():
-    """Return (api_key, host) for the current claude provider if Zhipu/Z.ai, else None."""
-    try:
-        con = _ccswitch_open()
-    except Exception:
-        return None
-    try:
-        row = con.execute("SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1").fetchone()
-        if not row:
-            return None
-        m = _ccswitch_provider_meta(row["settings_config"], "claude")
-        if not m["api_key"] or not m["host"]:
-            return None
-        return (m["api_key"], m["host"])
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
-
-_ccswitch_balance_cache = {"key": None, "host": None, "ts": 0.0, "data": None}
-_ccswitch_balance_lock = threading.Lock()
-_ccswitch_balance_refreshing = [False]
+    return common_ccswitch.current_zhipu(_ccswitch_settings())
 
 
 def _ccswitch_balance_refresh(target_key, target_host):
-    out = None
-    try:
-        api_base = _zhipu_api_base(target_host)
-        if not api_base or not target_key:
-            out = {"supported": False}
-        else:
-            host = api_base.split("://", 1)[1]
-            conn = http.client.HTTPSConnection(host, timeout=6.0)
-            conn.request("GET", "/api/monitor/usage/quota/limit", headers={
-                "Authorization": target_key, "Accept-Language": "en-US,en",
-                "Content-Type": "application/json"})
-            resp = conn.getresponse(); body = resp.read(); conn.close()
-            if resp.status != 200:
-                raise RuntimeError("HTTP %d" % resp.status)
-            obj = json.loads(body.decode("utf-8", "replace"))
-            data = obj.get("data") or {}
-            limits = data.get("limits") or []
-            tok = next((x for x in limits if x.get("type") == "TOKENS_LIMIT"), None)
-            if tok is None:
-                raise RuntimeError("TOKENS_LIMIT not found in response")
-            pct = float(tok.get("percentage") or 0)
-            out = {"supported": True, "plan": str(data.get("level") or "ZHIPU").upper(),
-                   "used_pct": round(pct, 1), "remaining_pct": round(max(0.0, 100.0 - pct), 1),
-                   "reset_ms": tok.get("nextResetTime"), "fetched_at": time.time()}
-    except Exception as e:
-        out = {"supported": True, "error": str(e), "fetched_at": time.time()}
-    with _ccswitch_balance_lock:
-        _ccswitch_balance_cache.update(key=target_key, host=target_host, data=out, ts=time.time())
-        _ccswitch_balance_refreshing[0] = False
+    return common_ccswitch.balance_refresh(target_key, target_host, _ccswitch_settings())
 
 
 def ccswitch_balance():
-    """Non-blocking: returns cached quota (maybe null), spawns a background refresh when stale."""
-    if not os.path.isfile(CCSWITCH_DB):
-        return {"supported": False}
-    info = _ccswitch_current_zhipu()
-    if not info:
-        return {"supported": False}
-    key, host = info
-    if not _zhipu_api_base(host) or not key:
-        return {"supported": False}
-    now = time.time()
-    with _ccswitch_balance_lock:
-        c = _ccswitch_balance_cache
-        same = (c["key"] == key and c["host"] == host)
-        if c["data"] is not None and same and now - c["ts"] < CCSWITCH_BALANCE_TTL:
-            return dict(c["data"])
-        served = dict(c["data"]) if (c["data"] is not None and same) else None
-        if not _ccswitch_balance_refreshing[0]:
-            _ccswitch_balance_refreshing[0] = True
-            threading.Thread(target=_ccswitch_balance_refresh, args=(key, host), daemon=True).start()
-        return served if served is not None else {"supported": True, "pending": True}
+    return common_ccswitch.balance(_ccswitch_settings())
 
 
 # ---------- folder browse ----------
 def parent_of(path):
-    if not path:
-        return ""
-    par = os.path.dirname(path)
-    return "" if par == path else par
+    return common_browse.parent_of(path)
 
 
 def browse(path, user=None):
-    if not path:
-        if user:
-            roots = workspace_overview(user)
-            return {"path": "", "parent": "", "entries": roots, "roots": roots}
-        drives = []
-        for i in range(26):
-            letter = chr(ord("A") + i)
-            d = letter + ":\\"
-            if os.path.isdir(d):
-                drives.append({"name": letter + ":", "path": d})
-        return {"path": "", "parent": "", "entries": drives}
-    path = os.path.abspath(path)
-    if user and not path_allowed_for_user(user, path):
-        return {"error": "path is outside this user's workspaces", "path": path}
-    if not os.path.isdir(path):
-        return {"error": "not a directory", "path": path}
-    entries = []
-    try:
-        with os.scandir(path) as it:
-            for e in it:
-                try:
-                    if e.is_dir():
-                        entries.append({"name": e.name, "path": e.path})
-                except OSError:
-                    pass
-    except OSError as ex:
-        return {"error": str(ex), "path": path}
-    entries.sort(key=lambda x: x["name"].lower())
-    parent = parent_of(path)
-    if user and parent and not path_allowed_for_user(user, parent):
-        parent = ""
-    return {"path": path, "parent": parent, "entries": entries}
+    return common_browse.browse(
+        path,
+        user=user,
+        workspace_overview_fn=workspace_overview,
+        path_allowed_fn=path_allowed_for_user,
+    )
 
 
 def session_obj(sid, s, host):
-    ns = s.get("native")
-    backend = s.get("backend") or normalize_backend("")
-    provider = s.get("provider") or ("codex" if is_codex_backend(backend) else "claude")
-    session_id = getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id")
-    return {"sid": sid, "dir": s["dir"], "title": getattr(ns, "convo_title", None) or s["title"], "mode": s["mode"],
-            "session_id": session_id, "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
-            "started": s["started"], "session_path": "/t/%s/" % sid,
-            "backend": backend, "provider": provider, "native": True,
-            "state": ns.state() if ns else "idle",
-            "yolo": bool(getattr(ns, "yolo", False) if ns else s.get("yolo")),
-            "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
-            "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
-            "cols": 0, "rows": 0}
+    return common_browse.session_obj(
+        sid,
+        s,
+        host,
+        normalize_backend_fn=normalize_backend,
+        is_codex_backend_fn=is_codex_backend,
+    )
 
 
 # ---------- external push notifications (Telegram / Bark / webhook) ----------
+def _notify_settings():
+    return common_notify.NotifySettings(
+        enabled=NOTIFY_ENABLED,
+        events=NOTIFY_EVENTS,
+        telegram_token=NOTIFY_TG_TOKEN,
+        telegram_chat=NOTIFY_TG_CHAT,
+        bark_key=NOTIFY_BARK_KEY,
+        webhook_url=NOTIFY_WEBHOOK_URL,
+        webhook_secret=NOTIFY_WEBHOOK_SECRET,
+        timeout=NOTIFY_TIMEOUT,
+        desktop_toast=NOTIFY_DESKTOP_TOAST,
+        create_no_window=CREATE_NO_WINDOW,
+    )
+
+
 def _notify_enabled_for(event):
-    return NOTIFY_ENABLED and event in NOTIFY_EVENTS
+    return common_notify.notify_enabled_for(event, _notify_settings())
 
 
 def notify_result_text(events, limit=3500):
-    """Return the latest assistant text message, excluding thinking/tool process."""
-    for ev in reversed(events or []):
-        if not isinstance(ev, dict) or ev.get("type") != "assistant":
-            continue
-        msg = ev.get("message") or {}
-        content = msg.get("content")
-        parts = []
-        if isinstance(content, str):
-            parts.append(content)
-        elif isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    parts.append(block.get("text") or "")
-        text = "\n".join(p for p in parts if p).strip()
-        if text:
-            if limit and len(text) > limit:
-                suffix = "\n\n...(result text truncated)"
-                text = text[:max(0, limit - len(suffix))].rstrip() + suffix
-            return text
-    return ""
+    return common_notify.notify_result_text(events, limit=limit)
 
 
-def _ps_quote(s):
-    """转义字符串以安全嵌入 PowerShell 单引号字面量(' → ''),并压平换行(toast 文本一行)。"""
-    return str(s).replace("\r", " ").replace("\n", " ").replace("'", "''")
-
-
-# Windows toast:GetTemplateContent(ToastText02) 取系统模板 → 新 XmlDocument 载入 → .Item(n).InnerText
-# 填两行文本(InnerText 自动做 XML 转义,故标题/正文无需额外 Escape,只需 _ps_quote 转义 PS 单引号)。
-# AUMID 用系统已注册的 Microsoft.Windows.Explorer(自定义 AUMID 需配开始菜单快捷方式,门槛高),
-# 失败再试 RunDialog,最后退到无参 CreateToastNotifier()。
-_DESKTOP_TOAST_PS = r"""[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-$t='<T>'; $b='<B>'
-$tpl = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$xml.LoadXml($tpl.GetXml())
-$nodes = $xml.GetElementsByTagName('text')
-$nodes.Item(0).InnerText = $t
-$nodes.Item(1).InnerText = $b
-$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-$ok=$false
-foreach($a in @('Microsoft.Windows.Explorer','Microsoft.Windows.Shell.RunDialog')){
-  try { [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($a).Show($toast); $ok=$true; break }
-  catch {}
-}
-if(-not $ok){ try { [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast) } catch { exit 3 } }"""
+_ps_quote = common_notify.ps_quote
+_DESKTOP_TOAST_PS = common_notify.DESKTOP_TOAST_PS
 
 
 def desktop_notify(title, body=""):
-    """Windows 原生 toast(进通知中心,带横幅+声音)。经 PowerShell 调 WinRT;非 Windows / 未启用 /
-    任何失败均静默返回 False。在 push_notify 内被调用,故复用上层 _push 的 per-event 去抖与
-    _notify_enabled_for 门槛。用 -EncodedCommand(base64/UTF-16LE)传输整段脚本,彻底规避
-    Python↔PowerShell 引号/反斜杠转义;标题与正文仅做单引号转义后注入占位符。"""
-    if os.name != "nt" or not NOTIFY_DESKTOP_TOAST:
-        return False
-    title = (str(title).strip() or "notice")[:200]
-    body = str(body).strip()[:400]
-    try:
-        script = _DESKTOP_TOAST_PS.replace("<T>", _ps_quote(title)).replace("<B>", _ps_quote(body))
-        enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=8, creationflags=CREATE_NO_WINDOW)
-        return r.returncode == 0
-    except Exception as e:
-        print("notify desktop toast failed: %s" % e)
-        return False
+    return common_notify.desktop_notify(title, body, settings=_notify_settings())
 
 
 def push_notify(title, body, event, webhook_body=None):
-    """Fire-and-forget external push over every configured channel. Blocking HTTP — the
-    caller (manager._notify_sender worker) is expected to run this off the main loop.
-    Returns True if at least one channel returned 2xx. Silent on error (prints a line)."""
-    if not _notify_enabled_for(event):
-        return False
-    # 本机 Windows 桌面 toast:与下面的 Telegram/Bark/webhook 并列的独立通道。
-    # desktop_notify 内部自检平台+开关,非 Windows / 未启用时静默 no-op,不影响网络推送。
-    try:
-        desktop_notify(title, body)
-    except Exception:
-        pass
-    ok = False
-    full = (str(title) + "\n" + str(body)).strip()
-    # --- Telegram Bot ---
-    if NOTIFY_TG_TOKEN and NOTIFY_TG_CHAT:
-        try:
-            data = urllib.parse.urlencode({"chat_id": NOTIFY_TG_CHAT, "text": full}).encode()
-            conn = http.client.HTTPSConnection("api.telegram.org", timeout=NOTIFY_TIMEOUT)
-            try:
-                conn.request("POST", "/bot%s/sendMessage" % NOTIFY_TG_TOKEN, body=data,
-                             headers={"Content-Type": "application/x-www-form-urlencoded"})
-                r = conn.getresponse(); r.read()
-                ok = ok or 200 <= r.status < 300
-            finally:
-                conn.close()
-        except Exception as e:
-            print("notify telegram failed: %s" % e)
-    # --- Bark (iOS): bare key -> api.day.app, or a full https URL ---
-    if NOTIFY_BARK_KEY:
-        try:
-            if NOTIFY_BARK_KEY.lower().startswith("http"):
-                pr = urllib.parse.urlsplit(NOTIFY_BARK_KEY)
-                scheme, host, basepath = pr.scheme or "https", pr.netloc, pr.path.rstrip("/")
-            else:
-                scheme, host, basepath = "https", "api.day.app", "/" + NOTIFY_BARK_KEY.strip("/")
-            path = "%s/%s/%s" % (basepath,
-                                 urllib.parse.quote(str(title).strip() or "notice", safe=""),
-                                 urllib.parse.quote(str(body).strip(), safe=""))
-            cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
-            conn = cls(host, timeout=NOTIFY_TIMEOUT)
-            try:
-                conn.request("GET", path); r = conn.getresponse(); r.read()
-                ok = ok or 200 <= r.status < 300
-            finally:
-                conn.close()
-        except Exception as e:
-            print("notify bark failed: %s" % e)
-    # --- webhook (auto-detects Feishu/Lark schema vs generic JSON) ---
-    if NOTIFY_WEBHOOK_URL:
-        try:
-            if _webhook_send(NOTIFY_WEBHOOK_URL, NOTIFY_WEBHOOK_SECRET,
-                             title, body, event, webhook_body=webhook_body):
-                ok = True
-        except Exception as e:
-            print("notify webhook failed: %s" % e)
-    return ok
+    return common_notify.push_notify(title, body, event, _notify_settings(), webhook_body=webhook_body)
 
 
 def _webhook_is_feishu(url):
-    u = url.lower()
-    return "feishu.cn" in u or "larksuite" in u or "open-apis/bot" in u
+    return common_notify.webhook_is_feishu(url)
 
 
 def _webhook_send(url, secret, title, body, event, webhook_body=None):
-    """POST a notification to a webhook. Auto-detects Feishu/Lark custom-bot schema
-    ({msg_type, content}) vs a generic {title, body, event} JSON. For Feishu, `secret`
-    is used as the signing key (enable "自定义签名" on the bot); for generic webhooks it
-    rides in the X-Notify-Secret header. Returns True only if the endpoint accepted the
-    message (HTTP 2xx AND, for Feishu, body code == 0)."""
-    pr = urllib.parse.urlsplit(url)
-    path_q = (pr.path or "/") + (("?" + pr.query) if pr.query else "")
-    cls = http.client.HTTPSConnection if pr.scheme == "https" else http.client.HTTPConnection
-    webhook_text = body if webhook_body is None else webhook_body
-    if _webhook_is_feishu(url):
-        text = (str(title) + "\n" + str(webhook_text)).strip()
-        data = {"msg_type": "text", "content": {"text": text}}
-        if secret:   # Feishu signature: HMAC-SHA256 over "{ts}\n{secret}"
-            ts = str(int(time.time()))
-            sign = base64.b64encode(
-                hmac.new(("%s\n%s" % (ts, secret)).encode("utf-8"),
-                         digestmod=hashlib.sha256).digest()).decode("utf-8")
-            data["timestamp"] = ts
-            data["sign"] = sign
-        payload = json.dumps(data).encode()
-    else:
-        payload = json.dumps({"title": str(title), "body": str(webhook_text), "event": event}).encode()
-    conn = cls(pr.netloc, timeout=NOTIFY_TIMEOUT)
-    try:
-        conn.request("POST", path_q, body=payload, headers={"Content-Type": "application/json"})
-        r = conn.getresponse()
-        raw = r.read()
-        success = 200 <= r.status < 300
-        if success and _webhook_is_feishu(url):
-            # Feishu answers HTTP 200 with a body code on business errors (keyword /
-            # signature / ip mismatch) — surface those so they're debuggable.
-            try:
-                j = json.loads(raw.decode("utf-8", "replace"))
-                code = j.get("code", j.get("StatusCode", 0))
-                if code not in (0, None):
-                    success = False
-                    print("notify feishu rejected: %s" % (j.get("msg") or j.get("StatusMessage") or raw[:200]))
-            except Exception:
-                pass
-        return success
-    finally:
-        conn.close()
+    return common_notify.webhook_send(url, secret, title, body, event,
+                                      timeout=NOTIFY_TIMEOUT, webhook_body=webhook_body)
 
 
 # ---------- shared HTTP handler base ----------
-class BaseHandler(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    server_version = "agent-cockpit/1.0"
-
-    def log_message(self, *a):
-        pass
-
-    def _json(self, obj, code=200):
-        b = json.dumps(obj, ensure_ascii=False).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(b))); self.end_headers()
-        self.wfile.write(b)
-
-    def _serve_index(self):
-        try:
-            data = open(INDEX, "rb").read()
-        except OSError as e:
-            self._json({"error": str(e)}, 500); return
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        # index.html 在开发期经常改动,且每次请求都重新读盘;禁用浏览器缓存,
-        # 避免用户看到旧页面(如顶部栏样式不生效)。文件很小,no-store 无副作用。
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+class BaseHandler(common_http.BaseHandler):
+    index_path = INDEX
+    static_root = ASSETS_DIR
 
 
-class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads = True
-    allow_reuse_address = False
+ThreadingServer = common_http.ThreadingServer

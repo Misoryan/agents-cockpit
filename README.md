@@ -8,6 +8,7 @@ This build uses structured web rendering:
 - The browser talks to `web.py`; `web.py` supervises `manager.py`.
 - Claude sessions run the Claude CLI in stream-json mode through `native.py`.
 - Codex sessions run `codex app-server --stdio` through `codex_native.py`.
+- Frontend CSS/JS is served from `assets/`; `index.html` is kept as mostly markup.
 
 ## Requirements
 
@@ -69,6 +70,15 @@ Common keys:
 - Running sessions are recovered from the per-user cockpit state after manager soft-restart.
 - Multiple browsers can watch the same session through the app WebSocket.
 - `manager.py` can soft-restart and recover persisted native session state from `.agent-cockpit/`.
+
+## Code Layout
+
+- `common_*.py` contains shared auth, process, registry, history, browse, notify, websocket, and HTTP helpers; `common.py` re-exports the compatibility surface.
+- `manager_sessions.py`, `manager_user_api.py`, and `manager_internal_api.py` hold the manager's lifecycle and API logic.
+- `native_*.py` contains Claude CLI config, gate, replay, and process helpers used by `native.py`.
+- `codex_*.py` contains Codex app-server client, event, request, replay, routing, text/form, history, and session-event helpers used by `codex_native.py`.
+- `assets/` contains the split browser app scripts and stylesheet.
+- `REFACTOR_PROGRESS.md` records the current split status, remaining targets, and validation bundle.
 
 ## Security Notes
 

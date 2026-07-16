@@ -1,0 +1,183 @@
+"use strict";
+function nEventStableKey(e){
+  if(!e) return "";
+  if(e.event_id) return "id:"+String(e.event_id);
+  if(e.seq!=null) return "seq:"+String(e.seq);
+  var m=e.message||{}, blocks=m.content||[], key=(e.type||"")+"|"+(m.uuid||m.id||e.uuid||"");
+  if(!key || key==="|") key=e.type||"event";
+  if(Array.isArray(blocks) && blocks.length){
+    var b=blocks[0]||{}; key += "|"+(b.id||b.tool_use_id||b.type||"");
+  }
+  return key;
+}
+function nHashText(s){
+  s=String(s==null?"":s);
+  var h=0;
+  for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; }
+  return String(h>>>0);
+}
+function nEvSigPart(e){
+  var key=nEventStableKey(e);
+  var body="";
+  try{ body=JSON.stringify(e||{}); }catch(_e){ body=String(e); }
+  return key+"|"+(e&&e.merged_seq!=null?e.merged_seq:"")+"|"+body.length+"|"+nHashText(body);
+}
+function nSigFromParts(parts){ return parts.length+"#"+parts.join(","); }
+function nMarkRendered(st,obj){
+  if(!obj || obj.type==="replay_batch" || obj.type==="state_snapshot") return true;
+  var id=obj.event_id || (obj.seq!=null ? ("seq:"+obj.seq) : "");
+  if(!id) return true;
+  st.renderedEvents=st.renderedEvents||{};
+  if(st.renderedEvents[id] && !obj.replay) return false;
+  st.renderedEvents[id]=true;
+  if(obj.seq!=null){ st.lastSeq=Math.max(st.lastSeq||0, Number(obj.seq)||0); }
+  return true;
+}
+function nResetReplayState(st){
+  if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
+  st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
+  st.lastWasHumanUser=false; st.lastHumanText="";
+  st.renderedEvents={};
+  st.lastSeq=0;
+  st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
+  st.replayCard=null; st.replayWaiting=false;
+  st.root.innerHTML="";
+}
+function nReplayIsPendingEvent(e){
+  return !!(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form"));
+}
+function nReplayRenderableEvents(events){
+  return (events||[]).filter(function(e){ return !nReplayIsPendingEvent(e); });
+}
+function nStageHasReplayContent(st){
+  if(!st || !st.root) return false;
+  for(var i=0;i<st.root.children.length;i++){
+    var el=st.root.children[i];
+    if(!el.classList || !el.classList.contains("replay-progress")) return true;
+  }
+  return false;
+}
+function nReplayEventKey(e){
+  if(!e) return "";
+  if(e.event_id) return "id:"+String(e.event_id);
+  if(e.seq!=null) return "seq:"+String(e.seq);
+  return "";
+}
+function nReplayUnseenEvents(st, events){
+  var seen=st.renderedEvents||{};
+  return (events||[]).filter(function(e){
+    var key=nReplayEventKey(e);
+    return !key || !seen[key];
+  });
+}
+function nReplayProgressCancel(st){
+  if(!st) return;
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  if(st.replayWaiting && st.replayCard && st.replayCard.parentNode){
+    st.replayCard.parentNode.removeChild(st.replayCard);
+    st.replayCard=null;
+  }
+  st.replayWaiting=false;
+}
+function nReplayProgressStart(st,total,label,mode){
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  if(st.replayCard && st.replayCard.parentNode) st.replayCard.parentNode.removeChild(st.replayCard);
+  st.replayCard=null;
+  var card=document.createElement("div"); card.className="nmsg replay-progress";
+  if(mode) card.classList.add(mode);
+  var meta=mode==="waiting"?"waiting":("0/"+total);
+  card.innerHTML='<div class="rp-top"><span>'+nEsc(label||"Loading conversation")+'</span><span class="rp-meta">'+nEsc(meta)+'</span></div><div class="rp-bar"><div class="rp-fill"></div></div>';
+  st.root.appendChild(card); st.replayCard=card; st.replayWaiting=(mode==="waiting"); nScrollBottom();
+  return card;
+}
+function nReplayProgressUpdate(st,done,total){
+  var card=st.replayCard; if(!card) return;
+  card.classList.remove("waiting"); st.replayWaiting=false;
+  var pct=total?Math.max(1,Math.min(100,Math.round(done*100/total))):100;
+  var meta=card.querySelector(".rp-meta"), fill=card.querySelector(".rp-fill");
+  if(meta) meta.textContent=done+"/"+total;
+  if(fill) fill.style.width=pct+"%";
+}
+function nReplayProgressDone(st,total,label,mode){
+  var card=st.replayCard; if(!card) return;
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  nReplayProgressUpdate(st,total,total);
+  card.classList.add("done");
+  if(mode) card.classList.add(mode);
+  var top=card.querySelector(".rp-top span"); if(top) top.textContent=label||"Conversation loaded";
+  var meta=card.querySelector(".rp-meta"); if(meta && !total) meta.textContent="0/0";
+  setTimeout(function(){ if(card.parentNode) card.parentNode.removeChild(card); if(st.replayCard===card) st.replayCard=null; }, 700);
+}
+function nReplayProgressWait(st){
+  if(!st || !st.replayCard || !st.replayWaiting) return;
+  var top=st.replayCard.querySelector(".rp-top span"); if(top) top.textContent="Waiting for conversation replay";
+  var meta=st.replayCard.querySelector(".rp-meta"); if(meta) meta.textContent="still connected";
+}
+function nReplayBatchAsync(sid, st, events, opts){
+  opts=opts||{};
+  var renderEvents=nReplayRenderableEvents(events), total=renderEvents.length, idx=0, chunk=18;
+  st.replayActive=true; st.replayPending=[];
+  if(!opts.silent) nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
+  function pump(){
+    var end=Math.min(total, idx+chunk);
+    for(; idx<end; idx++){
+      var e=renderEvents[idx];
+      try{ e.replay=true; nHandle(sid, e); }
+      catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
+    }
+    if(!opts.silent) nReplayProgressUpdate(st,idx,total);
+    if(idx<total){
+      st.replayTimer=setTimeout(pump, 0);
+      return;
+    }
+    st.replayTimer=null; st.replayActive=false;
+    if(!opts.silent) nReplayProgressDone(st,total,total?"Conversation loaded":"No replay history",total?"":"empty");
+    var pending=st.replayPending||[]; st.replayPending=[];
+    pending.forEach(function(ev){ nHandle(sid, ev); });
+  }
+  pump();
+}
+function nativeReplayAfter(st){
+  return Math.max(0, Number((st&&st.lastSeq)||0)||0);
+}
+function nativeStopPolling(sid){
+  if(nativePollTimers[sid]){ clearTimeout(nativePollTimers[sid]); delete nativePollTimers[sid]; }
+  delete nativePollBusy[sid];
+}
+function nativePollDelay(sid){
+  var s=nFindRunSession(sid);
+  if(s && (s.state==="running" || s.state==="confirm" || s.state==="plan")) return 1500;
+  return 4000;
+}
+function nativeStartPolling(sid, immediate){
+  if(!sid || currentSid!==sid || !nativeStages[sid]) return;
+  if(nativePollTimers[sid]) return;
+  nativePollTimers[sid]=setTimeout(function(){
+    delete nativePollTimers[sid];
+    nativePollOnce(sid);
+  }, immediate?0:nativePollDelay(sid));
+}
+function nativePollOnce(sid){
+  if(!sid || currentSid!==sid || !nativeStages[sid]) return;
+  if(nativePollBusy[sid]){ nativeStartPolling(sid,false); return; }
+  var st=nativeStage(sid), after=nativeReplayAfter(st);
+  nativePollBusy[sid]=true;
+  api("/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after)).then(function(r){
+    nativePollBusy[sid]=false;
+    if(!r || r.ok===false){ nativeStartPolling(sid,false); return; }
+    var evs=r.events||[];
+    if(evs.length){ nReplayBatchAsync(sid, st, evs, {silent:nStageHasReplayContent(st)}); }
+    if(r.snapshot){ nHandle(sid, r.snapshot); }
+    (r.pending||[]).forEach(function(ev){ nHandle(sid, ev); });
+    if(currentSid===sid){
+      var ws=nativeWs[sid];
+      if(!ws || ws.readyState!==1) nativeStartPolling(sid,false);
+    }
+  }).catch(function(){
+    nativePollBusy[sid]=false;
+    nativeStartPolling(sid,false);
+  });
+}

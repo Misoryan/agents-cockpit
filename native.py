@@ -19,15 +19,16 @@ JSONL 事件流,经 WS 文本帧广播给前端渲染。直接获得 claude code
 manager 作为独立进程也无需继承 shell env。
 """
 import os
-import sys
 import json
 import time
 import threading
-import subprocess
-import traceback
 import re
 
 import common
+import native_cli
+import native_config
+import native_gate
+import native_replay
 from common import ws_send, ws_recv, STATE_DIR, CLAUDE_BIN, MANAGER_PORT
 
 _CLAUDE_ARGS = ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
@@ -49,49 +50,11 @@ _GATE_SYSTEM = "当一个动作需要用户许可时你会被自动拦截。"
 
 
 def _clean_ask_questions(questions):
-    """规整 ask_user 的 questions 数组(模型给的 AskUserQuestion 风格结构),供前端 nRenderAsk 渲染。"""
-    out = []
-    for q in questions or []:
-        if not isinstance(q, dict):
-            continue
-        opts = []
-        for opt in q.get("options") or []:
-            if isinstance(opt, dict):
-                opts.append({"label": str(opt.get("label") or ""),
-                             "description": str(opt.get("description") or "")})
-            elif opt is not None:
-                opts.append({"label": str(opt), "description": ""})
-        out.append({"id": str(q.get("id") or ""),
-                    "header": str(q.get("header") or ""),
-                    "question": str(q.get("question") or ""),
-                    "multiSelect": bool(q.get("multiSelect")),
-                    "options": opts})
-    return out
+    return native_gate.clean_ask_questions(questions)
 
 
 def _format_ask_answer(ans, questions):
-    """把网页回传的答案规整成给模型的文本。ans 可能是结构化 {qid:[vals]}(有 options 时)或纯文本。"""
-    if ans is None:
-        return ""
-    if isinstance(ans, str):
-        return ans
-    if isinstance(ans, dict):
-        qmap = {}
-        for idx, q in enumerate(questions or []):
-            qid = q.get("id") or str(idx)
-            qmap[qid] = q.get("question") or q.get("header") or ""
-        lines = []
-        for qid, vals in ans.items():
-            if isinstance(vals, (list, tuple)):
-                vtext = ", ".join(str(v) for v in vals if v not in (None, ""))
-            else:
-                vtext = str(vals) if vals not in (None, "") else ""
-            if not vtext:
-                continue
-            label = qmap.get(qid) or ""
-            lines.append(("%s: %s" % (label, vtext)) if label else vtext)
-        return chr(10).join(lines)
-    return str(ans)
+    return native_gate.format_ask_answer(ans, questions)
 
 
 _PLAN_SYSTEM = ("【计划模式】你只能使用只读工具(Read / Grep / Glob / WebFetch / WebSearch 等)进行调研,"
@@ -152,6 +115,7 @@ class NativeSession:
         self.model = ""                # claude 当前 model(system 事件报出;新客户端连上时补发)
         self.convo_title = None      # 首条用户消息摘要(活跃会话标题优于目录名)
         self.events = []                # 已完成的终态事件(replay 给新客户端)
+        self._next_seq = 1              # Monotonic replay identity for durable native events.
         self._closed = False
         self.alive = True
         self._busy = False
@@ -174,7 +138,7 @@ class NativeSession:
                 _t = " ".join(str(prompt).split())[:60]
                 if _t:
                     self.convo_title = _t
-            self.events.append({"type": "user", "message": {"role": "user", "content": prompt}})
+            self._record_event_locked({"type": "user", "message": {"role": "user", "content": prompt}})
         self.last_activity = time.time()
         threading.Thread(target=self._run_cli, args=(prompt,), daemon=True).start()
 
@@ -365,33 +329,51 @@ class NativeSession:
 
     @staticmethod
     def _preview_for(tool_name, inp):
-        if not isinstance(inp, dict):
-            return ""
-        cmd = inp.get("command") or inp.get("cmd")
-        if cmd:
-            return cmd
-        if tool_name in ("Edit", "Write", "NotebookEdit"):
-            return inp.get("file_path") or inp.get("path") or ""
-        return ""   # 前端 fallback 到 JSON.stringify(input)
+        return native_gate.preview_for(tool_name, inp)
 
     @staticmethod
     def _is_dangerous(tool_name, inp):
-        if not isinstance(inp, dict):
-            return False
-        cmd = (inp.get("command") or inp.get("cmd") or "").lower()
-        return any(w in cmd for w in ("rm -rf", "rmdir", "del /f", "format ",
-                                      "shutdown", "reg delete", ":(){", "mkfs"))
+        return native_gate.is_dangerous(tool_name, inp)
+
+    # ---------- replay identity ----------
+    @staticmethod
+    def _seq_value(obj):
+        return native_replay.seq_value(obj)
+
+    def _last_seq_locked(self):
+        return native_replay.last_seq(self)
+
+    def _decorate_event_locked(self, obj):
+        return native_replay.decorate_event(self, obj)
+
+    def _record_event_locked(self, obj):
+        return native_replay.record_event(self, obj)
+
+    def _record_event(self, obj):
+        with self._lock:
+            return self._record_event_locked(obj)
+
+    def _record_and_broadcast(self, obj):
+        ev = self._record_event(obj)
+        self._broadcast(ev)
+        return ev
+
+    def _events_after_seq_locked(self, after_seq=0):
+        return native_replay.events_after_seq(self, after_seq)
+
+    def _load_events(self, events, next_seq=None):
+        with self._lock:
+            native_replay.load_events(self, events, next_seq)
 
     # ---------- WS clients ----------
-    def add_client(self, sock):
+    def add_client(self, sock, after_seq=0):
         with self._lock:
-            snapshot = list(self.events)
+            snapshot = self._events_after_seq_locked(after_seq)
+            model = self.model
         if snapshot:
             self._send_one(sock, {"type": "replay_batch", "events": snapshot})
-        with self._lock:
-            _m = self.model
-        if _m:
-            self._send_one(sock, {"type": "system", "model": _m})
+        if model:
+            self._send_one(sock, {"type": "system", "model": model})
         for ev in self._pending_events_snapshot():
             self._send_one(sock, ev)
         with self.clients_lock:
@@ -421,25 +403,18 @@ class NativeSession:
             try: sock.close()
             except OSError: pass
 
+    def replay_payload(self, after_seq=0):
+        with self._lock:
+            events = self._events_after_seq_locked(after_seq)
+            model = self.model
+        pending = self._pending_events_snapshot()
+        return native_replay.replay_payload(self, events, pending, model=model,
+                                            after_seq=after_seq, state_fn=self.state)
+
     def _pending_events_snapshot(self):
         with self._pending_lock:
             pending = list(self._pending.items())
-        events = []
-        for tool_use_id, entry in pending:
-            kind = entry.get("kind")
-            if kind == "approve":
-                events.append({"type": "pending_approval",
-                               "tool_use_id": tool_use_id,
-                               "name": entry.get("tool") or "Approval",
-                               "input": entry.get("input") or {},
-                               "preview": entry.get("preview") or "",
-                               "danger": bool(entry.get("danger"))})
-            elif kind == "ask":
-                events.append({"type": "pending_ask",
-                               "tool_use_id": tool_use_id,
-                               "question": entry.get("question") or "",
-                               "questions": entry.get("questions") or []})
-        return events
+        return native_replay.pending_events_snapshot(pending)
 
     def _broadcast(self, obj):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -464,225 +439,58 @@ class NativeSession:
             with self.clients_lock:
                 self.clients.discard(sock)
 
-    # ---------- 门控 argv / per-session 配置 ----------
+    # ---------- gate argv / per-session config ----------
     def _settings_path(self):
-        return os.path.join(self.state_dir, "gate_settings_%s.json" % self.sid)
+        return native_config.settings_path(self)
 
     def _mcp_config_path(self):
-        return os.path.join(self.state_dir, "gate_mcp_%s.json" % self.sid)
+        return native_config.mcp_config_path(self)
 
     def _write_mcp_config(self):
-        """写 per-session --mcp-config(网关服务器)。yolo 模式也挂它,只为提供 ask_user 工具
-        (提问不受 bypass 权限模式影响)。"""
-        os.makedirs(self.state_dir, exist_ok=True)
-        mcp = {"mcpServers": {"cockpit": {
-            "command": sys.executable,
-            "args": [_GATE_BIN, self.sid, str(MANAGER_PORT)]}}}
-        with open(self._mcp_config_path(), "w", encoding="utf-8") as f:
-            json.dump(mcp, f, ensure_ascii=False)
+        return native_config.write_mcp_config(self, _GATE_BIN, MANAGER_PORT)
 
     def _write_gate_configs(self, allow_tools=False):
-        """写 per-session 的 --settings 与 --mcp-config(网关服务器)。
-        allow_tools=True(yolo+plan):普通工具进 allow 自动放行,只有 ExitPlanMode 走门控审批计划。
-        allow_tools=False(非 yolo):普通工具进 ask → 走 gate_mcp 逐项审批。"""
-        os.makedirs(self.state_dir, exist_ok=True)
-        key = "allow" if allow_tools else "ask"
-        with open(self._settings_path(), "w", encoding="utf-8") as f:
-            json.dump({"permissions": {key: list(_ASK_TOOLS)}}, f, ensure_ascii=False)
-        self._write_mcp_config()
+        return native_config.write_gate_configs(
+            self, _ASK_TOOLS, _GATE_BIN, MANAGER_PORT, allow_tools=allow_tools)
 
     def _build_argv(self, prompt):
-        argv = [CLAUDE_BIN, "-p", prompt] + _CLAUDE_ARGS
-        if self.claude_sid:
-            argv += ["--resume", self.claude_sid]
-        sys_prompt = self._mode_system()
-        argv += ["--disallowedTools"] + _DISABLED_TOOLS   # 内置 AskUserQuestion 无头不可用,全模式禁用
-        # 计划模式优先于 yolo:plan 用于"先规划后执行",不应被 yolo 屏蔽。无论 yolo 与否,plan_mode
-        # 都挂 --permission-mode plan(提供 ExitPlanMode)+ gate_mcp(ExitPlanMode 经
-        # --permission-prompt-tool 让用户审批计划)。yolo 只决定普通工具:allow 自动放行 vs ask 逐项审批。
-        # 注意 plan 轮不能加 --dangerously-skip-permissions,否则 ExitPlanMode 也被 bypass、跳过计划审批。
-        if self.plan_mode:
-            try:
-                self._write_gate_configs(allow_tools=self.yolo)
-            except OSError:
-                traceback.print_exc()
-            argv += ["--permission-mode", "plan",
-                     "--settings", self._settings_path(),
-                     "--mcp-config", self._mcp_config_path(),
-                     "--permission-prompt-tool", "mcp__cockpit__approve",
-                     "--strict-mcp-config"]
-            if sys_prompt:
-                argv += ["--append-system-prompt", sys_prompt]
-            return argv
-        if self.yolo:
-            # yolo:普通工具 --dangerously-skip-permissions 自动放行;但仍挂 gate_mcp 提供 ask_user
-            # (MCP 工具不受 bypass 权限模式影响)。内置 AskUserQuestion 已由上方 --disallowedTools 禁用。
-            try:
-                self._write_mcp_config()
-            except OSError:
-                traceback.print_exc()
-            argv += ["--dangerously-skip-permissions",
-                     "--mcp-config", self._mcp_config_path(),
-                     "--strict-mcp-config"]
-            if sys_prompt:
-                argv += ["--append-system-prompt", sys_prompt]
-            return argv
-        # 非 yolo 非 plan:default + 门控逐项审批
-        try:
-            self._write_gate_configs(allow_tools=False)
-        except OSError:
-            traceback.print_exc()
-        argv += ["--permission-mode", "default",
-                 "--settings", self._settings_path(),
-                 "--mcp-config", self._mcp_config_path(),
-                 "--permission-prompt-tool", "mcp__cockpit__approve",
-                 "--strict-mcp-config",
-                 "--append-system-prompt", sys_prompt]
-        return argv
+        return native_config.build_argv(
+            self, prompt, CLAUDE_BIN, _CLAUDE_ARGS, _DISABLED_TOOLS, _ASK_TOOLS,
+            _GATE_BIN, MANAGER_PORT, self._mode_system)
 
 
     def _process_env(self):
-        env = dict(os.environ)
-        if self.claude_home:
-            os.makedirs(self.claude_home, exist_ok=True)
-            env["CLAUDE_CONFIG_DIR"] = self.claude_home
-        if self.user:
-            env["AGENT_COCKPIT_USER"] = self.user
-        return env
+        return native_config.process_env(self)
 
     # ---------- claude cli ----------
     def _run_one_round(self, prompt):
-        """Spawn claude CLI 一次。实时广播 result 以外的所有事件;result 事件暂存返回,由 _run_cli
-        据其判断 529 过载后重试或正常收尾。返回 (result_ev, ran_clean, stderr_text)。
-
-        result 不在此广播/入 events —— 因为前端 result 分支会复位发送按钮并判定本轮结束(native.py
-        顶部契约);529 的 error result 必须由外层拦下重试,不能提前推给前端。"""
-        argv = self._build_argv(prompt)
-        proc = subprocess.Popen(
-            argv, cwd=self.cwd,
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", bufsize=1,
-            env=self._process_env())
-        self._proc = proc   # interrupt() 据此 kill 当前轮子进程
-
-        stderr_buf = []
-        threading.Thread(target=self._drain_stderr, args=(proc, stderr_buf), daemon=True).start()
-
-        result_ev = None
-        for line in proc.stdout:
-            line = line.strip()
-            if not line or not line.startswith("{"):
-                continue
-            try:
-                ev = json.loads(line)
-            except ValueError:
-                continue
-            with self._lock:
-                if ev.get("session_id"):
-                    self.claude_sid = ev["session_id"]
-                if ev.get("type") == "system" and ev.get("model"):
-                    self.model = ev["model"]
-            if ev.get("type") == "result":
-                result_ev = ev   # 暂存,不广播不入 events
-                continue
-            # 只存终态(replay 用),不存 stream_event 中间帧
-            if ev.get("type") in ("assistant", "user"):
-                with self._lock:
-                    self.events.append(ev)
-                    if len(self.events) > 200:
-                        self.events = self.events[-200:]
-            self._broadcast(ev)
-            self.last_activity = time.time()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            try: proc.kill()
-            except OSError: pass
-        return result_ev, True, "".join(stderr_buf)
+        return native_cli.run_one_round(self, prompt)
 
     @staticmethod
     def _drain_stderr(proc, buf):
-        """读 claude CLI 的 stderr 到 buf(诊断用)。原先直接 for+pass 吞掉,连 CLI 的「正在重试/
-        过载」提示都看不到;现在累积起来,失败时由 _run_cli 打印,便于定位网关问题。"""
-        try:
-            for line in proc.stderr:
-                buf.append(line)
-        except Exception:
-            pass
+        return native_cli.drain_stderr(proc, buf)
 
     def _dump_failure(self, tag, result_ev, stderr_text):
-        """失败时把完整 result + stderr 打进 manager 日志。z.ai 的 529/1305 里藏着 request-id、
-        错误码、可能的 Retry-After(冷却剩余秒)—— 这是坐实"限流冷却期"假设的关键证据,不截断。"""
-        try:
-            print("[native %s] === %s ===" % (self.sid, tag))
-            if result_ev:
-                print("[native %s] result: %s"
-                      % (self.sid, json.dumps(result_ev, ensure_ascii=False)))
-            if stderr_text and stderr_text.strip():
-                print("[native %s] stderr:\n%s" % (self.sid, stderr_text))
-        except Exception:
-            pass
+        return native_cli.dump_failure(self, tag, result_ev, stderr_text)
 
     def _run_cli(self, prompt):
-        self._busy = True
-        self.last_activity = time.time()
-        success = False
-        try:
-            result_ev, _ran_clean, stderr_text = self._run_one_round(prompt)
-            if self._interrupted or self._closed:
-                pass   # 用户打断/会话关闭 → finally 里 interrupted 分支收尾
-            elif result_ev is not None:
-                # 529/1305 限流:不重试(冷却期内重试只会延长冷却)。改广播专门的 rate_limited 提示,
-                # 让用户知道是账号被限速、稍候再发,而非当成普通报错。
-                if _is_overloaded(result_ev, stderr_text):
-                    self._dump_failure("rate-limit/overload (1305/529)", result_ev, stderr_text)
-                    self._broadcast({"type": "rate_limited",
-                                     "detail": _short_err(result_ev)})
-                else:
-                    self._broadcast(result_ev)
-                    success = not (result_ev.get("is_error") or result_ev.get("error"))
-                with self._lock:
-                    self.events.append(result_ev)
-                    if len(self.events) > 200:
-                        self.events = self.events[-200:]
-            elif stderr_text.strip():
-                # 没拿到 result 事件却有 stderr(进程级崩溃):dump 诊断 + 广播错误 result
-                self._dump_failure("process crash (no result event)", None, stderr_text)
-                self._broadcast({"type": "result",
-                                 "error": "claude CLI 异常退出,见 manager 日志"})
-            else:
-                # 极端:stdout 无 result 事件、stderr 也空(不应发生)→ 仍给前端收尾,避免卡住
-                self._broadcast({"type": "result", "error": "未收到 claude 结果事件"})
-        except Exception:
-            traceback.print_exc()
-            self._broadcast({"type": "result", "error": "claude CLI 执行异常,见 manager 日志"})
-        finally:
-            self._busy = False
-            self._proc = None
-            self._persist()
-            # 用户点了「打断」:本轮按打断收尾(前端 interrupted 分支补系统提示 + 复位按钮),
-            # 不发「已完成」推送。否则真正成功完成 → 推手机(限流/失败不推,避免误导)。
-            if self._interrupted and not self._closed:
-                self._interrupted = False
-                self._broadcast({"type": "interrupted"})
-            elif success and not self._closed:
-                with self._lock:
-                    webhook_body = common.notify_result_text(self.events)
-                self._push("done", "✅ 已完成 · " + os.path.basename(self.cwd),
-                           self.cwd + " · 等待下一条指令",
-                           webhook_body=webhook_body or (self.cwd + " · 已完成但没有文本结果"))
+        return native_cli.run_cli(self, prompt, _is_overloaded, _short_err)
 
     # ---------- persistence ----------
     def _persist(self):
         try:
             os.makedirs(self.state_dir, exist_ok=True)
+            with self._lock:
+                events = list(self.events[-50:])
+                next_seq = self._next_seq
             with open(os.path.join(self.state_dir, "native_%s.json" % self.sid), "w", encoding="utf-8") as f:
                 json.dump({"claude_sid": self.claude_sid, "cwd": self.cwd,
                            "yolo": self.yolo,
                            "user": self.user, "uid": self.uid,
                            "claude_home": self.claude_home,
                            "allow_tools": sorted(self._allow_tools),
-                           "events": self.events[-50:]}, f, ensure_ascii=False)
+                           "events": events,
+                           "next_seq": next_seq}, f, ensure_ascii=False)
         except OSError:
             pass
 
@@ -697,7 +505,7 @@ class NativeSession:
                      state_dir=state_dir,
                      claude_home=claude_home or d.get("claude_home"))
             ns.claude_sid = d.get("claude_sid")
-            ns.events = d.get("events", [])
+            ns._load_events(d.get("events", []), d.get("next_seq"))
             ns._allow_tools = set(d.get("allow_tools") or [])
             return ns
         except (OSError, ValueError):

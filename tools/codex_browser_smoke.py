@@ -5,9 +5,10 @@
 This complements the socket-level smoke by rendering the real web UI in two
 headless Chromium/Edge tabs. It verifies that two browser clients can attach to
 the same Codex session, receive the same backend-confirmed notice, share a
-streamed /exec command with stdin, keep the mirror tab usable in a narrow/mobile
-viewport, and preserve existing DOM content while one WebSocket is deliberately
-closed and recovered through the replay/catch-up path.
+streamed /exec command with stdin, render a replayable MCP status card, keep the
+mirror tab usable in a narrow/mobile viewport, and preserve existing DOM content
+while one WebSocket is deliberately closed and recovered through the
+replay/catch-up path.
 """
 import argparse
 import base64
@@ -441,6 +442,27 @@ def _wait_dom_text(page, sid, text, timeout=10):
     )
 
 
+def _wait_dom_selector_count(page, sid, selector, minimum=1, timeout=10):
+    escaped_sid = json.dumps(sid)
+    escaped_selector = json.dumps(selector)
+    expression = """(function(){
+      var st=(window.nativeStages||{})[%s];
+      if(!st || !st.root) return 0;
+      return st.root.querySelectorAll(%s).length;
+    })()""" % (escaped_sid, escaped_selector)
+    _wait_eval(
+        page,
+        """(function(){
+          var st=(window.nativeStages||{})[%s];
+          if(!st || !st.root) return 0;
+          return st.root.querySelectorAll(%s).length >= %d;
+        })()""" % (escaped_sid, escaped_selector, minimum),
+        True,
+        timeout=timeout,
+    )
+    return int(page.eval(expression, timeout=5) or 0)
+
+
 def _shell_exec_stdin_command(token):
     py = sys.executable
     code = (
@@ -527,6 +549,13 @@ def run_smoke(args):
         _wait_dom_text(page_a, sid, exec_final, timeout=20)
         _wait_dom_text(page_b, sid, exec_final, timeout=20)
 
+        _api_post_json("/api/nslash", user, {"sid": sid, "command": "/mcp-status tools"})
+        mcp_marker = "MCP Status |"
+        _wait_dom_text(page_a, sid, mcp_marker, timeout=20)
+        _wait_dom_text(page_b, sid, mcp_marker, timeout=20)
+        mcp_cards_primary = _wait_dom_selector_count(page_a, sid, ".mcp-status-card", timeout=20)
+        mcp_cards_mirror = _wait_dom_selector_count(page_b, sid, ".mcp-status-card", timeout=20)
+
         marker = "keep-dom-%d" % int(time.time() * 1000)
         marked = _mark_first_message_node(page_b, sid, marker)
         before = _page_summary(page_b, sid)
@@ -569,6 +598,10 @@ def run_smoke(args):
             and third_name in primary["text"]
             and exec_final in (after.get("domText") or "")
             and exec_final in (primary.get("domText") or "")
+            and mcp_marker in (after.get("domText") or "")
+            and mcp_marker in (primary.get("domText") or "")
+            and mcp_cards_mirror >= 1
+            and mcp_cards_primary >= 1
             and after_catchup["lastSeq"] >= before["lastSeq"]
             and after["lastSeq"] >= after_catchup["lastSeq"]
             and catchup_dom_preserved
@@ -595,6 +628,13 @@ def run_smoke(args):
                 "final_text": exec_final,
                 "seen_primary": exec_final in (primary.get("domText") or "") if primary else False,
                 "seen_mirror": exec_final in (after.get("domText") or "") if after else False,
+            },
+            "mcp_status": {
+                "marker": mcp_marker,
+                "seen_primary": mcp_marker in (primary.get("domText") or "") if primary else False,
+                "seen_mirror": mcp_marker in (after.get("domText") or "") if after else False,
+                "cards_primary": mcp_cards_primary,
+                "cards_mirror": mcp_cards_mirror,
             },
             "dom_marker": marked,
             "dom_preserved_after_catchup": catchup_dom_preserved,

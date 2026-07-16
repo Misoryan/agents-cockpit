@@ -327,6 +327,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `streamStdoutStderr`, `streamStdin`, process-scoped
   `command/exec/outputDelta` routing, and the existing browser terminal card
   for stdin/close/terminate controls.
+- `tools/codex_browser_smoke.py` now includes `/mcp-status tools` in the
+  two-tab browser path and requires the structured `.mcp-status-card` to appear
+  in both the desktop primary tab and phone-like mirror tab before reconnect
+  DOM-preservation checks.
 
 ## Optional Follow-ups
 

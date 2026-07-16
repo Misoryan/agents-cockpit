@@ -840,3 +840,9 @@ Immediate next commit candidate:
 - The smoke waits for streamed output in both the desktop primary tab and phone-like narrow mirror tab, sends stdin through `/api/nterminal`, then verifies the final stdout appears in both DOMs before forcing disconnect/catch-up and explicit reconnect.
 - Temporary browser-smoke sessions now launch with Codex `sandbox=danger-full-access` and `approvalPolicy=never` so Windows app-server streaming is exercised intentionally without changing existing user sessions.
 - This turns the new command/exec streaming workflow into part of the multi-access anti-flicker gate instead of only a low-level app-server smoke.
+
+## 64. 2026-07-17 browser smoke MCP result-card checkpoint
+
+- Extended the same two-tab browser smoke to run `/mcp-status tools` before the reconnect phases.
+- The smoke now requires both primary and narrow mirror DOMs to contain the `MCP Status |` summary and at least one `.mcp-status-card`, proving the replayable MCP result-card renderer is visible in both access sources.
+- This closes the first browser-level evidence gap for MCP status/resource card synchronization; richer resource-read button coverage can still be added with a controlled temporary MCP config.

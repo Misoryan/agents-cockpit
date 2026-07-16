@@ -323,6 +323,9 @@ python tools\codex_terminal_smoke.py --cwd .
 `tools\codex_browser_smoke.py` now also validates streamed `/exec-stream`
 output plus stdin across the primary and narrow mirror browser tabs before the
 disconnect/reconnect DOM-preservation checks.
+It also runs `/mcp-status tools` and requires the structured MCP status result
+card to appear in both tabs, so MCP inventory visibility is part of the
+multi-access browser gate instead of only a helper-level check.
 
 Codex CLI 升级后：
 

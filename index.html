@@ -373,6 +373,9 @@ body.sb-collapsed #sidebar{display:none}
         .nmsg.replay-progress .rp-bar{height:6px;background:var(--surface-hover);border-radius:999px;overflow:hidden}
         .nmsg.replay-progress .rp-fill{height:100%;width:0;background:var(--accent);transition:width .12s ease}
         .nmsg.replay-progress.done{border-color:var(--green);color:var(--green)}
+        .nmsg.replay-progress.waiting .rp-fill{width:42%;background:linear-gradient(90deg,var(--accent),var(--surface-hover),var(--accent));background-size:180% 100%;animation:rpWait 1.1s linear infinite}
+        .nmsg.replay-progress.empty{color:var(--muted)}
+        @keyframes rpWait{from{background-position:0 0}to{background-position:180% 0}}
         .nmsg.meta{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 11px;font:11px/1.5 var(--mono);color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:0}
         .nmsg.meta.warn{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
         .nmsg.meta .msep{color:var(--line-strong);margin:0 6px}
@@ -1292,7 +1295,8 @@ function nativeStage(sid){
   d.dataset.sid=sid; $("nativemsgs").appendChild(d);
   nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
-                      renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null};
+                      renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null,
+                      replayWaiting:false, replayWaitTimer:null};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -1475,45 +1479,72 @@ function nMarkRendered(st,obj){
 function nResetReplayState(st){
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
   st.thinking=false; st.thinkBubble=null; st.thinkBox=null; st.thinkSum=null; st.thinkStart=null;
   st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
   st.lastWasHumanUser=false; st.lastHumanText="";
   st.renderedEvents={};
   st.lastSeq=0;
   st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
-  st.replayCard=null;
+  st.replayCard=null; st.replayWaiting=false;
   st.root.innerHTML="";
 }
-function nReplayProgressStart(st,total){
-  if(!total) return null;
+function nReplayIsPendingEvent(e){
+  return !!(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form"));
+}
+function nReplayRenderableEvents(events){
+  return (events||[]).filter(function(e){ return !nReplayIsPendingEvent(e); });
+}
+function nStageHasReplayContent(st){
+  if(!st || !st.root) return false;
+  for(var i=0;i<st.root.children.length;i++){
+    var el=st.root.children[i];
+    if(!el.classList || !el.classList.contains("replay-progress")) return true;
+  }
+  return false;
+}
+function nReplayProgressStart(st,total,label,mode){
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  if(st.replayCard && st.replayCard.parentNode) st.replayCard.parentNode.removeChild(st.replayCard);
+  st.replayCard=null;
   var card=document.createElement("div"); card.className="nmsg replay-progress";
-  card.innerHTML='<div class="rp-top"><span>Loading conversation</span><span class="rp-meta">0/'+total+'</span></div><div class="rp-bar"><div class="rp-fill"></div></div>';
-  st.root.appendChild(card); st.replayCard=card; nScrollBottom();
+  if(mode) card.classList.add(mode);
+  var meta=mode==="waiting"?"waiting":("0/"+total);
+  card.innerHTML='<div class="rp-top"><span>'+nEsc(label||"Loading conversation")+'</span><span class="rp-meta">'+nEsc(meta)+'</span></div><div class="rp-bar"><div class="rp-fill"></div></div>';
+  st.root.appendChild(card); st.replayCard=card; st.replayWaiting=(mode==="waiting"); nScrollBottom();
   return card;
 }
 function nReplayProgressUpdate(st,done,total){
   var card=st.replayCard; if(!card) return;
+  card.classList.remove("waiting"); st.replayWaiting=false;
   var pct=total?Math.max(1,Math.min(100,Math.round(done*100/total))):100;
   var meta=card.querySelector(".rp-meta"), fill=card.querySelector(".rp-fill");
   if(meta) meta.textContent=done+"/"+total;
   if(fill) fill.style.width=pct+"%";
 }
-function nReplayProgressDone(st,total){
+function nReplayProgressDone(st,total,label,mode){
   var card=st.replayCard; if(!card) return;
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
   nReplayProgressUpdate(st,total,total);
   card.classList.add("done");
-  var top=card.querySelector(".rp-top span"); if(top) top.textContent="Conversation loaded";
+  if(mode) card.classList.add(mode);
+  var top=card.querySelector(".rp-top span"); if(top) top.textContent=label||"Conversation loaded";
+  var meta=card.querySelector(".rp-meta"); if(meta && !total) meta.textContent="0/0";
   setTimeout(function(){ if(card.parentNode) card.parentNode.removeChild(card); if(st.replayCard===card) st.replayCard=null; }, 700);
 }
+function nReplayProgressWait(st){
+  if(!st || !st.replayCard || !st.replayWaiting) return;
+  var top=st.replayCard.querySelector(".rp-top span"); if(top) top.textContent="Waiting for conversation replay";
+  var meta=st.replayCard.querySelector(".rp-meta"); if(meta) meta.textContent="still connected";
+}
 function nReplayBatchAsync(sid, st, events){
-  var total=events.length, idx=0, chunk=18;
+  var renderEvents=nReplayRenderableEvents(events), total=renderEvents.length, idx=0, chunk=18;
   st.replayActive=true; st.replayPending=[];
-  nReplayProgressStart(st,total);
+  nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
   function pump(){
     var end=Math.min(total, idx+chunk);
     for(; idx<end; idx++){
-      var e=events[idx];
-      if(e && (e.type==="pending_approval" || e.type==="pending_ask" || e.type==="pending_form")) continue;
+      var e=renderEvents[idx];
       try{ e.replay=true; nHandle(sid, e); }
       catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
     }
@@ -1522,7 +1553,7 @@ function nReplayBatchAsync(sid, st, events){
       st.replayTimer=setTimeout(pump, 0);
       return;
     }
-    st.replayTimer=null; st.replayActive=false; nReplayProgressDone(st,total);
+    st.replayTimer=null; st.replayActive=false; nReplayProgressDone(st,total,total?"Conversation loaded":"No replay history",total?"":"empty");
     var pending=st.replayPending||[]; st.replayPending=[];
     pending.forEach(function(ev){ nHandle(sid, ev); });
   }
@@ -1704,7 +1735,7 @@ function nHandle(sid, obj){
   if(t==="replay_batch"){
     var _evs=obj.events||[];
     var _sig=nSigFromParts(_evs.map(nEvSigPart));
-    if(_sig && _sig===st.lastBatchSig){ return; }
+    if(_sig && _sig===st.lastBatchSig && nStageHasReplayContent(st)){ return; }
     st.sigParts=_evs.map(nEvSigPart);
     st.lastBatchSig=_sig;
     nResetReplayState(st);
@@ -1721,6 +1752,7 @@ function nHandle(sid, obj){
     st.lastBatchSig=nSigFromParts(st.sigParts);
   }
   if(t==="state_snapshot"){
+    if(st.replayWaiting && !st.replayActive){ nReplayProgressDone(st,0,"Connected","empty"); }
     st.planMode=!!obj.plan; st.taskMode=!!obj.task;
     st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
     if(currentSid===sid){
@@ -2036,7 +2068,13 @@ function nApprove(sid, tuid, allow, always){ postJSON("/api/napprove", {sid:sid,
 function nativeConnect(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} }
   var st=nativeStage(sid);
-  if(st){ nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null; }
+  if(st){
+    nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null;
+    if(currentSid===sid){
+      nReplayProgressStart(st,0,"Connecting session","waiting");
+      st.replayWaitTimer=setTimeout(function(){ nReplayProgressWait(st); }, 8000);
+    }
+  }
   var proto=location.protocol==="https:"?"wss:":"ws:";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws");
   nativeWs[sid]=ws;

@@ -14,6 +14,7 @@ import json
 import os
 import socket
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,6 +46,45 @@ def _api_json(path, user):
     if res.status >= 400:
         raise RuntimeError("GET %s -> %s %s" % (path, res.status, data[:400].decode("utf-8", "replace")))
     return json.loads(data.decode("utf-8", "replace"))
+
+
+def _api_post_json(path, user, payload):
+    body = json.dumps(payload or {}).encode("utf-8")
+    headers = _headers(user)
+    headers["Content-Type"] = "application/json"
+    headers["Content-Length"] = str(len(body))
+    conn = http.client.HTTPConnection(common.MANAGER_HOST, common.MANAGER_PORT, timeout=12)
+    try:
+        conn.request("POST", path, body=body, headers=headers)
+        res = conn.getresponse()
+        data = res.read()
+    finally:
+        conn.close()
+    text = data.decode("utf-8", "replace")
+    if res.status >= 400:
+        raise RuntimeError("POST %s -> %s %s" % (path, res.status, text[:400]))
+    return json.loads(text or "{}")
+
+
+def _launch_temp_session(user, cwd):
+    result = _api_post_json("/api/launch", user, {
+        "dir": os.path.abspath(cwd or os.getcwd()),
+        "title": "Codex WS smoke",
+        "backend": "codex_native",
+        "yolo": False,
+    })
+    if not result.get("sid"):
+        raise RuntimeError("temporary Codex launch did not return sid: %s" % result)
+    return result["sid"]
+
+
+def _stop_session(user, sid):
+    if not sid:
+        return
+    try:
+        _api_post_json("/api/stop", user, {"sid": sid})
+    except Exception as exc:
+        print("WARN: failed to stop temporary session %s: %s" % (sid, exc), file=sys.stderr)
 
 
 def _choose_session(sid, user):
@@ -123,9 +163,43 @@ def _replay_event_count(events):
     return sum(len(event.get("events") or []) for event in events if event.get("type") == "replay_batch")
 
 
-def probe(sid="", user="", seconds=2.5):
+def _state_snapshot_count(events):
+    return sum(1 for event in events if event.get("type") == "state_snapshot")
+
+
+def _read_client(label, sock, seconds, out):
+    try:
+        out[label] = _read_events(sock, seconds)
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def _read_many(sockets, seconds):
+    out = {}
+    threads = []
+    for label, sock in sockets.items():
+        t = threading.Thread(target=_read_client, args=(label, sock, seconds, out), daemon=True)
+        t.start()
+        threads.append(t)
+    for thread in threads:
+        thread.join(timeout=max(1.0, float(seconds) + 1.0))
+    return out
+
+
+def _client_summary(events):
+    return {
+        "types": [event.get("type") for event in events],
+        "last_seq": _max_seq(events),
+        "replay_events": _replay_event_count(events),
+        "state_snapshots": _state_snapshot_count(events),
+    }
+
+
+def _probe_single(sid, user, seconds):
     user = _user_from_config(user)
-    sid = _choose_session(sid, user)
     first = _ws_connect(sid, user, after=0)
     try:
         first_events = _read_events(first, seconds)
@@ -150,16 +224,71 @@ def probe(sid="", user="", seconds=2.5):
     }
 
 
+def _probe_two_clients(sid, user, seconds):
+    first_sockets = {
+        "primary": _ws_connect(sid, user, after=0),
+        "mirror": _ws_connect(sid, user, after=0),
+    }
+    first = _read_many(first_sockets, seconds)
+    summaries = {label: _client_summary(events) for label, events in first.items()}
+    seqs = {label: summary["last_seq"] for label, summary in summaries.items()}
+    after_sockets = {
+        label: _ws_connect(sid, user, after=seq)
+        for label, seq in seqs.items()
+    }
+    after = _read_many(after_sockets, seconds)
+    after_summaries = {label: _client_summary(events) for label, events in after.items()}
+    after_replays = {label: summary["replay_events"] for label, summary in after_summaries.items()}
+    seqs_match = len(set(seqs.values())) <= 1
+    no_after_replay = all(count == 0 for count in after_replays.values())
+    snapshots_seen = all(summary["state_snapshots"] >= 1 for summary in summaries.values())
+    return {
+        "ok": bool(seqs_match and no_after_replay and snapshots_seen),
+        "sid": sid,
+        "user": user,
+        "clients": 2,
+        "first": summaries,
+        "after": after_summaries,
+        "seqs_match": seqs_match,
+        "after_replay_events": after_replays,
+        "state_snapshots_seen": snapshots_seen,
+    }
+
+
+def probe(sid="", user="", seconds=2.5, clients=1):
+    user = _user_from_config(user)
+    sid = _choose_session(sid, user)
+    if int(clients or 1) >= 2:
+        return _probe_two_clients(sid, user, seconds)
+    return _probe_single(sid, user, seconds)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--sid", default="", help="Running manager session id, e.g. s29. Defaults to first Codex session.")
     parser.add_argument("--user", default="", help="Auth user context. Defaults to first auth.txt user.")
     parser.add_argument("--seconds", type=float, default=2.5, help="Read window per websocket connection.")
+    parser.add_argument("--clients", type=int, choices=(1, 2), default=1,
+                        help="Use 2 to verify two simultaneous clients get matching replay state.")
+    parser.add_argument("--launch-temp", action="store_true",
+                        help="Launch and stop a temporary idle Codex session when --sid is omitted.")
+    parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for --launch-temp.")
     args = parser.parse_args(argv)
-    result = probe(sid=args.sid, user=args.user, seconds=args.seconds)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    if not result["ok"]:
-        raise SystemExit(1)
+    temp_sid = ""
+    user = _user_from_config(args.user)
+    try:
+        if args.launch_temp and not args.sid:
+            temp_sid = _launch_temp_session(user, args.cwd)
+            args.sid = temp_sid
+        result = probe(sid=args.sid, user=user, seconds=args.seconds, clients=args.clients)
+        if temp_sid:
+            result["temporary_session"] = temp_sid
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not result["ok"]:
+            raise SystemExit(1)
+    finally:
+        if temp_sid:
+            _stop_session(user, temp_sid)
 
 
 if __name__ == "__main__":

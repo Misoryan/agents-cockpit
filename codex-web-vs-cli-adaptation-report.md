@@ -325,3 +325,11 @@ git diff --check
 - Extra writable roots are normalized relative to the launch cwd and checked against the logged-in user's allowed workspace roots before launch or slash updates, preserving multi-user path boundaries.
 - Slash parity also gained `/reasoning`, `/summary`, `/service-tier`, and `/add-dir`, so subsequent Codex turns can be tuned without restarting the web session.
 - Remaining launch-config gap: CLI `--profile` still has no direct, safe app-server thread/start field in the current schema, so it remains documented as a gap rather than shown as a fake UI option.
+
+
+## 12. 2026-07-17 multi-client replay smoke checkpoint
+
+- Extended `tools/codex_ws_smoke.py` with `--clients 2` so the live validation can open two simultaneous WebSocket clients for the same Codex session.
+- Added `--launch-temp` so the same smoke can create and stop a temporary idle Codex session when no running Codex session is available, keeping the multi-client reconnect check repeatable after restarts.
+- The two-client probe verifies both clients receive a `state_snapshot`, agree on the latest replay `seq`, and can reconnect with their own `after=<lastSeq>` cursor without receiving duplicate replay batches.
+- This does not replace manual browser/mobile visual QA, but it turns the core multi-access invariant into a repeatable protocol-level smoke test that can be run before each checkpoint.

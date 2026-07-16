@@ -93,6 +93,12 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `tools/codex_ws_smoke.py` provides a non-destructive live reconnect probe:
   it connects to a running Codex session, reconnects with `after=<lastSeq>`,
   and fails if already rendered replay events are sent again.
+- The same smoke probe now supports `--clients 2`, opening two simultaneous
+  WebSocket clients against one Codex session and verifying both receive the
+  same replay seq before reconnecting each client with its own `after` cursor.
+- When no Codex session is already open, the probe can run with
+  `--launch-temp` to create and stop a temporary idle Codex session for the
+  same two-client reconnect invariant.
 - Codex history resume now normalizes replay events with stable `seq` values
   via `_adopt_history_replay`, so old thread history loaded from app-server can
   still participate in incremental reconnect instead of forcing a full replay.
@@ -149,4 +155,5 @@ session open:
 
 ```powershell
 python tools\codex_ws_smoke.py --seconds 2
+python tools\codex_ws_smoke.py --clients 2 --seconds 2 --launch-temp --cwd .
 ```

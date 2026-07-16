@@ -54,6 +54,7 @@ def main():
     assert 'id="set-args"' not in html
     assert 'id="lm-codex-field"' in html
     assert 'id="slashmenu"' in html
+    assert 'id="hist-archived"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
@@ -99,6 +100,11 @@ def main():
         "nReplayUnseenEvents(st, nReplayRenderableEvents(events))",
         "function nReplayProgressCancel(st)",
         "/api/history?limit=200&live_codex=1",
+        "\"hist-archived\"",
+        "function setHistoryView(archived)",
+        "sbArchived?\"&archived=1\":\"\"",
+        "var loadSeq=++sidebarLoadSeq",
+        "{label:\"Unarchive\", title:\"Unarchive this Codex history thread\", action:\"unarchive\"}",
         "function nativeScheduleReconnect(sid, delay)",
         "function nativeReconnectDelay(sid, baseDelay)",
         "if(existing && (existing.readyState===0 || existing.readyState===1) && !opts.force) return existing",

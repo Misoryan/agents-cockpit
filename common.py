@@ -654,8 +654,10 @@ def load_claude_history(ctx=None):
     return common_history.load_claude_history(_history_settings(), ctx=ctx)
 
 
-def load_history(limit=60, ctx=None, live_codex=False):
-    return common_history.load_history(_history_settings(), limit=limit, ctx=ctx, live_codex=live_codex)
+def load_history(limit=60, ctx=None, live_codex=False, archived=False):
+    return common_history.load_history(
+        _history_settings(), limit=limit, ctx=ctx,
+        live_codex=live_codex, archived=archived)
 
 
 def delete_history(sid, backend=None, ctx=None):

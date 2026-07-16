@@ -146,11 +146,11 @@ def load_claude_history(settings, ctx=None):
     return out
 
 
-def _load_codex_history(limit, ctx, live_codex, list_thread_history_fn=None):
+def _load_codex_history(limit, ctx, live_codex, archived=False, list_thread_history_fn=None):
     if list_thread_history_fn is None:
         from codex_native import list_thread_history as list_thread_history_fn
     ctx = ctx or {}
-    return list_thread_history_fn(limit=limit, archived=False,
+    return list_thread_history_fn(limit=limit, archived=archived,
                                   user=ctx.get("user", ""),
                                   uid=ctx.get("uid", ""),
                                   state_dir=ctx.get("state_dir"),
@@ -158,11 +158,13 @@ def _load_codex_history(limit, ctx, live_codex, list_thread_history_fn=None):
                                   live=bool(live_codex))
 
 
-def load_history(settings, limit=60, ctx=None, live_codex=False, list_thread_history_fn=None):
-    out = load_claude_history(settings, ctx=ctx)
+def load_history(settings, limit=60, ctx=None, live_codex=False, archived=False,
+                 list_thread_history_fn=None):
+    out = [] if archived else load_claude_history(settings, ctx=ctx)
     if settings.codex_enabled:
         try:
-            out.extend(_load_codex_history(limit, ctx, live_codex, list_thread_history_fn))
+            out.extend(_load_codex_history(limit, ctx, live_codex, archived,
+                                           list_thread_history_fn))
         except Exception as exc:
             print("WARN: failed to load Codex history: %s" % exc)
     out.sort(key=lambda item: item.get("ts") or 0, reverse=True)

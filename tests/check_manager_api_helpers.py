@@ -123,6 +123,7 @@ def main():
 
     old_backends = common.BACKENDS
     old_path_allowed = common.path_allowed_for_user
+    old_load_history = common.load_history
     old_codex_session = manager_user_api.CodexSession
     try:
         common.BACKENDS = {"codex_native": {"label": "Codex"}}
@@ -153,6 +154,8 @@ def main():
                     assert objective == "Finish parity"
                     return {"ok": True, "action": "goal_set", "thread_id": thread_id,
                             "goal": {"objective": objective, "status": status or "active"}}
+                if action == "unarchive":
+                    return {"ok": True, "action": "unarchive", "thread_id": thread_id}
                 assert action == "fork"
                 return {"ok": True, "action": "fork", "thread_id": "thread-fork"}
 
@@ -172,6 +175,27 @@ def main():
             lambda _sid, _ctx: None,
         )
         assert h.body["models"][0]["id"] == "gpt-5-codex"
+
+        hist_kwargs = {}
+        common.load_history = lambda limit, ctx=None, live_codex=False, archived=False: (
+            hist_kwargs.update({"limit": limit, "ctx": ctx, "live_codex": live_codex,
+                                "archived": archived}) or [
+                {"session_id": "archived-thread", "cwd": "C:/repo", "title": "Archived",
+                 "backend": "codex_native", "archived": True}
+            ]
+        )
+        h = FakeHandler()
+        manager_user_api.handle_get(
+            h,
+            "/api/history",
+            urllib.parse.urlparse("/api/history?limit=7&live_codex=1&archived=1"),
+            {"user": "alice"},
+            lambda _sid, _ctx: None,
+        )
+        assert h.body["history"][0]["session_id"] == "archived-thread"
+        assert hist_kwargs["limit"] == 21
+        assert hist_kwargs["live_codex"] is True
+        assert hist_kwargs["archived"] is True
 
         h = FakeHandler()
         manager_user_api.handle_get(
@@ -333,6 +357,19 @@ def main():
         )
         assert h.body["goal"]["objective"] == "Finish parity"
 
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/codex_history_action",
+            {"thread_id": "thread-1", "backend": "codex_native", "action": "unarchive"},
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            lambda _data, _ctx: ("", None, None),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "action": "unarchive", "thread_id": "thread-1"}
+
         captured = {}
         launch_dir = str(Path(__file__).resolve().parents[1])
         h = FakeHandler()
@@ -361,6 +398,7 @@ def main():
     finally:
         common.BACKENDS = old_backends
         common.path_allowed_for_user = old_path_allowed
+        common.load_history = old_load_history
         manager_user_api.CodexSession = old_codex_session
 
     print("manager api helper checks passed")

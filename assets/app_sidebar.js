@@ -1,7 +1,8 @@
 "use strict";
 /* ---- sessions + sidebar model ---- */
-var runSessions=[], sessionWatch={}, dirModel=[], expanded={}, dirExpandClicks={}, sbSearch="", lastSig="";
+var runSessions=[], sessionWatch={}, dirModel=[], expanded={}, dirExpandClicks={}, sbSearch="", sbArchived=false, lastSig="", sidebarLoadSeq=0;
 var pendingOpenSid=""; try{ pendingOpenSid=new URLSearchParams(location.search).get("open")||""; }catch(e){}
+try{ sbArchived=localStorage.getItem("acHistoryView")==="archived"; }catch(e){ sbArchived=false; }
 
 var openTabs=[], sessionsLoaded=false;
 try{ openTabs=JSON.parse(localStorage.getItem("acOpenTabs")||"[]")||[]; }catch(e){ openTabs=[]; }
@@ -124,7 +125,7 @@ function rememberSessions(ss, skipPendingOpen){
   });
   Object.keys(sessionWatch).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) delete sessionWatch[sid]; });
   pruneOpenTabs(); renderSessionTabs();
-  if(dirModel.length){
+  if(dirModel.length && !sbArchived){
     ensureSessionDirs(); attachSessionsToModel();
     var sig=sessionSignature(); if(sig!==lastSig){ lastSig=sig; renderSidebar(); }
   }
@@ -132,17 +133,38 @@ function rememberSessions(ss, skipPendingOpen){
 }
 function pollSessionSignals(){ api("/api/sessions").then(function(r){ rememberSessions(r.sessions||[]); }); }
 
+function updateHistoryFilterButtons(){
+  var active=$("hist-active"), archived=$("hist-archived");
+  if(active) active.classList.toggle("active", !sbArchived);
+  if(archived) archived.classList.toggle("active", !!sbArchived);
+}
+function setHistoryView(archived){
+  archived=!!archived;
+  if(sbArchived===archived){ updateHistoryFilterButtons(); return; }
+  sbArchived=archived;
+  try{ localStorage.setItem("acHistoryView", archived?"archived":"active"); }catch(e){}
+  dirExpandClicks={}; lastSig="";
+  loadSidebarData();
+  updateHistoryFilterButtons();
+}
 function loadSidebarData(){
-  Promise.all([api("/api/recent_dirs?limit=50"), api("/api/history?limit=200&live_codex=1")]).then(function(res){
+  updateHistoryFilterButtons();
+  var loadSeq=++sidebarLoadSeq;
+  var histUrl="/api/history?limit=200&live_codex=1"+(sbArchived?"&archived=1":"");
+  var dirsReq=sbArchived ? Promise.resolve({dirs:[]}) : api("/api/recent_dirs?limit=50");
+  Promise.all([dirsReq, api(histUrl)]).then(function(res){
+    if(loadSeq!==sidebarLoadSeq) return;
     var dirs=res[0].dirs||[], hist=res[1].history||[];
     var map={}, order=[];
     function ensure(cwd){ var k=normDir(cwd); if(!map[k]){ map[k]={cwd:cwd, norm:k, count:0, last_ts:0, history:[], sessions:[]}; order.push(k); } return map[k]; }
     dirs.forEach(function(d){ var e=ensure(d.cwd); e.count=d.count||0; if((d.last_ts||0)>e.last_ts) e.last_ts=d.last_ts||0; });
-    hist.forEach(function(h){ var e=ensure(h.cwd||"(未知目录)"); e.history.push(h); if((h.ts||0)>e.last_ts) e.last_ts=h.ts||0; });
+    hist.forEach(function(h){ var e=ensure(h.cwd||"(unknown directory)"); e.history.push(h); if((h.ts||0)>e.last_ts) e.last_ts=h.ts||0; });
     dirModel=order.map(function(k){ return map[k]; });
-    ensureSessionDirs(); attachSessionsToModel(); lastSig=sessionSignature(); renderSidebar();
+    if(!sbArchived){ ensureSessionDirs(); attachSessionsToModel(); }
+    lastSig=sessionSignature(); renderSidebar();
   });
 }
+
 
 function matchConvs(d, q){
   if(!q) return {sessions:(d.sessions||[]).slice(), history:(d.history||[]).slice()};
@@ -159,7 +181,10 @@ function renderSidebar(){
     if((d.cwd||"").toLowerCase().indexOf(q)>=0) return true;
     var mc=matchConvs(d,q); return mc.sessions.length || mc.history.length;
   });
-  if(!shown.length){ list.appendChild(empty(sbSearch?"没有匹配的目录":"还没有目录。点「新建」开始。")); list.scrollTop=st; return; }
+  if(!shown.length){
+    list.appendChild(empty(sbSearch?"没有匹配的目录":(sbArchived?"没有已归档的 Codex 会话":"还没有目录。点「新建」开始。")));
+    list.scrollTop=st; return;
+  }
   shown.forEach(function(d){ list.appendChild(renderDirRow(d, q)); });
   list.scrollTop=st;
 }
@@ -294,7 +319,9 @@ function appendCodexHistoryActions(el, h){
       return value?{objective:value}:null;
     }},
     {label:"Fork", title:"Fork this Codex history thread", action:"fork"},
-    {label:"Archive", title:"Archive this Codex history thread", action:"archive"}
+    h.archived
+      ? {label:"Unarchive", title:"Unarchive this Codex history thread", action:"unarchive"}
+      : {label:"Archive", title:"Archive this Codex history thread", action:"archive"}
   ].forEach(function(action){
     var btn=document.createElement("button");
     btn.className="cbtn ghost"; btn.type="button"; btn.textContent=action.label; btn.title=action.title;

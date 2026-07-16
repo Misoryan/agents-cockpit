@@ -309,3 +309,10 @@ git diff --check
 ```
 
 `git diff --check` 只有 Windows 换行提示，没有 whitespace error。`tools/codex_ws_smoke.py` 已对当前运行中的 Codex 历史恢复会话完成一次非破坏性重连探针：首次连接收到 `replay_batch` + `state_snapshot`，历史 replay 被规范化到 `last_seq=200`，按 `after=200` 重连后只收到 `state_snapshot`，`after_replay_events=0`。尚未完成真实浏览器/手机端可视化长连接 smoke；1006 断线问题目前主要通过增量 replay、pending 卡重放和重连不清空 DOM 来降低可见闪烁，仍建议在下一轮做一次浏览器双端场景验证。
+
+
+## 10. 2026-07-17 progress checkpoint
+
+- Added an Active/Archived sidebar filter for Codex thread history. The archived view requests `/api/history?live_codex=1&archived=1`, which flows to app-server `thread/list` with `archived=true` instead of relying on stale local cache.
+- Added a visible `Unarchive` action for archived Codex history rows through `/api/codex_history_action` -> `thread/unarchive`, completing the first UI entry point for archived thread lifecycle parity.
+- Kept the active view non-disruptive: running sessions are only attached to the normal history view, so switching to archived history does not mix live sessions into archived results or force active conversation DOM reloads.

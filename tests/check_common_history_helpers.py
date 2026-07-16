@@ -70,6 +70,18 @@ def main():
         )
         assert mixed[0]["session_id"] == "thread"
 
+        seen = {}
+        archived = common_history.load_history(
+            codex_settings, limit=5, live_codex=True, archived=True,
+            list_thread_history_fn=lambda **kw: seen.update(kw) or [
+                {"session_id": "archived-thread", "cwd": "codex", "ts": 9,
+                 "title": "Archived Codex", "backend": "codex_native", "archived": True}
+            ],
+        )
+        assert [item["session_id"] for item in archived] == ["archived-thread"]
+        assert seen["archived"] is True
+        assert seen["live"] is True
+
         recent = common_history.recent_dirs(
             settings, limit=2,
             load_history_fn=lambda _settings, _limit, ctx=None: [

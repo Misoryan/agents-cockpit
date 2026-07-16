@@ -65,6 +65,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `thread/name/set`, `thread/goal/set`, `thread/fork`, or `thread/archive`
   directly under the current user's Codex home, so history
   entries can use common CLI lifecycle actions without first resuming a thread.
+- The sidebar now has an Active/Archived history filter for Codex threads.
+  Archived view calls live app-server `thread/list` with `archived=true` and
+  archived rows expose `Unarchive` through the same `/api/codex_history_action`
+  path, closing the first lifecycle UI gap left after archive support.
 - The slash palette supports keyboard up/down selection, keeping CLI-style
   command discovery usable without requiring mouse interaction.
 - Codex `@` file mentions have a first app-server-backed path: the input box

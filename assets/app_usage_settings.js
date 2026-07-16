@@ -50,6 +50,8 @@ $("sb-close").addEventListener("click", function(){ if(isNarrow()) closeSidebar(
 $("sbreopen").addEventListener("click", function(){ document.body.classList.remove("sb-collapsed"); });
 $("shade").addEventListener("click", closeSidebar);
 $("sb-search").addEventListener("input", function(){ sbSearch=$("sb-search").value; renderSidebar(); });
+if($("hist-active")) $("hist-active").addEventListener("click", function(){ setHistoryView(false); });
+if($("hist-archived")) $("hist-archived").addEventListener("click", function(){ setHistoryView(true); });
 
 /* bottom buttons + settings */
 $("usagebtn").addEventListener("click", function(){ closeSidebar(); setMainView("usage"); });

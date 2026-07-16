@@ -37,7 +37,9 @@ def handle_get(handler, path, pr, ctx, owned_session_fn):
         query = urllib.parse.parse_qs(pr.query)
         limit = int(query.get("limit", ["60"])[0] or 60)
         live_codex = (query.get("live_codex", ["0"])[0] or "").lower() in ("1", "true", "yes")
-        hist = [item for item in common.load_history(limit * 3, ctx=ctx, live_codex=live_codex)
+        archived = (query.get("archived", ["0"])[0] or "").lower() in ("1", "true", "yes")
+        hist = [item for item in common.load_history(
+                    limit * 3, ctx=ctx, live_codex=live_codex, archived=archived)
                 if common.path_allowed_for_user(ctx.get("user"), item.get("cwd") or "")]
         handler._json({"history": hist[:limit]})
     elif path == "/api/codex_options":

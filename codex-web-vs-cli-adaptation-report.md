@@ -563,3 +563,19 @@ Immediate next commit candidate:
 - Added `codex_pending.py` and moved Codex pending approval/ask/form helper logic out of `codex_native.py`: pending detection, approval decisions, ask/form answers, state snapshot pending lists, replayable pending-card snapshots, and pending waiter cleanup.
 - `CodexSession.approve`, `CodexSession.answer`, `_state_snapshot`, `_pending_events_snapshot`, `state`, `close`, and `on_client_exit` still expose the same behavior through wrappers or direct helper calls, preserving `/api/napprove`, `/api/nanswer`, replay recovery, and app-server-exit cleanup.
 - Added `tests/check_codex_pending_helpers.py` so pending approval, ask, form, terminal snapshot mixing, event wakeups, and broadcasts are covered in the fast test bundle.
+
+## 28. 2026-07-17 comprehensive Codex CLI parity reassessment
+
+- Re-read the current baseline on `main` / `a02753a` against local `codex-cli 0.142.4` and refreshed the protocol matrix from the installed app-server schema.
+- Rewrote `docs/codex-cli-gap-adaptation-plan.md` as the current source-of-truth plan: 68 server notifications, 10 server requests, and 87 client requests are now called out with the current support mix.
+- Current conclusion: the Web session is a strong remote/multi-client Codex agent host, not yet a full CLI replacement. High-frequency chat/approval/Plan/replay/history/image/MCP/terminalInteraction paths are usable; profile/config layers, account/login closure, plugin/skills, doctor/update/features, exec/review/apply/cloud, and richer tool UI remain gaps.
+- Current code hotspots: `codex_native.py` is still the main backend concentration point at about 1473 lines; `common.py`, `web.py`, `manager_user_api.py`, `codex_client.py`, and the native frontend renderer files remain the next maintenance and hardening seams.
+- Recommended next implementation step: extract a behavior-preserving `CodexReplayFacade` before adding more CLI parity features. The first slice should wrap timeline identity/merge/events/replay payload while keeping public `CodexSession` methods and WebSocket behavior stable.
+- No runtime behavior was changed in this checkpoint; this is a documentation/planning update to align the next refactor steps with the current code state.
+
+## 29. 2026-07-17 replay facade extraction checkpoint
+
+- Added `codex_replay_facade.py` and routed Codex replay/timeline compatibility wrappers through `CodexReplayFacade`.
+- The first slice is behavior-preserving: `CodexSession` still exposes `_is_dangerous`, `_record_timeline_locked`, `_merge_timeline_event_locked`, `_adopt_history_replay`, `_events_after_seq`, and `replay_payload`, but event identity, timeline recording/merging, history replay adoption, incremental event lookup, and replay payload generation now sit behind the facade.
+- Added `tests/check_codex_replay_facade_helpers.py` so the new facade has direct coverage for dangerous command detection, event identity, broadcast decoration, incremental replay payloads, history replay adoption, scoring, and recovery-noise filtering.
+- Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` to record the facade as Phase 1's first completed structural slice and to include `codex_replay_facade.py` in the validation bundle.

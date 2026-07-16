@@ -21,7 +21,7 @@ import codex_events
 import codex_forms
 import codex_history
 import codex_pending
-import codex_replay
+import codex_replay_facade
 import codex_requests
 import codex_routing
 import codex_session_events
@@ -239,6 +239,8 @@ class CodexSession:
         self._route_debug = []
         self.timeline = []
         self.poll_events = []
+        self._replay = codex_replay_facade.CodexReplayFacade(
+            self, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
         self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
@@ -1248,7 +1250,7 @@ class CodexSession:
 
     @staticmethod
     def _is_dangerous(text):
-        return codex_replay.is_dangerous(text)
+        return codex_replay_facade.CodexReplayFacade.is_dangerous(text)
 
     def _record_and_broadcast(self, obj):
         with self._lock:
@@ -1259,33 +1261,31 @@ class CodexSession:
         self._broadcast(obj)
 
     def _event_identity_locked(self, obj):
-        return codex_replay.event_identity(self, obj)
+        return self._replay.event_identity_locked(obj)
 
     def _record_timeline_locked(self, obj):
-        return codex_replay.record_timeline(
-            self, obj, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
+        return self._replay.record_timeline_locked(obj)
 
     def _merge_timeline_event_locked(self, out):
-        return codex_replay.merge_timeline_event(self, out, _REPLAY_STREAM_MAX_CHARS)
+        return self._replay.merge_timeline_event_locked(out)
 
     @staticmethod
     def _tool_result_id(ev):
-        return codex_replay.tool_result_id(ev)
+        return codex_replay_facade.CodexReplayFacade.tool_result_id(ev)
 
     @staticmethod
     def _replay_content_score(events):
-        return codex_replay.replay_content_score(events)
+        return codex_replay_facade.CodexReplayFacade.replay_content_score(events)
 
     @staticmethod
     def _drop_recover_noise(events):
-        return codex_replay.drop_recover_noise(events)
+        return codex_replay_facade.CodexReplayFacade.drop_recover_noise(events)
 
     def _adopt_history_replay(self, events):
-        return codex_replay.adopt_history_replay(self, events, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
+        return self._replay.adopt_history_replay(events)
 
     def _decorate_for_broadcast(self, obj):
-        with self._lock:
-            return self._record_timeline_locked(obj)
+        return self._replay.decorate_for_broadcast(obj)
 
     def _broadcast(self, obj):
         obj = self._decorate_for_broadcast(obj)
@@ -1326,13 +1326,13 @@ class CodexSession:
 
     @staticmethod
     def _event_after_seq(ev, after_seq):
-        return codex_replay.event_after_seq(ev, after_seq)
+        return codex_replay_facade.CodexReplayFacade.event_after_seq(ev, after_seq)
 
     def _events_after_seq(self, after_seq=0):
-        return codex_replay.events_after_seq(self, after_seq)
+        return self._replay.events_after_seq(after_seq)
 
     def replay_payload(self, after_seq=0):
-        return codex_replay.replay_payload(self, after_seq)
+        return self._replay.replay_payload(after_seq)
 
     def add_client(self, sock, after_seq=0):
         snapshot = self._events_after_seq(after_seq)

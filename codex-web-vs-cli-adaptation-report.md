@@ -332,6 +332,7 @@ git diff --check
 - Extended `tools/codex_ws_smoke.py` with `--clients 2` so the live validation can open two simultaneous WebSocket clients for the same Codex session.
 - Added `--launch-temp` so the same smoke can create and stop a temporary idle Codex session when no running Codex session is available, keeping the multi-client reconnect check repeatable after restarts.
 - The two-client probe verifies both clients receive a `state_snapshot`, agree on the latest replay `seq`, and can reconnect with their own `after=<lastSeq>` cursor without receiving duplicate replay batches.
+- The probe now also exercises a safe live `mode_state` broadcast on temporary sessions, proving two connected clients see the same live event before reconnect recovery.
 - This does not replace manual browser/mobile visual QA, but it turns the core multi-access invariant into a repeatable protocol-level smoke test that can be run before each checkpoint.
 
 

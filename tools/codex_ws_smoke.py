@@ -167,6 +167,10 @@ def _state_snapshot_count(events):
     return sum(1 for event in events if event.get("type") == "state_snapshot")
 
 
+def _type_count(events, event_type):
+    return sum(1 for event in events if event.get("type") == event_type)
+
+
 def _read_client(label, sock, seconds, out):
     try:
         out[label] = _read_events(sock, seconds)
@@ -189,12 +193,28 @@ def _read_many(sockets, seconds):
     return out
 
 
+def _read_many_with_action(sockets, seconds, action=None, action_delay=0.25):
+    out = {}
+    threads = []
+    for label, sock in sockets.items():
+        t = threading.Thread(target=_read_client, args=(label, sock, seconds, out), daemon=True)
+        t.start()
+        threads.append(t)
+    if action is not None:
+        time.sleep(max(0.0, float(action_delay)))
+        action()
+    for thread in threads:
+        thread.join(timeout=max(1.0, float(seconds) + 1.0))
+    return out
+
+
 def _client_summary(events):
     return {
         "types": [event.get("type") for event in events],
         "last_seq": _max_seq(events),
         "replay_events": _replay_event_count(events),
         "state_snapshots": _state_snapshot_count(events),
+        "mode_state_events": _type_count(events, "mode_state"),
     }
 
 
@@ -224,12 +244,18 @@ def _probe_single(sid, user, seconds):
     }
 
 
-def _probe_two_clients(sid, user, seconds):
+def _probe_two_clients(sid, user, seconds, exercise_live=False):
     first_sockets = {
         "primary": _ws_connect(sid, user, after=0),
         "mirror": _ws_connect(sid, user, after=0),
     }
-    first = _read_many(first_sockets, seconds)
+    def live_action():
+        _api_post_json("/api/nmode", user, {"sid": sid, "plan": True, "task": False})
+    first = _read_many_with_action(
+        first_sockets,
+        seconds,
+        action=live_action if exercise_live else None,
+    )
     summaries = {label: _client_summary(events) for label, events in first.items()}
     seqs = {label: summary["last_seq"] for label, summary in summaries.items()}
     after_sockets = {
@@ -242,24 +268,27 @@ def _probe_two_clients(sid, user, seconds):
     seqs_match = len(set(seqs.values())) <= 1
     no_after_replay = all(count == 0 for count in after_replays.values())
     snapshots_seen = all(summary["state_snapshots"] >= 1 for summary in summaries.values())
+    live_seen = all(summary["mode_state_events"] >= 1 for summary in summaries.values()) if exercise_live else True
     return {
-        "ok": bool(seqs_match and no_after_replay and snapshots_seen),
+        "ok": bool(seqs_match and no_after_replay and snapshots_seen and live_seen),
         "sid": sid,
         "user": user,
         "clients": 2,
+        "live_broadcast_exercised": bool(exercise_live),
         "first": summaries,
         "after": after_summaries,
         "seqs_match": seqs_match,
         "after_replay_events": after_replays,
         "state_snapshots_seen": snapshots_seen,
+        "live_broadcast_seen": live_seen,
     }
 
 
-def probe(sid="", user="", seconds=2.5, clients=1):
+def probe(sid="", user="", seconds=2.5, clients=1, exercise_live=False):
     user = _user_from_config(user)
     sid = _choose_session(sid, user)
     if int(clients or 1) >= 2:
-        return _probe_two_clients(sid, user, seconds)
+        return _probe_two_clients(sid, user, seconds, exercise_live=exercise_live)
     return _probe_single(sid, user, seconds)
 
 
@@ -273,6 +302,8 @@ def main(argv=None):
     parser.add_argument("--launch-temp", action="store_true",
                         help="Launch and stop a temporary idle Codex session when --sid is omitted.")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for --launch-temp.")
+    parser.add_argument("--exercise-live", action="store_true",
+                        help="During a two-client probe, broadcast a safe /api/nmode update and require both clients to see it.")
     args = parser.parse_args(argv)
     temp_sid = ""
     user = _user_from_config(args.user)
@@ -280,7 +311,9 @@ def main(argv=None):
         if args.launch_temp and not args.sid:
             temp_sid = _launch_temp_session(user, args.cwd)
             args.sid = temp_sid
-        result = probe(sid=args.sid, user=user, seconds=args.seconds, clients=args.clients)
+        exercise_live = bool(args.exercise_live or (args.launch_temp and args.clients >= 2))
+        result = probe(sid=args.sid, user=user, seconds=args.seconds,
+                       clients=args.clients, exercise_live=exercise_live)
         if temp_sid:
             result["temporary_session"] = temp_sid
         print(json.dumps(result, ensure_ascii=False, indent=2))

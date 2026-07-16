@@ -99,6 +99,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - When no Codex session is already open, the probe can run with
   `--launch-temp` to create and stop a temporary idle Codex session for the
   same two-client reconnect invariant.
+- The two-client probe also exercises a safe live `mode_state` broadcast for
+  temporary sessions, proving that two access sources see the same live event
+  before both reconnect without duplicate replay.
 - Codex history resume now normalizes replay events with stable `seq` values
   via `_adopt_history_replay`, so old thread history loaded from app-server can
   still participate in incremental reconnect instead of forcing a full replay.

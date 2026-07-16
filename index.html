@@ -1296,7 +1296,7 @@ function nativeStage(sid){
   nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
                       renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null,
-                      replayWaiting:false, replayWaitTimer:null};
+                      replayWaiting:false, replayWaitTimer:null, lastReplayBatchSig:"", replaySigParts:[]};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
@@ -1749,17 +1749,16 @@ function nHandle(sid, obj){
   if(t==="replay_batch"){
     var _evs=obj.events||[];
     var _parts=_evs.map(nEvSigPart), _sig=nSigFromParts(_parts), _hasContent=nStageHasReplayContent(st);
-    if(_sig && _sig===st.lastBatchSig && nStageHasReplayContent(st)){ return; }
-    var _oldParts=st.sigParts||[], _prefix=nReplayCommonPrefix(_oldParts,_parts);
+    if(_sig && _sig===st.lastReplayBatchSig && _hasContent){ return; }
+    var _oldParts=st.replaySigParts||[], _prefix=nReplayCommonPrefix(_oldParts,_parts);
     if(_hasContent && _oldParts.length && _prefix===_oldParts.length && _parts.length>=_oldParts.length){
-      st.sigParts=_parts; st.lastBatchSig=_sig;
+      st.replaySigParts=_parts; st.lastReplayBatchSig=_sig; st.sigParts=_parts; st.lastBatchSig=_sig;
       var _tail=_evs.slice(_prefix);
       if(_tail.length){ nReplayBatchAsync(sid, st, _tail); }
       else { nReplayProgressCancel(st); }
       return;
     }
-    st.sigParts=_parts;
-    st.lastBatchSig=_sig;
+    st.replaySigParts=_parts; st.lastReplayBatchSig=_sig; st.sigParts=_parts; st.lastBatchSig=_sig;
     nResetReplayState(st);
     nReplayBatchAsync(sid, st, _evs);
     return;

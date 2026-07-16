@@ -331,10 +331,25 @@ def _page_summary(page, sid):
         childCount: st.root.children.length,
         hasContent: !!(window.nStageHasReplayContent && nStageHasReplayContent(st)),
         text: st.root.innerText || "",
+        firstNodeMarker: st.root.children[0] && st.root.children[0].dataset ? (st.root.children[0].dataset.smokeMarker || "") : "",
         planMode: !!st.planMode,
         wsState: (window.nativeWs && nativeWs[%s]) ? nativeWs[%s].readyState : -1
       };
     })()""" % (escaped_sid, escaped_sid, escaped_sid, escaped_sid))
+
+
+def _mark_first_message_node(page, sid, marker):
+    escaped_sid = json.dumps(sid)
+    escaped_marker = json.dumps(marker)
+    result = page.eval("""(function(){
+      var st=(window.nativeStages||{})[%s];
+      if(!st || !st.root || !st.root.children.length) return {ok:false, childCount:0};
+      st.root.children[0].dataset.smokeMarker=%s;
+      return {ok:true, childCount:st.root.children.length, marker:st.root.children[0].dataset.smokeMarker};
+    })()""" % (escaped_sid, escaped_marker))
+    if not result or not result.get("ok"):
+        raise RuntimeError("failed to mark existing message node for %s: %s" % (sid, result))
+    return result
 
 
 def _wait_text(page, sid, text, timeout=10):
@@ -370,7 +385,10 @@ def run_smoke(args):
         _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + first_name})
         _wait_text(page_a, sid, first_name)
         _wait_text(page_b, sid, first_name)
+        marker = "keep-dom-%d" % int(time.time() * 1000)
+        marked = _mark_first_message_node(page_b, sid, marker)
         before = _page_summary(page_b, sid)
+        before_text = before.get("text") if before else ""
 
         page_b.eval("""(function(){
           var sid=%s, ws=(window.nativeWs||{})[sid];
@@ -383,6 +401,8 @@ def run_smoke(args):
         _wait_text(page_b, sid, second_name, timeout=15)
         after = _page_summary(page_b, sid)
         primary = _page_summary(page_a, sid)
+        dom_preserved = bool(after and after.get("firstNodeMarker") == marker)
+        text_preserved = bool(before_text and after and before_text in (after.get("text") or ""))
 
         ok = bool(
             before
@@ -392,6 +412,8 @@ def run_smoke(args):
             and second_name in after["text"]
             and second_name in primary["text"]
             and after["lastSeq"] >= before["lastSeq"]
+            and dom_preserved
+            and text_preserved
         )
         return {
             "ok": ok,
@@ -400,6 +422,9 @@ def run_smoke(args):
             "url": browser.url,
             "browser": browser.exe,
             "temporary_session": temp_sid or None,
+            "dom_marker": marked,
+            "dom_preserved_after_reconnect": dom_preserved,
+            "text_preserved_after_reconnect": text_preserved,
             "before_reconnect": before,
             "after_reconnect": after,
             "primary": primary,

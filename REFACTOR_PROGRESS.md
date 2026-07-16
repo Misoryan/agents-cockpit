@@ -179,6 +179,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   one temporary Codex session, verifies a backend-confirmed rename notice reaches
   both DOMs, forcibly closes one page's WebSocket, then verifies replay/catch-up
   adds the missed notice without clearing existing content.
+- The browser smoke now marks an existing rendered message node before forced
+  WebSocket close and verifies the same DOM node survives reconnect, giving a
+  concrete anti-flicker guard instead of only checking final text content.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

@@ -784,3 +784,9 @@ Immediate next commit candidate:
 - Added a dedicated frontend renderer for `mcpServerStatus.list` and `mcpServerStatus.resources` JSON results in `assets/native_tool_results.js`.
 - MCP inventory now renders as server/resource/template/tool sections instead of a raw JSON block, and resource rows include `Read` actions wired to the existing `/mcp-resource <server> <uri>` slash/backend path.
 - Added delegated click handling in `assets/native_actions.js`, plus CSS and frontend tests, so the resource browser remains replay-safe and usable from reconnected or second clients.
+
+## 60. 2026-07-17 browser reconnect DOM-preservation checkpoint
+
+- Strengthened `tools/codex_browser_smoke.py` so the reconnect test marks an existing rendered message node before forcibly closing one browser tab's WebSocket.
+- After reconnect/catch-up, the smoke now requires both old text preservation and the same DOM node marker to remain, proving the session was not fully cleared/repainted during recovery.
+- This gives the multi-access anti-flicker requirement a stronger repeatable browser-level gate than checking final text content alone.

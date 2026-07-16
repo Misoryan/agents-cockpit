@@ -1551,10 +1551,11 @@ function nReplayProgressWait(st){
   var top=st.replayCard.querySelector(".rp-top span"); if(top) top.textContent="Waiting for conversation replay";
   var meta=st.replayCard.querySelector(".rp-meta"); if(meta) meta.textContent="still connected";
 }
-function nReplayBatchAsync(sid, st, events){
+function nReplayBatchAsync(sid, st, events, opts){
+  opts=opts||{};
   var renderEvents=nReplayRenderableEvents(events), total=renderEvents.length, idx=0, chunk=18;
   st.replayActive=true; st.replayPending=[];
-  nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
+  if(!opts.silent) nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
   function pump(){
     var end=Math.min(total, idx+chunk);
     for(; idx<end; idx++){
@@ -1562,12 +1563,13 @@ function nReplayBatchAsync(sid, st, events){
       try{ e.replay=true; nHandle(sid, e); }
       catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
     }
-    nReplayProgressUpdate(st,idx,total);
+    if(!opts.silent) nReplayProgressUpdate(st,idx,total);
     if(idx<total){
       st.replayTimer=setTimeout(pump, 0);
       return;
     }
-    st.replayTimer=null; st.replayActive=false; nReplayProgressDone(st,total,total?"Conversation loaded":"No replay history",total?"":"empty");
+    st.replayTimer=null; st.replayActive=false;
+    if(!opts.silent) nReplayProgressDone(st,total,total?"Conversation loaded":"No replay history",total?"":"empty");
     var pending=st.replayPending||[]; st.replayPending=[];
     pending.forEach(function(ev){ nHandle(sid, ev); });
   }
@@ -1749,12 +1751,12 @@ function nHandle(sid, obj){
   if(t==="replay_batch"){
     var _evs=obj.events||[];
     var _parts=_evs.map(nEvSigPart), _sig=nSigFromParts(_parts), _hasContent=nStageHasReplayContent(st);
-    if(_sig && _sig===st.lastReplayBatchSig && _hasContent){ return; }
+    if(_sig && _sig===st.lastReplayBatchSig && _hasContent){ nReplayProgressCancel(st); return; }
     var _oldParts=st.replaySigParts||[], _prefix=nReplayCommonPrefix(_oldParts,_parts);
     if(_hasContent && _oldParts.length && _prefix===_oldParts.length && _parts.length>=_oldParts.length){
       st.replaySigParts=_parts; st.lastReplayBatchSig=_sig; st.sigParts=_parts; st.lastBatchSig=_sig;
       var _tail=_evs.slice(_prefix);
-      if(_tail.length){ nReplayBatchAsync(sid, st, _tail); }
+      if(_tail.length){ nReplayBatchAsync(sid, st, _tail, {silent:true}); }
       else { nReplayProgressCancel(st); }
       return;
     }

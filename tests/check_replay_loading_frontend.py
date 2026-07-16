@@ -54,8 +54,10 @@ def main():
         "Connecting session",
         "Waiting for conversation replay",
         "No replay history",
+        "if(!opts.silent) nReplayProgressStart",
         "_sig===st.lastReplayBatchSig && _hasContent",
         "st.replaySigParts=_parts",
+        "nReplayBatchAsync(sid, st, _tail, {silent:true})",
         "_prefix===_oldParts.length",
         "if(st.replayWaiting && !st.replayActive)",
     ]

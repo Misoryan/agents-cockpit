@@ -49,10 +49,13 @@ def main():
     required = [
         "function nReplayRenderableEvents(events)",
         "function nStageHasReplayContent(st)",
+        "function nReplayCommonPrefix(a,b)",
+        "function nReplayProgressCancel(st)",
         "Connecting session",
         "Waiting for conversation replay",
         "No replay history",
         "_sig===st.lastBatchSig && nStageHasReplayContent(st)",
+        "_prefix===_oldParts.length",
         "if(st.replayWaiting && !st.replayActive)",
     ]
     missing = [token for token in required if token not in js]

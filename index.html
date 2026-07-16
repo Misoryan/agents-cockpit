@@ -1503,6 +1503,20 @@ function nStageHasReplayContent(st){
   }
   return false;
 }
+function nReplayCommonPrefix(a,b){
+  var n=Math.min((a||[]).length,(b||[]).length), i=0;
+  for(; i<n; i++){ if(a[i]!==b[i]) break; }
+  return i;
+}
+function nReplayProgressCancel(st){
+  if(!st) return;
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  if(st.replayWaiting && st.replayCard && st.replayCard.parentNode){
+    st.replayCard.parentNode.removeChild(st.replayCard);
+    st.replayCard=null;
+  }
+  st.replayWaiting=false;
+}
 function nReplayProgressStart(st,total,label,mode){
   if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
   if(st.replayCard && st.replayCard.parentNode) st.replayCard.parentNode.removeChild(st.replayCard);
@@ -1734,9 +1748,17 @@ function nHandle(sid, obj){
   var st=nativeStages[sid]; if(!st) return;
   if(t==="replay_batch"){
     var _evs=obj.events||[];
-    var _sig=nSigFromParts(_evs.map(nEvSigPart));
+    var _parts=_evs.map(nEvSigPart), _sig=nSigFromParts(_parts), _hasContent=nStageHasReplayContent(st);
     if(_sig && _sig===st.lastBatchSig && nStageHasReplayContent(st)){ return; }
-    st.sigParts=_evs.map(nEvSigPart);
+    var _oldParts=st.sigParts||[], _prefix=nReplayCommonPrefix(_oldParts,_parts);
+    if(_hasContent && _oldParts.length && _prefix===_oldParts.length && _parts.length>=_oldParts.length){
+      st.sigParts=_parts; st.lastBatchSig=_sig;
+      var _tail=_evs.slice(_prefix);
+      if(_tail.length){ nReplayBatchAsync(sid, st, _tail); }
+      else { nReplayProgressCancel(st); }
+      return;
+    }
+    st.sigParts=_parts;
     st.lastBatchSig=_sig;
     nResetReplayState(st);
     nReplayBatchAsync(sid, st, _evs);
@@ -1752,7 +1774,10 @@ function nHandle(sid, obj){
     st.lastBatchSig=nSigFromParts(st.sigParts);
   }
   if(t==="state_snapshot"){
-    if(st.replayWaiting && !st.replayActive){ nReplayProgressDone(st,0,"Connected","empty"); }
+    if(st.replayWaiting && !st.replayActive){
+      if(nStageHasReplayContent(st)) nReplayProgressCancel(st);
+      else nReplayProgressDone(st,0,"Connected","empty");
+    }
     st.planMode=!!obj.plan; st.taskMode=!!obj.task;
     st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
     if(currentSid===sid){
@@ -2070,9 +2095,14 @@ function nativeConnect(sid){
   var st=nativeStage(sid);
   if(st){
     nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null;
-    if(currentSid===sid){
-      nReplayProgressStart(st,0,"Connecting session","waiting");
-      st.replayWaitTimer=setTimeout(function(){ nReplayProgressWait(st); }, 8000);
+    nReplayProgressCancel(st);
+    if(currentSid===sid && !nStageHasReplayContent(st)){
+      st.replayWaiting=true;
+      st.replayWaitTimer=setTimeout(function(){
+        if(currentSid!==sid || st.replayActive || nStageHasReplayContent(st)) return;
+        nReplayProgressStart(st,0,"Connecting session","waiting");
+        st.replayWaitTimer=setTimeout(function(){ nReplayProgressWait(st); }, 8000);
+      }, 250);
     }
   }
   var proto=location.protocol==="https:"?"wss:":"ws:";

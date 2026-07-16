@@ -500,3 +500,11 @@ Immediate next commit candidate:
 - These tool-use cards now show server/tool labels, a short argument preview, and collapsed pretty arguments instead of defaulting directly to a raw JSON input block.
 - The renderer keeps the same `tool_use` replay event shape and only changes frontend presentation, so live clients, replay, reconnect, and catch-up polling remain protocol-compatible.
 - Added frontend contract and Node helper checks for `nStructuredToolBody`, argument previews, and the non-interference case where normal shell tools still use their existing renderers.
+
+
+## 20. 2026-07-17 MCP end-to-end smoke checkpoint
+
+- Added `tools/codex_mcp_smoke.py`, a repeatable live smoke that creates a temporary `CODEX_HOME`, writes a local stdio MCP echo server into it, starts `codex app-server --stdio`, opens a temporary Codex thread, and calls `mcpServer/tool/call` against the real MCP server.
+- The same smoke also exercises the Agents Cockpit dynamic-tool passthrough handler with an explicit `smoke.echo -> mcp:codex_smoke/echo` mapping, verifying that it records matching `tool_use` / `tool_result` events and returns `DynamicToolCallResponse` content from the MCP result.
+- This closes the first real MCP E2E validation gap without depending on external services or the user's permanent Codex config.
+- Added `tests/check_codex_mcp_smoke_helpers.py` so the smoke helper structure is covered by the normal fast `tests/check_*.py` bundle, while the live E2E is run explicitly with `python tools\codex_mcp_smoke.py --cwd .`.

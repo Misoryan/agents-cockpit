@@ -76,7 +76,7 @@ def main():
         assert "| `account/usage/read` | `degraded` |" in doc
         assert "auth-required errors visibly" in doc
         assert "| `command/exec` | `degraded` |" in doc
-        assert "Live smoke and connection-scoped output handling" in doc
+        assert "Buffered /exec slash workflow" in doc
         assert "| `mcpServerStatus/list` | `supported` |" in doc
         assert "manual MCP inventory browsing" in doc
         assert "| `plugin/list` | `supported` |" in doc

@@ -1,0 +1,90 @@
+"""Check browser-facing Codex command/exec helper behavior."""
+import os
+import sys
+from pathlib import Path
+
+if "--help" not in sys.argv:
+    sys.argv.append("--help")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import codex_command_exec  # noqa: E402
+
+
+class FakeClient:
+    def __init__(self, session):
+        self.session = session
+        self.calls = []
+
+    def request(self, method, params, timeout=None):
+        self.calls.append((method, params, timeout))
+        assert method == "command/exec"
+        assert self.session._busy is True
+        assert params["cwd"] == os.path.abspath(self.session.cwd)
+        return {"exitCode": 0, "stdout": "hello\n", "stderr": "warn\n"}
+
+
+class FakeSession:
+    def __init__(self):
+        self.sid = "cmd-exec-session"
+        self.cwd = os.getcwd()
+        self.cfg = {"sandbox": "read-only", "approval_policy": "on-request"}
+        self.yolo = False
+        self._busy = False
+        self.current_turn_started_at = None
+        self.records = []
+        self.notices = []
+        self.persisted = 0
+        self.client = FakeClient(self)
+
+    def _client(self):
+        return self.client
+
+    def _record_and_broadcast(self, obj):
+        self.records.append(obj)
+
+    def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
+        self.notices.append((message, method, params, level, silent))
+
+    def _persist(self):
+        self.persisted += 1
+
+
+def main():
+    tool_name, argv = codex_command_exec.shell_command_argv("echo hello")
+    assert tool_name in ("powershell", "bash")
+    assert "echo hello" in argv[-1]
+    assert "truncated" in codex_command_exec._clip_text("x" * (codex_command_exec.MAX_CAPTURE_CHARS + 20))
+
+    session = FakeSession()
+    result = codex_command_exec.run_command_exec(session, "echo hello")
+    assert result["ok"] is True
+    assert result["command"] == "exec"
+    assert result["exit_code"] == 0
+    assert session._busy is False
+    assert session.current_turn_started_at is None
+    assert session.persisted == 1
+    assert session.client.calls[0][0] == "command/exec"
+    params = session.client.calls[0][1]
+    assert params["sandboxPolicy"] == {"type": "readOnly"}
+    assert params["approvalPolicy"] == "on-request"
+    assert session.records[0]["message"]["content"][0]["type"] == "tool_use"
+    assert session.records[0]["message"]["content"][0]["name"] == tool_name
+    block = session.records[1]["message"]["content"][0]
+    assert block["type"] == "tool_result"
+    assert block["stdout"] == "hello\n"
+    assert block["stderr"] == "warn\n"
+    assert session.records[2]["type"] == "result"
+    assert session.notices[-1][1] == "command/exec"
+    assert session.notices[-1][4] is True
+
+    yolo = FakeSession()
+    yolo.yolo = True
+    _, yolo_params = codex_command_exec.build_exec_params(yolo, "echo yolo")
+    assert yolo_params["sandboxPolicy"] == {"type": "dangerFullAccess"}
+    assert yolo_params["approvalPolicy"] == "never"
+
+    print("codex command exec helper checks passed")
+
+
+if __name__ == "__main__":
+    main()

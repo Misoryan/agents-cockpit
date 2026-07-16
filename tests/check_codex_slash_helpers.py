@@ -36,6 +36,8 @@ class FakeClient:
             return {"limit": 10}
         if method == "account/usage/read":
             return {"inputTokens": 1}
+        if method == "command/exec":
+            return {"exitCode": 0, "stdout": "exec-ok\n", "stderr": ""}
         return {}
 
 
@@ -160,6 +162,12 @@ def main():
         "errors": 0,
     }
     assert session.client.calls[-1][0] == "account/read"
+    exec_result = slash.handle_slash_command("/exec echo exec-ok")
+    assert exec_result["ok"] is True
+    assert exec_result["command"] == "exec"
+    assert session.client.calls[-1][0] == "command/exec"
+    assert session.records[-3]["message"]["content"][0]["type"] == "tool_use"
+    assert session.records[-2]["message"]["content"][0]["type"] == "tool_result"
 
     print("codex slash helper checks passed")
 

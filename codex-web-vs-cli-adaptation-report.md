@@ -819,3 +819,10 @@ Immediate next commit candidate:
 - The helper masks account email, strips token/secret/credential-like fields from replay payloads, and turns auth-required usage/rate-limit failures into visible warnings instead of fake success.
 - Added a dedicated `codex.accountStatus` result card so account, usage, and rate-limit status replay across clients as a structured card rather than raw JSON.
 - Updated the protocol matrix to keep `account/read` supported and mark `account/rateLimits/read` plus `account/usage/read` as degraded read-only paths; Web-native login/logout/token refresh remains a gap.
+
+## 61. 2026-07-17 Codex /exec buffered browser workflow checkpoint
+
+- Added `codex_command_exec.py` and a guarded `/exec <shell command>` slash command that runs one explicit buffered command through app-server `command/exec` in the current Codex session cwd.
+- The workflow reuses the session sandbox/approval settings where available, forces `never + dangerFullAccess` only for existing yolo sessions, and keeps the command visible as replayable Bash/PowerShell tool-use/tool-result cards across connected clients.
+- Command stdout/stderr are rendered through the existing CLI-like command result card path with exit code, duration, split output sections, and large-output clipping so the browser no longer needs raw JSON for this first `command/exec` slice.
+- Streaming stdin/PTY command launches remain a degraded follow-up; browser terminalInteraction write/resize/terminate and standalone command/exec smokes continue to cover that lower-level path.

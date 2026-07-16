@@ -174,6 +174,7 @@ def main():
         '"/skills"',
         '"/plugins"',
         '"/account-status"',
+        '"/exec "',
         '"/steer "',
         "function nSlashMove(delta)",
         "function nSlashPickActive()",

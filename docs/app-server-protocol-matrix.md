@@ -113,7 +113,7 @@ plus static Agents Cockpit coverage labels.
 | `account/usage/read` | `degraded` | Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated. |
 | `account/workspaceMessages/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `app/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `command/exec` | `degraded` | Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet. |
+| `command/exec` | `degraded` | Buffered /exec slash workflow and live smoke are implemented; full streaming browser workflow is still partial. |
 | `command/exec/resize` | `supported` | Implemented in current adapter path. |
 | `command/exec/terminate` | `supported` | Implemented in current adapter path. |
 | `command/exec/write` | `supported` | Implemented in current adapter path. |

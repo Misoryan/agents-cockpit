@@ -34,6 +34,7 @@ var nativeSlashCommands=[
   {cmd:"/skills", fill:"/skills", desc:"List available Codex skills for this workspace"},
   {cmd:"/plugins", fill:"/plugins", desc:"List installed Codex plugins read-only"},
   {cmd:"/account-status", fill:"/account-status", desc:"Read Codex account, usage, and rate-limit status"},
+  {cmd:"/exec", fill:"/exec ", desc:"Run one explicit shell command through Codex app-server command/exec"},
   {cmd:"/steer", fill:"/steer ", desc:"Send guidance to the currently running Codex turn"}
 ];
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;

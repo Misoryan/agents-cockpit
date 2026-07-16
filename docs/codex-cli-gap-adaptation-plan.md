@@ -91,7 +91,7 @@ Browser / Android WebView
 - command/file/MCP/dynamic/webSearch 等 item 可见；diff-like 结果有 unified diff card；JSON-shaped result 有结构化 card。
 - sleep/contextCompaction/imageGeneration/imageView 有专用 compact card。
 - MCP 手动调用、status/resource 浏览和 dynamic allowlist passthrough 有真实或 helper 级验证路径。
-- terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。
+- terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器侧已有显式 `/exec <command>` buffered workflow 第一刀，streaming/PTY 浏览器 workflow 仍未完整产品化。
 - `mcpServer/startupStatus/updated` 和 `mcpServer/oauthLogin/completed` 已变成可见 notice；`/mcp-status [full|tools]` 和 `/mcp-resources <server>` 可用 `mcpServerStatus/list` 浏览服务器、auth、tools、resources 和 templates，并同步成 replayable 专用 MCP result card，资源行可直接触发 `/mcp-resource`。
 
 仍缺：
@@ -254,7 +254,7 @@ Browser / Android WebView
 
 - command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区和大成功输出折叠。）
 - file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠。）
-- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke，以及 standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。）
+- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke、standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke，以及显式 `/exec <command>` buffered 浏览器 workflow 第一刀；streaming/PTY 浏览器 workflow 仍未完整产品化。）
 - MCP 增加 startup status、resource browser、OAuth/login 降级提示。（第一刀已落地：startup/OAuth notification 可见，`/mcp-status` 与 `/mcp-resources` 调用 `mcpServerStatus/list` 展示 auth/tools/resources/templates，并产生多端 replayable 专用 result card；资源行可直接调用 `/mcp-resource`，真正 OAuth/login 闭环、分页/搜索仍待做。）
 
 验收：用户能从 Web 卡片判断工具做了什么、成功/失败原因和下一步，而不是只能读原始事件。
@@ -305,7 +305,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_account.py codex_config.py codex_input.py codex_inventory.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_account.py codex_command_exec.py codex_config.py codex_input.py codex_inventory.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check
@@ -325,3 +325,10 @@ Codex CLI 升级后：
 ```powershell
 python tools\app_server_protocol_matrix.py --out docs\app-server-protocol-matrix.md
 ```
+
+## 9. 2026-07-17 /exec buffered workflow checkpoint
+
+- `/exec <shell command>` now provides a first browser-facing buffered `command/exec` workflow for explicit user/admin commands inside the current Codex session cwd.
+- Results are replayable across clients as Bash/PowerShell tool cards with stdout/stderr split, exit code, duration, and clipped large output.
+- This intentionally does not open a broad unauthenticated exec endpoint; it stays behind the existing session slash path, workspace ownership, Origin/Referer checks, and session sandbox/yolo settings.
+- Remaining gap: streaming command/exec launch with browser stdin/resize/terminate as a first-class PTY workflow is still degraded and should be treated separately from the safe buffered slice.

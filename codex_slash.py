@@ -5,6 +5,7 @@ import shlex
 import time
 
 import codex_account
+import codex_command_exec
 import codex_config
 import codex_inventory
 import codex_mcp_status
@@ -78,6 +79,8 @@ class CodexSlashAdapter:
             return self.list_plugins(arg)
         if name in ("/account-status", "/account"):
             return self.account_status(arg)
+        if name == "/exec":
+            return self.command_exec(arg)
         return {"ok": False, "error": "unsupported Codex slash command: %s" % name}
 
     def set_model(self, model):
@@ -449,6 +452,9 @@ class CodexSlashAdapter:
 
     def account_status(self, arg):
         return codex_account.account_status(self.session, arg)
+
+    def command_exec(self, arg):
+        return codex_command_exec.run_command_exec(self.session, arg)
 
     def call_mcp_tool(self, arg):
         parts = str(arg or "").split(None, 2)

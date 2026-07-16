@@ -407,6 +407,9 @@ class CodexSession:
     def account_status(self, arg):
         return self._slash.account_status(arg)
 
+    def command_exec(self, arg):
+        return self._slash.command_exec(arg)
+
     def call_mcp_tool(self, arg):
         return self._slash.call_mcp_tool(arg)
 

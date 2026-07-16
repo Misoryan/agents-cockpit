@@ -145,7 +145,7 @@ METHOD_NOTES = {
     ("client_requests", "account/usage/read"):
         "Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated.",
     ("client_requests", "command/exec"):
-        "Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet.",
+        "Buffered /exec slash workflow and live smoke are implemented; full streaming browser workflow is still partial.",
     ("server_notifications", "command/exec/outputDelta"):
         "Handled for registered standalone command/exec streams; no generic browser UI yet.",
     ("server_notifications", "mcpServer/startupStatus/updated"):

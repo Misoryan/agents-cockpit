@@ -24,6 +24,8 @@ def main():
         '"command/exec/terminate"',
         "streamStdin",
         "streamStdoutStderr",
+        "run_stream_command_exec",
+        "browser_helper",
         "add_command_exec_output_handler",
         "remove_command_exec_output_handler",
     ]

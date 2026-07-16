@@ -17,6 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import codex_command_exec  # noqa: E402
 from codex_client import CodexAppServerClient  # noqa: E402
 
 
@@ -53,6 +54,89 @@ def _request_in_thread(client, method, params, timeout):
 
     threading.Thread(target=run, daemon=True).start()
     return box
+
+
+class _HelperSession:
+    def __init__(self, client, cwd):
+        self.sid = "command-exec-helper-smoke"
+        self.cwd = cwd
+        self.cfg = {"sandbox": "danger-full-access", "approval_policy": "never"}
+        self.yolo = False
+        self._pending_lock = threading.Lock()
+        self._terminal_processes = {}
+        self.records = []
+        self.broadcasts = []
+        self.notices = []
+        self.persisted = 0
+        self.client = client
+
+    def _client(self):
+        return self.client
+
+    def _record_and_broadcast(self, obj):
+        self.records.append(obj)
+
+    def _broadcast(self, obj):
+        self.broadcasts.append(obj)
+
+    def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
+        self.notices.append({
+            "message": message,
+            "method": method,
+            "params": params,
+            "level": level,
+            "silent": silent,
+        })
+
+    def _persist(self):
+        self.persisted += 1
+
+
+def _tool_stdout(events):
+    out = []
+    for event in events or []:
+        if event.get("type") != "user":
+            continue
+        blocks = ((event.get("message") or {}).get("content") or [])
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                out.append(str(block.get("stdout") or ""))
+    return "\n".join(out)
+
+
+def _helper_command(py):
+    code = "import sys; print('web-ready', flush=True); data=sys.stdin.read(); print('web:'+data.strip(), flush=True)"
+    if os.name == "nt":
+        return '& "%s" -u -c "%s"' % (py, code)
+    return "'%s' -u -c \"%s\"" % (py.replace("'", "'\\''"), code)
+
+
+def _run_browser_helper_smoke(client, cwd, py):
+    session = _HelperSession(client, cwd)
+    started = codex_command_exec.run_stream_command_exec(session, _helper_command(py))
+    assert started.get("ok") is True, started
+    process_id = started.get("process_id")
+    assert process_id, started
+    assert _wait_for(lambda: "web-ready" in _tool_stdout(session.broadcasts + session.records)), (
+        session.broadcasts,
+        session.records,
+    )
+    client.request("command/exec/write", {
+        "processId": process_id,
+        "deltaBase64": _b64("gamma\n"),
+        "closeStdin": True,
+    }, timeout=10)
+    assert _wait_for(lambda: session.notices, timeout=20), "helper command did not finish"
+    combined = _tool_stdout(session.broadcasts + session.records)
+    assert "web-ready" in combined and "web:gamma" in combined, combined
+    assert any(event.get("type") == "terminal_interaction" for event in session.broadcasts)
+    assert any(event.get("type") == "terminal_closed" for event in session.broadcasts)
+    return {
+        "processId": process_id,
+        "records": len(session.records),
+        "broadcasts": len(session.broadcasts),
+        "output": combined.replace("\r\n", "\n").replace("\r", "\n"),
+    }
 
 
 def run_smoke(cwd):
@@ -134,6 +218,8 @@ def run_smoke(cwd):
             assert long_running["done"].wait(20), "terminated command did not finish"
             assert "started" in "".join(_decode_delta(c) for c in term_chunks)
 
+            browser_helper = _run_browser_helper_smoke(client, cwd, py)
+
             return {
                 "ok": True,
                 "buffered": {
@@ -151,6 +237,7 @@ def run_smoke(cwd):
                     "error": long_running["error"],
                     "chunks": len(term_chunks),
                 },
+                "browser_helper": browser_helper,
             }
         finally:
             client.remove_command_exec_output_handler("agents-cockpit-stream-smoke")

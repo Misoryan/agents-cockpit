@@ -1,6 +1,8 @@
 """Check browser-facing Codex command/exec helper behavior."""
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 if "--help" not in sys.argv:
@@ -23,6 +25,32 @@ class FakeClient:
         return {"exitCode": 0, "stdout": "hello\n", "stderr": "warn\n"}
 
 
+class FakeStreamClient:
+    def __init__(self):
+        self.handlers = {}
+        self.calls = []
+
+    def ensure(self):
+        self.calls.append(("ensure", {}, None))
+
+    def add_command_exec_output_handler(self, process_id, handler):
+        self.handlers[process_id] = handler
+        return True
+
+    def remove_command_exec_output_handler(self, process_id, handler=None):
+        if handler is None or self.handlers.get(process_id) is handler:
+            self.handlers.pop(process_id, None)
+
+    def request(self, method, params, timeout=None):
+        self.calls.append((method, params, timeout))
+        if method == "command/exec":
+            handler = self.handlers[params["processId"]]
+            handler({"processId": params["processId"], "stream": "stdout", "deltaBase64": "cmVhZHkK"})
+            handler({"processId": params["processId"], "stream": "stderr", "deltaBase64": "d2Fybg=="})
+            return {"exitCode": 0, "stdout": "", "stderr": ""}
+        return {}
+
+
 class FakeSession:
     def __init__(self):
         self.sid = "cmd-exec-session"
@@ -32,8 +60,11 @@ class FakeSession:
         self._busy = False
         self.current_turn_started_at = None
         self.records = []
+        self.broadcasts = []
         self.notices = []
         self.persisted = 0
+        self._pending_lock = threading.Lock()
+        self._terminal_processes = {}
         self.client = FakeClient(self)
 
     def _client(self):
@@ -41,6 +72,9 @@ class FakeSession:
 
     def _record_and_broadcast(self, obj):
         self.records.append(obj)
+
+    def _broadcast(self, obj):
+        self.broadcasts.append(obj)
 
     def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
         self.notices.append((message, method, params, level, silent))
@@ -76,6 +110,29 @@ def main():
     assert session.records[2]["type"] == "result"
     assert session.notices[-1][1] == "command/exec"
     assert session.notices[-1][4] is True
+
+    stream = FakeSession()
+    stream.client = FakeStreamClient()
+    streamed = codex_command_exec.run_stream_command_exec(stream, "echo ready")
+    assert streamed["ok"] is True
+    assert streamed["command"] == "exec-stream"
+    deadline = time.time() + 3
+    while time.time() < deadline and not stream.notices:
+        time.sleep(0.05)
+    assert stream.notices, "stream worker did not finish"
+    assert stream.client.calls[0][0] == "ensure"
+    exec_call = [call for call in stream.client.calls if call[0] == "command/exec"][0]
+    assert exec_call[1]["streamStdoutStderr"] is True
+    assert exec_call[1]["streamStdin"] is True
+    assert not stream.client.handlers
+    assert any(obj.get("type") == "terminal_interaction" for obj in stream.broadcasts)
+    assert any(obj.get("type") == "terminal_closed" for obj in stream.broadcasts)
+    assert any(
+        (((obj.get("message") or {}).get("content") or [{}])[0].get("stdout") or "").startswith("ready")
+        for obj in stream.broadcasts + stream.records
+        if obj.get("type") == "user"
+    )
+    assert stream.records[-1]["type"] == "result"
 
     yolo = FakeSession()
     yolo.yolo = True

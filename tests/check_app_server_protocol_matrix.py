@@ -45,8 +45,8 @@ def main():
     assert matrix.classify("client_requests", "mcpServerStatus/list") == "supported"
     assert matrix.classify("server_notifications", "mcpServer/oauthLogin/completed") == "degraded"
     assert matrix.classify("client_requests", "turn/steer") == "supported"
-    assert matrix.classify("client_requests", "command/exec") == "degraded"
-    assert matrix.classify("server_notifications", "command/exec/outputDelta") == "degraded"
+    assert matrix.classify("client_requests", "command/exec") == "supported"
+    assert matrix.classify("server_notifications", "command/exec/outputDelta") == "supported"
     assert matrix.classify("client_requests", "plugin/list") == "supported"
     assert matrix.classify("client_requests", "plugin/installed") == "supported"
     assert matrix.classify("client_requests", "skills/list") == "supported"
@@ -75,8 +75,8 @@ def main():
         assert "launch modal and /account-status" in doc
         assert "| `account/usage/read` | `degraded` |" in doc
         assert "auth-required errors visibly" in doc
-        assert "| `command/exec` | `degraded` |" in doc
-        assert "Buffered /exec slash workflow" in doc
+        assert "| `command/exec` | `supported` |" in doc
+        assert "streamed /exec-stream slash workflows" in doc
         assert "| `mcpServerStatus/list` | `supported` |" in doc
         assert "manual MCP inventory browsing" in doc
         assert "| `plugin/list` | `supported` |" in doc

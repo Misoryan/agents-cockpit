@@ -826,3 +826,10 @@ Immediate next commit candidate:
 - The workflow reuses the session sandbox/approval settings where available, forces `never + dangerFullAccess` only for existing yolo sessions, and keeps the command visible as replayable Bash/PowerShell tool-use/tool-result cards across connected clients.
 - Command stdout/stderr are rendered through the existing CLI-like command result card path with exit code, duration, split output sections, and large-output clipping so the browser no longer needs raw JSON for this first `command/exec` slice.
 - Streaming stdin/PTY command launches remain a degraded follow-up; browser terminalInteraction write/resize/terminate and standalone command/exec smokes continue to cover that lower-level path.
+
+## 62. 2026-07-17 Codex /exec-stream browser workflow checkpoint
+
+- Added `/exec-stream <shell command>` as the streamed companion to buffered `/exec`; it starts app-server `command/exec` with `streamStdoutStderr`, `streamStdin`, and a process-scoped `command/exec/outputDelta` handler.
+- Streaming stdout/stderr updates the same replayable Bash/PowerShell result card in place, so second clients and reconnect replay see the latest command output without raw JSON.
+- The workflow reuses the existing terminalInteraction browser card for stdin, close-stdin, resize, and terminate controls, while keeping the command scoped to the current Codex session and sandbox/approval settings.
+- Extended the live command exec smoke so it validates the new browser-helper path against real app-server streaming output and stdin close, not only direct low-level `command/exec` calls.

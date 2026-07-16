@@ -319,6 +319,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   Bash/PowerShell tool-use/result cards with cwd, sandbox/approval context,
   exit code, duration, and split stdout/stderr output while leaving streaming
   browser PTY support as a follow-up.
+- The same helper now also backs `/exec-stream <shell command>` with
+  `streamStdoutStderr`, `streamStdin`, process-scoped
+  `command/exec/outputDelta` routing, and the existing browser terminal card
+  for stdin/close/terminate controls.
 
 ## Optional Follow-ups
 

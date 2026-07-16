@@ -410,6 +410,9 @@ class CodexSession:
     def command_exec(self, arg):
         return self._slash.command_exec(arg)
 
+    def command_exec_stream(self, arg):
+        return self._slash.command_exec_stream(arg)
+
     def call_mcp_tool(self, arg):
         return self._slash.call_mcp_tool(arg)
 

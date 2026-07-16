@@ -175,6 +175,7 @@ def main():
         '"/plugins"',
         '"/account-status"',
         '"/exec "',
+        '"/exec-stream "',
         '"/steer "',
         "function nSlashMove(delta)",
         "function nSlashPickActive()",

@@ -56,9 +56,9 @@ SUPPORT = {
             "configWarning",
             "deprecationNotice",
             "model/rerouted",
+            "command/exec/outputDelta",
         },
         "degraded": {
-            "command/exec/outputDelta",
             "item/commandExecution/terminalInteraction",
             "model/safetyBuffering/updated",
             "account/rateLimits/updated",
@@ -106,6 +106,7 @@ SUPPORT = {
             "thread/goal/set",
             "thread/goal/clear",
             "fuzzyFileSearch",
+            "command/exec",
             "command/exec/write",
             "command/exec/resize",
             "command/exec/terminate",
@@ -118,7 +119,6 @@ SUPPORT = {
             "turn/steer",
         },
         "degraded": {
-            "command/exec",
             "account/rateLimits/read",
             "account/usage/read",
         },
@@ -145,9 +145,9 @@ METHOD_NOTES = {
     ("client_requests", "account/usage/read"):
         "Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated.",
     ("client_requests", "command/exec"):
-        "Buffered /exec slash workflow and live smoke are implemented; full streaming browser workflow is still partial.",
+        "Buffered /exec and streamed /exec-stream slash workflows are implemented with replayable browser cards.",
     ("server_notifications", "command/exec/outputDelta"):
-        "Handled for registered standalone command/exec streams; no generic browser UI yet.",
+        "Routed to registered /exec-stream browser cards and command/exec smoke handlers.",
     ("server_notifications", "mcpServer/startupStatus/updated"):
         "Shown as visible MCP startup/ready/failed notices; resource browser is manual.",
     ("server_notifications", "mcpServer/oauthLogin/completed"):

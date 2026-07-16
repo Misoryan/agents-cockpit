@@ -7,7 +7,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Server Notifications
 
-- Total: 68; degraded=9, generic_visible=29, supported=30
+- Total: 68; degraded=8, generic_visible=29, supported=31
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ plus static Agents Cockpit coverage labels.
 | `account/rateLimits/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
 | `account/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
 | `app/list/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
-| `command/exec/outputDelta` | `degraded` | Handled for registered standalone command/exec streams; no generic browser UI yet. |
+| `command/exec/outputDelta` | `supported` | Routed to registered /exec-stream browser cards and command/exec smoke handlers. |
 | `configWarning` | `supported` | Implemented in current adapter path. |
 | `deprecationNotice` | `supported` | Implemented in current adapter path. |
 | `error` | `supported` | Implemented in current adapter path. |
@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; degraded=3, not_integrated=52, supported=32
+- Total: 87; degraded=2, not_integrated=52, supported=33
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ plus static Agents Cockpit coverage labels.
 | `account/usage/read` | `degraded` | Read-only /account-status attempts this and shows auth-required errors visibly; Web login/token refresh are not integrated. |
 | `account/workspaceMessages/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `app/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `command/exec` | `degraded` | Buffered /exec slash workflow and live smoke are implemented; full streaming browser workflow is still partial. |
+| `command/exec` | `supported` | Buffered /exec and streamed /exec-stream slash workflows are implemented with replayable browser cards. |
 | `command/exec/resize` | `supported` | Implemented in current adapter path. |
 | `command/exec/terminate` | `supported` | Implemented in current adapter path. |
 | `command/exec/write` | `supported` | Implemented in current adapter path. |

@@ -13,7 +13,6 @@ import time
 
 from codex_client import AppServerRequestError, CodexAppServerClient
 import codex_config
-import codex_events
 import codex_forms
 import codex_history
 import codex_input
@@ -230,6 +229,8 @@ class CodexSession:
         self._turn = codex_turn.CodexTurnRunner(self)
         self._input = codex_input.CodexInputAdapter(self)
         self._slash = codex_slash.CodexSlashAdapter(self)
+        self._requests = codex_requests.CodexRequestAdapter(
+            self, AppServerRequestError, common.codex_dynamic_tool_mappings)
         self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
@@ -584,52 +585,51 @@ class CodexSession:
         return {"ok": False, "error": "unsupported Codex history action: %s" % action}
 
     def _tool_event_from_item(self, item):
-        return codex_events.tool_event_from_item(item, cwd=self.cwd)
+        return self._request_adapter().tool_event_from_item(item)
 
     def _tool_result_from_item(self, item):
-        return codex_events.tool_result_from_item(item)
+        return self._request_adapter().tool_result_from_item(item)
 
     def _append_tool_output(self, item_id, delta, replace=False):
-        if not item_id:
-            return
-        if replace:
-            text = delta or ""
-        else:
-            text = self._item_output.get(item_id, "") + (delta or "")
-        self._item_output[item_id] = text
-        self._broadcast({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": item_id, "content": text}]}})
+        return self._request_adapter().append_tool_output(item_id, delta, replace=replace)
 
     def handle_server_request(self, req_id, method, params):
-        return codex_requests.handle_server_request(
-            self, req_id, method, params, AppServerRequestError)
+        return self._request_adapter().handle_server_request(req_id, method, params)
 
     def _await_approval(self, req_id, method, params, name, preview):
-        return codex_requests.await_approval(self, req_id, method, params, name, preview)
+        return self._request_adapter().await_approval(req_id, method, params, name, preview)
 
     def _await_user_input(self, req_id, method, params):
-        return codex_requests.await_user_input(self, req_id, method, params)
+        return self._request_adapter().await_user_input(req_id, method, params)
 
     def _await_form_input(self, req_id, method, params):
-        return codex_requests.await_form_input(self, req_id, method, params)
+        return self._request_adapter().await_form_input(req_id, method, params)
 
     def _reject_dynamic_tool_call(self, req_id, method, params):
-        return codex_requests.reject_dynamic_tool_call(self, req_id, method, params)
+        return self._request_adapter().reject_dynamic_tool_call(req_id, method, params)
 
     def _handle_dynamic_tool_call(self, req_id, method, params):
-        return codex_requests.handle_dynamic_tool_call(
-            self, req_id, method, params, common.codex_dynamic_tool_mappings())
+        return self._request_adapter().handle_dynamic_tool_call(req_id, method, params)
 
     def _call_mcp_tool_for_dynamic(self, params):
-        return self._client().request("mcpServer/tool/call", params, timeout=120) or {}
+        return self._request_adapter().call_mcp_tool_for_dynamic(params)
 
     def _approval_response(self, method, allow, always, params):
-        return codex_requests.approval_response(method, allow, always, params)
+        return self._request_adapter().approval_response(method, allow, always, params)
 
     def approve(self, tool_use_id, allow, message=None, always=False):
-        return codex_pending.approve(self, tool_use_id, allow, always=always)
+        return self._request_adapter().approve(tool_use_id, allow, always=always)
 
     def answer(self, tool_use_id, ans):
-        return codex_pending.answer(self, tool_use_id, ans)
+        return self._request_adapter().answer(tool_use_id, ans)
+
+    def _request_adapter(self):
+        adapter = getattr(self, "_requests", None)
+        if adapter is None:
+            adapter = codex_requests.CodexRequestAdapter(
+                self, AppServerRequestError, common.codex_dynamic_tool_mappings)
+            self._requests = adapter
+        return adapter
 
     @staticmethod
     def _is_dangerous(text):

@@ -2,7 +2,7 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 slash adapter extraction checkpoint）
+当前基线：`main`（截至 2026-07-17 server request adapter checkpoint）
 Codex CLI：`codex-cli 0.142.4`
 协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=27/not_integrated=60。
 
@@ -175,9 +175,9 @@ Browser / Android WebView
 ### P2：结构和维护性热点
 
 11. `codex_native.py` 仍是最大后端热点。
-    当前约 586 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history，但 `CodexSession` 仍同时承担 server request wrapper、push 协调和大量兼容 wrapper。
+    当前约 585 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history，但 `CodexSession` 仍保留 push 协调和大量兼容 wrapper。
 12. replay/timeline 的主链路已收进 facade，但 session 仍保留较多兼容 wrapper。
-    下一步应避免新增逻辑回流到 wrapper，可继续把 server request wrapper 或 frontend renderer 拆出，而不是继续扩大 `CodexSession`。
+    下一步应避免新增逻辑回流到 wrapper，可继续把 frontend renderer 或 push/notification 边界拆出，而不是继续扩大 `CodexSession`。
 13. `common.py` 仍是 818 行兼容 facade。
     已拆出多个 `common_*` helper，但 import-time config、常量 re-export 和跨域职责仍集中，未来服务化或测试隔离会受影响。
 14. `web.py` 仍混合 auth、static、proxy、restart/watchdog 和 Origin 检查。
@@ -226,6 +226,7 @@ Browser / Android WebView
 - 抽 `CodexSessionState`：thread/model/cfg/service tier/current turn timing/persist/recover 数据对象。（第一刀已落地：`codex_state.py` 负责 state path、payload、JSON persist、startup recover 和本地 register；后续再评估 current-turn timing、upload/image state 是否继续迁入。）
 - 抽 `CodexInputAdapter`：cwd-bounded file mention、`fuzzyFileSearch` 结果整形、image upload、`localImage` turn input、用户消息图片 replay block。（第一刀已落地：`codex_input.py` 负责上述输入链路，`CodexSession` 保留兼容 wrapper。）
 - 抽 `CodexSlashAdapter`：slash dispatch、session config tuning、thread lifecycle、goal、steer、manual MCP resource/tool 调用。（第一刀已落地：`codex_slash.py` 负责上述命令链路，`CodexSession` 保留兼容 wrapper。）
+- 收口 `CodexRequestAdapter`：tool event/result、tool output append、approval/ask/form wait、dynamic MCP passthrough/reject、unsupported account/attestation recovery、approve/answer。（第一刀已落地：`codex_requests.py` 负责上述 server request 链路，`CodexSession` 保留兼容 wrapper。）
 - 保持兼容 wrapper，避免一次修改所有调用点。
 
 验收：新增一种 notification 或 server request 时，不需要同时理解持久化、WebSocket replay 和 UI 渲染。
@@ -280,7 +281,7 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 继续 Phase 2 剩余结构收口：优先拆 server request wrapper 或 frontend renderer 中最容易回归的部分，保持行为不变。
+1. 继续 Phase 2 剩余结构收口：优先拆 frontend renderer 或 push/notification 边界中最容易回归的部分，保持行为不变。
 2. 每一刀都跑完整轻量验证：`py_compile`、所有 helper tests、JS `node --check`、`git diff --check`。
 3. 跑行为 smoke：WS 双客户端、browser 双页、terminalInteraction；如时间允许补一次手机 visual checklist。
 4. 再做 Phase 3 的只读 profile/config/account status 面板，避免继续盲补 CLI 控件。

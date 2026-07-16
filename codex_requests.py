@@ -4,7 +4,9 @@ import os
 import threading
 import time
 
+import codex_events
 import codex_forms
+import codex_pending
 import codex_text
 
 
@@ -22,6 +24,100 @@ AUTH_REFRESH_RECOVERY = (
     "Run `codex login` or open Codex CLI once under the same CODEX_HOME, complete login/refresh, "
     "then restart or retry the web Codex session."
 )
+
+
+class CodexRequestAdapter:
+    def __init__(self, session, app_error_cls=None, dynamic_mappings_fn=None):
+        self.session = session
+        self.app_error_cls = app_error_cls
+        self.dynamic_mappings_fn = dynamic_mappings_fn
+
+    def _dynamic_mappings(self):
+        if self.dynamic_mappings_fn:
+            return self.dynamic_mappings_fn() or {}
+        return getattr(self.session, "dynamic_mappings", {}) or {}
+
+    def tool_event_from_item(self, item):
+        return codex_events.tool_event_from_item(item, cwd=self.session.cwd)
+
+    def tool_result_from_item(self, item):
+        return codex_events.tool_result_from_item(item)
+
+    def append_tool_output(self, item_id, delta, replace=False):
+        if not item_id:
+            return
+        session = self.session
+        if replace:
+            text = delta or ""
+        else:
+            text = session._item_output.get(item_id, "") + (delta or "")
+        session._item_output[item_id] = text
+        session._broadcast({
+            "type": "user",
+            "message": {"content": [{
+                "type": "tool_result",
+                "tool_use_id": item_id,
+                "content": text,
+            }]},
+        })
+
+    def handle_server_request(self, req_id, method, params):
+        app_error_cls = self.app_error_cls
+        if app_error_cls is None:
+            raise RuntimeError("app_error_cls is required")
+        if method == "item/commandExecution/requestApproval":
+            return self.await_approval(req_id, method, params, "Command", params.get("command") or "")
+        if method == "item/fileChange/requestApproval":
+            preview = params.get("reason") or params.get("grantRoot") or "File change approval"
+            return self.await_approval(req_id, method, params, "FileChange", preview)
+        if method == "item/permissions/requestApproval":
+            return self.await_approval(
+                req_id, method, params, "Permissions",
+                params.get("reason") or codex_text.json_text(params.get("permissions")))
+        if method == "item/tool/requestUserInput":
+            return self.await_user_input(req_id, method, params)
+        if method == "mcpServer/elicitation/request":
+            if params.get("mode") in ("form", "openai/form"):
+                return self.await_form_input(req_id, method, params)
+            return self.await_user_input(req_id, method, params)
+        if method == "item/tool/call":
+            return self.handle_dynamic_tool_call(req_id, method, params)
+        known_unsupported = recoverable_unsupported_request(method)
+        if known_unsupported:
+            self.session._codex_notice(known_unsupported["message"], method, known_unsupported["detail"])
+            raise app_error_cls(-32601, known_unsupported["error"])
+        if method == "currentTime/read":
+            return {"utcTimestampMs": int(time.time() * 1000)}
+        self.session._codex_notice("Unsupported app-server request: " + str(method or "unknown"), method, params)
+        raise app_error_cls(-32601, "unsupported app-server request: %s" % method)
+
+    def await_approval(self, req_id, method, params, name, preview):
+        return await_approval(self.session, req_id, method, params, name, preview)
+
+    def await_user_input(self, req_id, method, params):
+        return await_user_input(self.session, req_id, method, params)
+
+    def await_form_input(self, req_id, method, params):
+        return await_form_input(self.session, req_id, method, params)
+
+    def reject_dynamic_tool_call(self, req_id, method, params):
+        return reject_dynamic_tool_call(self.session, req_id, method, params)
+
+    def handle_dynamic_tool_call(self, req_id, method, params):
+        return handle_dynamic_tool_call(
+            self.session, req_id, method, params, self._dynamic_mappings())
+
+    def call_mcp_tool_for_dynamic(self, params):
+        return self.session._client().request("mcpServer/tool/call", params, timeout=120) or {}
+
+    def approval_response(self, method, allow, always, params):
+        return approval_response(method, allow, always, params)
+
+    def approve(self, tool_use_id, allow, always=False):
+        return codex_pending.approve(self.session, tool_use_id, allow, always=always)
+
+    def answer(self, tool_use_id, ans):
+        return codex_pending.answer(self.session, tool_use_id, ans)
 
 
 def approval_response(method, allow, always, params):

@@ -631,3 +631,10 @@ Immediate next commit candidate:
 - `CodexSession.handle_slash_command()`, config setters, lifecycle methods, goal helpers, and manual MCP helpers remain as compatibility wrappers, preserving `/api/nslash`, sidebar/history actions, and existing helper tests.
 - Added `tests/check_codex_slash_helpers.py` to cover direct slash adapter dispatch, delegated session-state mutation, compaction request state, goal read notices, steer input mapping, and invalid MCP JSON handling.
 - Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the slash adapter slice and includes `codex_slash.py` in the validation bundle.
+
+## 38. 2026-07-17 server request adapter checkpoint
+
+- Added `CodexRequestAdapter` inside `codex_requests.py`, moving the active `CodexSession` delegation point for app-server requests behind a request-focused adapter.
+- The adapter now owns tool event/result conversion, incremental tool output append, approval/ask/form waits, dynamic MCP passthrough/rejection, `currentTime/read`, unsupported account/attestation recovery notices, and approve/answer decisions.
+- `CodexSession.handle_server_request()`, `_await_approval()`, `_await_user_input()`, `_await_form_input()`, `_handle_dynamic_tool_call()`, `_call_mcp_tool_for_dynamic()`, `approve()`, and `answer()` remain as compatibility wrappers, preserving app-server routing and browser APIs.
+- Extended `tests/check_codex_requests_helpers.py` to cover the adapter path directly, including tool output accumulation, direct `currentTime/read`, dynamic MCP mapping, and existing recovery/error behavior.

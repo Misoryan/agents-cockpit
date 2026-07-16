@@ -29,6 +29,7 @@ class FakeSession:
         self.approval_calls = []
         self.ask_calls = []
         self.form_calls = []
+        self._item_output = {}
         self.dynamic_mappings = {}
         self.mcp_calls = []
         self.mcp_result = {"content": [{"type": "text", "text": "mcp ok"}], "isError": False}
@@ -222,6 +223,21 @@ def main():
     except AppError as exc:
         assert exc.code == -32601
         assert "unsupported app-server request" in exc.message
+
+    adapter = codex_requests.CodexRequestAdapter(session, AppError, lambda: {"ns.do": "mcp:docs/search"})
+    event = adapter.tool_event_from_item({"id": "item-1", "type": "commandExecution", "command": "echo hi"})
+    assert event["message"]["content"][0]["input"]["cwd"] == session.cwd
+    adapter.append_tool_output("item-1", "hello")
+    adapter.append_tool_output("item-1", " world")
+    assert session._item_output["item-1"] == "hello world"
+    assert session.broadcasts[-1]["message"]["content"][0]["content"] == "hello world"
+    assert adapter.handle_server_request("req-6", "currentTime/read", {})["utcTimestampMs"] > 0
+    assert adapter.handle_dynamic_tool_call(
+        "req-7", "item/tool/call",
+        {"namespace": "ns", "tool": "do", "callId": "call-7", "threadId": "thread-7",
+         "arguments": {"q": "adapter"}},
+    )["success"] is True
+    assert session.mcp_calls[-1]["threadId"] == "thread-7"
 
     print("codex request helper checks passed")
 

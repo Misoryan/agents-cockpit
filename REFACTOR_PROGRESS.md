@@ -203,6 +203,11 @@ checkout. It is intentionally concise so future changes can stay incremental.
   `/search`, `/reasoning`, `/summary`, `/service-tier`, `/add-dir`,
   `/rename`, `/archive`, `/unarchive`, `/fork`, `/rollback`, `/steer`,
   `/goal`, `/mcp-resource`, and `/mcp-tool` behavior behind a focused adapter.
+- Codex server request handling now has `CodexRequestAdapter` in
+  `codex_requests.py`: tool event/result conversion, incremental tool output,
+  approval/ask/form waits, dynamic MCP passthrough/rejection, current-time
+  responses, unsupported account/attestation recovery notices, and
+  approve/answer decisions are routed through one request-focused adapter.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

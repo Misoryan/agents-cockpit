@@ -52,6 +52,10 @@ Common keys:
 | `[binaries] codex` | auto-detect | Absolute path to Codex CLI |
 | `[paths] claude_home` | `~/.claude` | Claude transcript/config home |
 | `[paths] auth_file` | `auth.txt` | Login credential file |
+| `[users] data_dir` | `.agent-cockpit/users` | Local per-user cockpit state |
+| `[users] default_workspace_root` | `.agent-cockpit/users/{uid}/workspace` | Default workspace root for each login user |
+| `[users] allow_unconfigured_paths` | `1` | Allow any local path; set `0` to restrict to workspace roots |
+| `[users] primary_user_uses_default_homes` | `1` | First `auth.txt` user keeps default Codex/Claude homes |
 | `[approval] auto_approve` | `1` | Pass `--dangerously-skip-permissions`; set `0` for web approval gates |
 | `[security] session_ttl` | `86400` | Login cookie lifetime in seconds |
 | `[security] cookie_secure` | `0` | Set `1` only behind HTTPS |
@@ -59,7 +63,10 @@ Common keys:
 ## Session Model
 
 - New conversation: choose a local directory and select Codex or Claude.
-- Claude resume history is read from `~/.claude/projects/**/*.jsonl`; Codex running sessions are recovered from `.agent-cockpit/` after manager soft-restart.
+- Each login user has separate cockpit state under `.agent-cockpit/users/<uid>/` and may only browse or launch inside their configured workspace roots.
+- Claude history and config are per-user through `CLAUDE_CONFIG_DIR`; Codex app-server runs with per-user `CODEX_HOME` under the cockpit state directory.
+- For compatibility, the first `auth.txt` user keeps the normal Codex/Claude homes when `[users] primary_user_uses_default_homes = 1`.
+- Running sessions are recovered from the per-user cockpit state after manager soft-restart.
 - Multiple browsers can watch the same session through the app WebSocket.
 - `manager.py` can soft-restart and recover persisted native session state from `.agent-cockpit/`.
 

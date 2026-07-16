@@ -54,6 +54,11 @@ codex =
 [paths]
 auth_file = auth.txt
 claude_home =
+[users]
+data_dir = .agent-cockpit/users
+default_workspace_root = .agent-cockpit/users/{uid}/workspace
+allow_unconfigured_paths = 1
+primary_user_uses_default_homes = 1
 [ccswitch]
 db =
 usage_ttl = 15
@@ -122,6 +127,11 @@ MANAGER_PORT = _mp if _mp > 0 else PICKER_PORT + 1000
 STATE_DIR = os.path.join(HERE, ".agent-cockpit")
 REGISTRY_PATH = os.path.join(STATE_DIR, "sessions.json")
 SCROLLBACK_DIR = os.path.join(STATE_DIR, "scrollback")  # legacy cleanup only
+_ud = (_cfg_get("users", "data_dir") or os.path.join(STATE_DIR, "users")).strip()
+USER_DATA_DIR = os.path.join(HERE, _ud) if not os.path.isabs(_ud) else _ud
+DEFAULT_WORKSPACE_ROOT = (_cfg_get("users", "default_workspace_root") or "").strip()
+ALLOW_UNCONFIGURED_PATHS = _CFG.getboolean("users", "allow_unconfigured_paths")
+PRIMARY_USER_USES_DEFAULT_HOMES = _CFG.getboolean("users", "primary_user_uses_default_homes")
 STOP_SENTINEL = "stop.sentinel"   # written by app.py --stop when the web layer is unreachable
 REG_LOCK = threading.Lock()                       # only guards disk writes; never nest under manager._lock
 STOPPING = False   # set True by web /api/_stop to freeze the watchdog + ensure_manager respawn
@@ -383,6 +393,147 @@ def session_cookie_header(name, value, max_age=SESSION_TTL, secure=COOKIE_SECURE
     if secure:
         parts.append("Secure")
     return "; ".join(parts)
+
+
+# ---------- per-user local state / workspace roots ----------
+def safe_user_id(user):
+    """Stable filesystem-safe id for a login name."""
+    raw = (user or "").strip() or "user"
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip(".-")[:32] or "user"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    return "%s-%s" % (slug, digest)
+
+
+def _format_user_path(template, user, uid):
+    val = (template or "").replace("{user}", user or "").replace("{uid}", uid or "")
+    if not val:
+        return ""
+    return os.path.abspath(os.path.join(HERE, val) if not os.path.isabs(val) else val)
+
+
+def user_state_dir(user):
+    uid = safe_user_id(user)
+    return os.path.join(USER_DATA_DIR, uid)
+
+
+def primary_user():
+    try:
+        return next(iter(USERS.keys()))
+    except StopIteration:
+        return ""
+
+
+def user_uses_default_homes(user):
+    return bool(PRIMARY_USER_USES_DEFAULT_HOMES and user and user == primary_user())
+
+
+def user_claude_home(user, state_dir=None):
+    if user_uses_default_homes(user):
+        return os.path.abspath(CLAUDE_HOME)
+    return os.path.join(state_dir or user_state_dir(user), "claude-home")
+
+
+def user_codex_home(user, state_dir=None):
+    if user_uses_default_homes(user):
+        return ""
+    return os.path.join(state_dir or user_state_dir(user), "codex-home")
+
+
+def user_profile_path(user):
+    return os.path.join(user_state_dir(user), "profile.json")
+
+
+def load_user_profile(user):
+    try:
+        with open(user_profile_path(user), "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        return obj if isinstance(obj, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def user_workspace_roots(user):
+    uid = safe_user_id(user)
+    roots = []
+    prof = load_user_profile(user)
+    raw = prof.get("workspace_roots")
+    if isinstance(raw, list):
+        roots.extend(x for x in raw if isinstance(x, str) and x.strip())
+    default_root = _format_user_path(DEFAULT_WORKSPACE_ROOT, user or "", uid)
+    if default_root:
+        roots.append(default_root)
+    out, seen = [], set()
+    for root in roots:
+        p = _format_user_path(root, user or "", uid)
+        key = os.path.normcase(os.path.abspath(p))
+        if key and key not in seen:
+            seen.add(key); out.append(os.path.abspath(p))
+    return out
+
+
+def ensure_user_dirs(user):
+    sd = user_state_dir(user)
+    os.makedirs(sd, exist_ok=True)
+    for root in user_workspace_roots(user):
+        try:
+            os.makedirs(root, exist_ok=True)
+        except OSError:
+            pass
+    return sd
+
+
+def user_context(user):
+    user = (user or "").strip()
+    if not user or user not in USERS:
+        return None
+    ensure_user_dirs(user)
+    return {
+        "user": user,
+        "uid": safe_user_id(user),
+        "state_dir": user_state_dir(user),
+        "registry_path": os.path.join(user_state_dir(user), "sessions.json"),
+        "workspace_roots": user_workspace_roots(user),
+        "claude_home": user_claude_home(user),
+        "codex_home": user_codex_home(user),
+        "uses_default_homes": user_uses_default_homes(user),
+        "profile": load_user_profile(user),
+    }
+
+
+def request_user(handler):
+    """Return the authenticated user from a web cookie or trusted manager header."""
+    huser = (handler.headers.get("X-Agent-Cockpit-User") or "").strip()
+    if huser and huser in USERS:
+        return huser
+    cookie = handler.headers.get("Cookie", "")
+    tok = ""
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.partition("=")[0] == "ac_session":
+            tok = part.partition("=")[2]
+            break
+    return verify_session_token(tok) if tok else None
+
+
+def path_allowed_for_user(user, path):
+    if ALLOW_UNCONFIGURED_PATHS:
+        return True
+    roots = user_workspace_roots(user)
+    if not roots:
+        return True
+    try:
+        target = os.path.normcase(os.path.abspath(path))
+        for root in roots:
+            r = os.path.normcase(os.path.abspath(root))
+            if target == r or target.startswith(r.rstrip("\\/") + os.sep):
+                return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+def workspace_overview(user):
+    return [{"name": os.path.basename(r.rstrip("\\/")) or r, "path": r} for r in user_workspace_roots(user)]
 
 
 # ---------- 登录失败限速(按 访客标识/IP,内存) ----------
@@ -800,25 +951,35 @@ def ws_accept_key(key):
 
 
 # ---------- persisted session registry (Phase B) ----------
-def registry_load():
+def _registry_path(user=None, state_dir=None):
+    if state_dir:
+        return os.path.join(state_dir, "sessions.json")
+    if user:
+        return os.path.join(user_state_dir(user), "sessions.json")
+    return REGISTRY_PATH
+
+
+def registry_load(user=None, state_dir=None):
     """Return the raw registry object ({version, manager_pid, sessions:{sid->entry}}) or {}."""
+    path = _registry_path(user, state_dir)
     try:
-        with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
         return obj or {}
     except (OSError, ValueError):
         return {}
 
 
-def _registry_write(obj):
+def _registry_write(obj, user=None, state_dir=None):
     """Atomic write under REG_LOCK. Never raises."""
+    path = _registry_path(user, state_dir)
     with REG_LOCK:
-        tmp = REGISTRY_PATH + ".tmp"
+        tmp = path + ".tmp"
         try:
-            os.makedirs(os.path.dirname(REGISTRY_PATH), exist_ok=True)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(obj, f)
-            os.replace(tmp, REGISTRY_PATH)
+            os.replace(tmp, path)
         except OSError:
             try:
                 os.unlink(tmp)
@@ -826,9 +987,10 @@ def _registry_write(obj):
                 pass
 
 
-def _registry_read_locked():
+def _registry_read_locked(user=None, state_dir=None):
+    path = _registry_path(user, state_dir)
     try:
-        with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
     except (OSError, ValueError):
         obj = {"version": 1, "sessions": {}}
@@ -839,27 +1001,28 @@ def _registry_read_locked():
     return obj
 
 
-def registry_save(entries):
+def registry_save(entries, user=None, state_dir=None):
     """Overwrite the whole sessions map (used by soft-exit snapshot). entries: {sid -> entry}."""
-    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": entries})
+    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": entries}, user, state_dir)
 
 
-def registry_upsert(sid, entry):
+def registry_upsert(sid, entry, user=None, state_dir=None):
     """Read-modify-write a single sid (safe under concurrent launch calls)."""
     with REG_LOCK:
-        obj = _registry_read_locked()
+        obj = _registry_read_locked(user, state_dir)
         obj["sessions"][sid] = entry
         obj["manager_pid"] = os.getpid()
-        _registry_write_unlocked(obj)
+        _registry_write_unlocked(obj, user, state_dir)
 
 
-def _registry_write_unlocked(obj):
-    tmp = REGISTRY_PATH + ".tmp"
+def _registry_write_unlocked(obj, user=None, state_dir=None):
+    path = _registry_path(user, state_dir)
+    tmp = path + ".tmp"
     try:
-        os.makedirs(os.path.dirname(REGISTRY_PATH), exist_ok=True)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(obj, f)
-        os.replace(tmp, REGISTRY_PATH)
+        os.replace(tmp, path)
     except OSError:
         try:
             os.unlink(tmp)
@@ -867,25 +1030,25 @@ def _registry_write_unlocked(obj):
             pass
 
 
-def registry_drop(sid):
+def registry_drop(sid, user=None, state_dir=None):
     """Remove one sid from registry + best-effort delete its scrollback log."""
     with REG_LOCK:
-        obj = _registry_read_locked()
+        obj = _registry_read_locked(user, state_dir)
         if sid not in obj["sessions"]:
             changed = False
         else:
             obj["sessions"].pop(sid, None)
             changed = True
         if changed:
-            _registry_write_unlocked(obj)
+            _registry_write_unlocked(obj, user, state_dir)
     try:
         os.unlink(os.path.join(SCROLLBACK_DIR, "%s.log" % sid))
     except OSError:
         pass
 
 
-def registry_clear():
-    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": {}})
+def registry_clear(user=None, state_dir=None):
+    _registry_write({"version": 1, "manager_pid": os.getpid(), "sessions": {}}, user, state_dir)
 
 
 def _registry_safe_entry(sid, s):
@@ -905,6 +1068,11 @@ def _registry_safe_entry(sid, s):
         "yolo": bool(getattr(ns, "yolo", False) if ns else s.get("yolo")),
         "session_id": getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id"),
         "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
+        "user": s.get("user") or getattr(ns, "user", ""),
+        "uid": s.get("uid") or getattr(ns, "uid", ""),
+        "state_dir": s.get("state_dir") or getattr(ns, "state_dir", ""),
+        "claude_home": s.get("claude_home") or getattr(ns, "claude_home", None),
+        "codex_home": s.get("codex_home") or getattr(ns, "codex_home", None),
         "cols": 0,
         "rows": 0,
     }
@@ -951,14 +1119,20 @@ def _claude_user_text(o):
     return ""
 
 
-def load_claude_transcript_events(claude_sid, cap=100):
+def _claude_projects_dir(ctx=None):
+    home = (ctx or {}).get("claude_home") if isinstance(ctx, dict) else None
+    return os.path.join(home or CLAUDE_HOME, "projects")
+
+
+def load_claude_transcript_events(claude_sid, cap=100, ctx=None):
     """Reconstruct native replay events from ~/.claude/projects/*/<session>.jsonl."""
     out = []
     target = (claude_sid or "").strip() + ".jsonl"
-    if not target or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+    projects_dir = _claude_projects_dir(ctx)
+    if not target or not os.path.isdir(projects_dir):
         return out
     path = None
-    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+    for dp, _dirs, fs in os.walk(projects_dir):
         if target in fs:
             path = os.path.join(dp, target)
             break
@@ -1000,12 +1174,13 @@ def _transcript_is_human_turn(o):
     return False
 
 
-def load_claude_history():
+def load_claude_history(ctx=None):
     """Scan Claude transcripts and mark every restorable item as a native web session."""
     out = []
-    if not os.path.isdir(CLAUDE_PROJECTS_DIR):
+    projects_dir = _claude_projects_dir(ctx)
+    if not os.path.isdir(projects_dir):
         return out
-    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+    for dp, _dirs, fs in os.walk(projects_dir):
         for fn in fs:
             if not fn.endswith(".jsonl"):
                 continue
@@ -1056,19 +1231,24 @@ def load_claude_history():
     return out
 
 
-def load_history(limit=60):
-    out = load_claude_history()
+def load_history(limit=60, ctx=None):
+    out = load_claude_history(ctx=ctx)
     if CODEX_BIN:
         try:
             from codex_native import list_thread_history
-            out.extend(list_thread_history(limit=limit, archived=False))
+            ctx = ctx or {}
+            out.extend(list_thread_history(limit=limit, archived=False,
+                                           user=ctx.get("user", ""),
+                                           uid=ctx.get("uid", ""),
+                                           state_dir=ctx.get("state_dir"),
+                                           codex_home=ctx.get("codex_home")))
         except Exception as e:
             print("WARN: failed to load Codex history: %s" % e)
     out.sort(key=lambda x: x.get("ts") or 0, reverse=True)
     return out[:limit]
 
 
-def delete_history(sid, backend=None):
+def delete_history(sid, backend=None, ctx=None):
     """Delete one Claude transcript by session id. Running sessions are not touched."""
     sid = (sid or "").strip()
     res = {"deleted": False, "session_file": None}
@@ -1077,15 +1257,20 @@ def delete_history(sid, backend=None):
             return res
         try:
             from codex_native import delete_thread
-            res["deleted"] = bool(delete_thread(sid))
+            ctx = ctx or {}
+            res["deleted"] = bool(delete_thread(sid, user=ctx.get("user", ""),
+                                                uid=ctx.get("uid", ""),
+                                                state_dir=ctx.get("state_dir"),
+                                                codex_home=ctx.get("codex_home")))
             res["session_file"] = sid
         except Exception:
             pass
         return res
-    if not sid or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+    projects_dir = _claude_projects_dir(ctx)
+    if not sid or not os.path.isdir(projects_dir):
         return res
     target = sid + ".jsonl"
-    for dp, _dirs, fs in os.walk(CLAUDE_PROJECTS_DIR):
+    for dp, _dirs, fs in os.walk(projects_dir):
         if target in fs:
             p = os.path.join(dp, target)
             try:
@@ -1098,9 +1283,9 @@ def delete_history(sid, backend=None):
     return res
 
 
-def recent_dirs(limit=30):
+def recent_dirs(limit=30, ctx=None):
     by = {}
-    for h in load_history(500):
+    for h in load_history(500, ctx=ctx):
         c = h.get("cwd") or "(未知目录)"
         e = by.get(c)
         if e is None:
@@ -1317,8 +1502,11 @@ def parent_of(path):
     return "" if par == path else par
 
 
-def browse(path):
+def browse(path, user=None):
     if not path:
+        if user:
+            roots = workspace_overview(user)
+            return {"path": "", "parent": "", "entries": roots, "roots": roots}
         drives = []
         for i in range(26):
             letter = chr(ord("A") + i)
@@ -1327,6 +1515,8 @@ def browse(path):
                 drives.append({"name": letter + ":", "path": d})
         return {"path": "", "parent": "", "entries": drives}
     path = os.path.abspath(path)
+    if user and not path_allowed_for_user(user, path):
+        return {"error": "path is outside this user's workspaces", "path": path}
     if not os.path.isdir(path):
         return {"error": "not a directory", "path": path}
     entries = []
@@ -1341,7 +1531,10 @@ def browse(path):
     except OSError as ex:
         return {"error": str(ex), "path": path}
     entries.sort(key=lambda x: x["name"].lower())
-    return {"path": path, "parent": parent_of(path), "entries": entries}
+    parent = parent_of(path)
+    if user and parent and not path_allowed_for_user(user, parent):
+        parent = ""
+    return {"path": path, "parent": parent, "entries": entries}
 
 
 def session_obj(sid, s, host):

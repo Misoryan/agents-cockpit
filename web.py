@@ -158,6 +158,7 @@ class WebHandler(BaseHandler):
         # 与 manager 信任本机的模型一致 —— 这样 stop 命令无需浏览器 cookie 即可调用重启/停止接口。
         if common._is_local_client(self.client_address) and \
            hmac.compare_digest(self.headers.get("Authorization", ""), common.EXPECTED_AUTH):
+            self._auth_user = common.request_user(self) or getattr(common, "_legacy_user", "")
             return True
         if hasattr(common, "verify_session_token"):
             tok = self._cookie("ac_session")
@@ -167,10 +168,12 @@ class WebHandler(BaseHandler):
                 if ah.startswith("Bearer "):
                     user = common.verify_session_token(ah[7:].strip())
             if user:
+                self._auth_user = user
                 return True
             self._json({"error": "auth required"}, 401)
             return False
         if hmac.compare_digest(self.headers.get("Authorization", ""), common.EXPECTED_AUTH):
+            self._auth_user = getattr(common, "_legacy_user", "")
             return True
         self.send_response(401)
         self.send_header("WWW-Authenticate", 'Basic realm="agent-cockpit"')
@@ -182,7 +185,8 @@ class WebHandler(BaseHandler):
         tok = self._cookie("ac_session")
         user = common.verify_session_token(tok) if tok else None
         if user:
-            self._json({"user": user})
+            self._json({"user": user, "workspaces": common.workspace_overview(user),
+                        "uid": common.safe_user_id(user)})
         else:
             self._json({"error": "not authed"}, 401)
 
@@ -233,6 +237,10 @@ class WebHandler(BaseHandler):
         ctype = self.headers.get("Content-Type")
         if ctype:
             headers["Content-Type"] = ctype
+        headers["Authorization"] = common.EXPECTED_AUTH
+        user = getattr(self, "_auth_user", None) or common.request_user(self)
+        if user:
+            headers["X-Agent-Cockpit-User"] = user
         conn = None
         try:
             conn = http.client.HTTPConnection(common.MANAGER_HOST, common.MANAGER_PORT, timeout=60)
@@ -273,7 +281,11 @@ class WebHandler(BaseHandler):
                 "Connection: Upgrade",
                 "Sec-WebSocket-Key: %s" % key,
                 "Sec-WebSocket-Version: %s" % (self.headers.get("Sec-WebSocket-Version") or "13"),
+                "Authorization: %s" % common.EXPECTED_AUTH,
             ]
+            user = getattr(self, "_auth_user", None) or common.request_user(self)
+            if user:
+                req.append("X-Agent-Cockpit-User: %s" % user)
             proto = self.headers.get("Sec-WebSocket-Protocol")
             if proto:
                 req.append("Sec-WebSocket-Protocol: %s" % proto)

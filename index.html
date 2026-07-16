@@ -86,6 +86,10 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 .sb-list::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:4px}
 .sb-foot{display:flex;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--sidebar-bg)}
 .sb-foot button{flex:1;padding:11px 6px;font-size:12.5px}
+.sb-account{display:flex;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid var(--line);background:var(--sidebar-bg)}
+.sb-account .who{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-account .who b{color:var(--ink);font-weight:650}
+.sb-account button{flex:0 0 auto;padding:7px 10px;font-size:12px}
 
 /* directory rows */
 .drow{margin:5px 0;background:#fff;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;transition:border-color .12s}
@@ -296,6 +300,10 @@ body.sb-collapsed #sidebar{display:none}
     <button class="sb-new" id="newbtn"><i class="ic" data-lucide="square-pen"></i> 新建对话</button>
     <input class="sb-search" id="sb-search" placeholder="搜索目录 / 对话">
     <div class="sb-list" id="dirlist"></div>
+    <div class="sb-account">
+      <div class="who" title="当前登录用户">用户 <b id="account-user">—</b></div>
+      <button class="ghost" id="logoutbtn" title="登出并切换用户">登出</button>
+    </div>
     <div class="sb-foot">
       <button id="usagebtn"><i class="ic" data-lucide="bar-chart-3"></i> 用量</button>
       <button id="settingsbtn"><i class="ic" data-lucide="settings"></i> 设置</button>
@@ -583,6 +591,13 @@ body.sb-collapsed #sidebar{display:none}
       <label>本机访客标识 <span style="color:#a3a29f;font-weight:normal;font-size:11px">(区分内网穿透下不同访问者)</span></label>
       <div style="font-family:monospace;font-size:12px;word-break:break-all;color:#a3a29f" id="set-visitor">—</div>
     </div>
+    <div class="mfield">
+      <label>账户</label>
+      <div class="macts">
+        <button class="ghost" id="set-logout">登出并切换用户</button>
+      </div>
+      <div class="mhint">只清除当前浏览器的登录 Cookie，不会停止正在运行的会话。</div>
+    </div>
     <div class="msep"></div>
     <div class="mfield">
       <label>服务</label>
@@ -649,6 +664,12 @@ function acNewVisitorId(){
 }
 var AC_VISITOR = acGetCookie("ac_visitor");
 if(!AC_VISITOR){ AC_VISITOR = acNewVisitorId(); acSetCookie("ac_visitor", AC_VISITOR, 3650); }
+var AC_USER = "";
+function setAccountUser(user){
+  AC_USER = user || "";
+  var el = $("account-user");
+  if(el) el.textContent = AC_USER || "—";
+}
 function esc(s){
   s = String(s == null ? "" : s);
   return s.replace(/[&<>"]/g, function(c){
@@ -2267,9 +2288,20 @@ $("landing-usage").addEventListener("click", function(){ setMainView("usage"); }
 $("usageback").addEventListener("click", function(){ setMainView("landing"); });
 function openSettings(){ renderYolo("set-yolo","set-yolo-sw"); $("set-args").value=lmArgs; var sv=$("set-visitor"); if(sv) sv.textContent=AC_VISITOR; $("settingsmodal").classList.add("open"); }
 function closeSettings(){ $("settingsmodal").classList.remove("open"); }
+function logoutAndSwitchUser(){
+  if(!confirm("登出当前用户" + (AC_USER ? "「" + AC_USER + "」" : "") + "？正在运行的会话不会被停止。")) return;
+  fetch("/api/logout", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"})
+    .then(function(){ location.reload(); })
+    .catch(function(){
+      acSetCookie("ac_session", "", -1);
+      location.reload();
+    });
+}
 $("set-restartweb").addEventListener("click", restartWebOnly);
 $("set-softrestart").addEventListener("click", restartManagerOnly);
 $("set-fullrestart").addEventListener("click", fullRestart);
+$("logoutbtn").addEventListener("click", logoutAndSwitchUser);
+$("set-logout").addEventListener("click", logoutAndSwitchUser);
 $("set-close").addEventListener("click", closeSettings);
 $("settingsmodal").addEventListener("click", function(e){ if(e.target===$("settingsmodal")) closeSettings(); });
 
@@ -2305,7 +2337,15 @@ setInterval(refreshCC, 30000);
   $("lg-btn").addEventListener("click", doLogin);
   $("lg-pass").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
   $("lg-user").addEventListener("keydown", function(e){ if(e.key==="Enter") $("lg-pass").focus({preventScroll:true}); });
-  fetch("/api/whoami").then(function(r){ if(r.ok) hideLogin(); else showLogin(); }).catch(function(){ showLogin(); });
+  fetch("/api/whoami").then(function(r){
+    if(r.ok){
+      r.json().then(function(j){ if(window.setAccountUser) window.setAccountUser(j && j.user); }).catch(function(){});
+      hideLogin();
+    } else {
+      if(window.setAccountUser) window.setAccountUser("");
+      showLogin();
+    }
+  }).catch(function(){ if(window.setAccountUser) window.setAccountUser(""); showLogin(); });
 })();
 
 ;var _luBusy=false;

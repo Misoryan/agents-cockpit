@@ -35,6 +35,16 @@ auth_file = auth.txt
 # Leave empty for ~/.claude.
 claude_home =
 
+[users]
+# Local per-user data root, relative to this directory unless absolute.
+data_dir = .agent-cockpit/users
+# Default workspace created for each login user. Use {user} or {uid}.
+default_workspace_root = .agent-cockpit/users/{uid}/workspace
+# 1 = compatibility mode, allow any local path; set 0 to restrict to workspace roots.
+allow_unconfigured_paths = 1
+# 1 = first auth.txt user keeps the normal Codex/Claude homes; other users use per-user homes.
+primary_user_uses_default_homes = 1
+
 [ccswitch]
 # Optional read-only CC Switch usage database.
 db =

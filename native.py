@@ -138,10 +138,14 @@ def _push_notify_worker(title, body, event, webhook_body=None):
 
 
 class NativeSession:
-    def __init__(self, sid, cwd, yolo=False, cfg=None):
+    def __init__(self, sid, cwd, yolo=False, cfg=None, user="", uid="", state_dir=None, claude_home=None):
         self.sid = sid
         self.cwd = os.path.abspath(cwd)
         self.yolo = bool(yolo)          # True=跳过审批(--dangerously-skip-permissions);False=走门控
+        self.user = user or ""
+        self.uid = uid or ""
+        self.state_dir = state_dir or STATE_DIR
+        self.claude_home = claude_home or None
         self.clients = set()
         self.clients_lock = threading.Lock()
         self.claude_sid = None          # claude 的 session_id(下次 --resume 续接)
@@ -462,15 +466,15 @@ class NativeSession:
 
     # ---------- 门控 argv / per-session 配置 ----------
     def _settings_path(self):
-        return os.path.join(STATE_DIR, "gate_settings_%s.json" % self.sid)
+        return os.path.join(self.state_dir, "gate_settings_%s.json" % self.sid)
 
     def _mcp_config_path(self):
-        return os.path.join(STATE_DIR, "gate_mcp_%s.json" % self.sid)
+        return os.path.join(self.state_dir, "gate_mcp_%s.json" % self.sid)
 
     def _write_mcp_config(self):
         """写 per-session --mcp-config(网关服务器)。yolo 模式也挂它,只为提供 ask_user 工具
         (提问不受 bypass 权限模式影响)。"""
-        os.makedirs(STATE_DIR, exist_ok=True)
+        os.makedirs(self.state_dir, exist_ok=True)
         mcp = {"mcpServers": {"cockpit": {
             "command": sys.executable,
             "args": [_GATE_BIN, self.sid, str(MANAGER_PORT)]}}}
@@ -481,7 +485,7 @@ class NativeSession:
         """写 per-session 的 --settings 与 --mcp-config(网关服务器)。
         allow_tools=True(yolo+plan):普通工具进 allow 自动放行,只有 ExitPlanMode 走门控审批计划。
         allow_tools=False(非 yolo):普通工具进 ask → 走 gate_mcp 逐项审批。"""
-        os.makedirs(STATE_DIR, exist_ok=True)
+        os.makedirs(self.state_dir, exist_ok=True)
         key = "allow" if allow_tools else "ask"
         with open(self._settings_path(), "w", encoding="utf-8") as f:
             json.dump({"permissions": {key: list(_ASK_TOOLS)}}, f, ensure_ascii=False)
@@ -536,6 +540,16 @@ class NativeSession:
                  "--append-system-prompt", sys_prompt]
         return argv
 
+
+    def _process_env(self):
+        env = dict(os.environ)
+        if self.claude_home:
+            os.makedirs(self.claude_home, exist_ok=True)
+            env["CLAUDE_CONFIG_DIR"] = self.claude_home
+        if self.user:
+            env["AGENT_COCKPIT_USER"] = self.user
+        return env
+
     # ---------- claude cli ----------
     def _run_one_round(self, prompt):
         """Spawn claude CLI 一次。实时广播 result 以外的所有事件;result 事件暂存返回,由 _run_cli
@@ -547,7 +561,8 @@ class NativeSession:
         proc = subprocess.Popen(
             argv, cwd=self.cwd,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace", bufsize=1)
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
+            env=self._process_env())
         self._proc = proc   # interrupt() 据此 kill 当前轮子进程
 
         stderr_buf = []
@@ -660,21 +675,27 @@ class NativeSession:
     # ---------- persistence ----------
     def _persist(self):
         try:
-            os.makedirs(STATE_DIR, exist_ok=True)
-            with open(os.path.join(STATE_DIR, "native_%s.json" % self.sid), "w", encoding="utf-8") as f:
+            os.makedirs(self.state_dir, exist_ok=True)
+            with open(os.path.join(self.state_dir, "native_%s.json" % self.sid), "w", encoding="utf-8") as f:
                 json.dump({"claude_sid": self.claude_sid, "cwd": self.cwd,
                            "yolo": self.yolo,
+                           "user": self.user, "uid": self.uid,
+                           "claude_home": self.claude_home,
                            "allow_tools": sorted(self._allow_tools),
                            "events": self.events[-50:]}, f, ensure_ascii=False)
         except OSError:
             pass
 
     @classmethod
-    def recover(cls, sid, cwd):
+    def recover(cls, sid, cwd, user="", uid="", state_dir=None, claude_home=None):
+        state_dir = state_dir or STATE_DIR
         try:
-            with open(os.path.join(STATE_DIR, "native_%s.json" % sid), "r", encoding="utf-8") as f:
+            with open(os.path.join(state_dir, "native_%s.json" % sid), "r", encoding="utf-8") as f:
                 d = json.load(f)
-            ns = cls(sid, d.get("cwd", cwd), yolo=bool(d.get("yolo")))
+            ns = cls(sid, d.get("cwd", cwd), yolo=bool(d.get("yolo")),
+                     user=user or d.get("user", ""), uid=uid or d.get("uid", ""),
+                     state_dir=state_dir,
+                     claude_home=claude_home or d.get("claude_home"))
             ns.claude_sid = d.get("claude_sid")
             ns.events = d.get("events", [])
             ns._allow_tools = set(d.get("allow_tools") or [])

@@ -15,7 +15,7 @@ import urllib.parse
 import common
 from common import BaseHandler, ThreadingServer
 from native import NativeSession
-from codex_native import CodexSession, get_app_client, shutdown_app_server
+from codex_native import CodexSession, shutdown_app_server
 
 # sid -> {dir, title, started, mode, session_id, backend, provider, native}
 sessions = {}
@@ -35,15 +35,17 @@ def _sid_num(sid):
 # ---------- session lifecycle ----------
 def prune_dead():
     dead = []
+    dead_state = {}
     with _lock:
         for sid, s in sessions.items():
             ns = s.get("native")
             if not ns or not ns.alive:
                 dead.append(sid)
+                dead_state[sid] = s.get("state_dir")
         for sid in dead:
             sessions.pop(sid, None)
     for sid in dead:
-        common.registry_drop(sid)
+        common.registry_drop(sid, state_dir=dead_state.get(sid))
 
 
 def kill_session(sid):
@@ -57,7 +59,7 @@ def kill_session(sid):
             ns.close()
         except Exception:
             pass
-    common.registry_drop(sid)
+    common.registry_drop(sid, state_dir=s.get("state_dir"))
     return True
 
 
@@ -114,8 +116,14 @@ def _backend_available(backend):
 
 
 def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
-                  events=None, backend=None):
+                  events=None, backend=None, ctx=None):
     """Create one web-rendered agent session."""
+    ctx = ctx or {}
+    user = ctx.get("user", "")
+    uid = ctx.get("uid", "")
+    state_dir = ctx.get("state_dir") or common.STATE_DIR
+    claude_home = ctx.get("claude_home")
+    codex_home = ctx.get("codex_home")
     backend = common.normalize_backend(backend)
     if backend == "claude_native":
         if not common.CLAUDE_BIN or not os.path.isfile(common.CLAUDE_BIN):
@@ -135,7 +143,12 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
     with _lock:
         _sid[0] += 1
         sid = "s%d" % _sid[0]
-        ns = cls(sid, cwd, yolo=bool(auto_approve))
+        kwargs = {"user": user, "uid": uid, "state_dir": state_dir}
+        if provider == "claude":
+            kwargs["claude_home"] = claude_home
+        else:
+            kwargs["codex_home"] = codex_home
+        ns = cls(sid, cwd, yolo=bool(auto_approve), **kwargs)
         if provider == "claude" and session_id:
             ns.claude_sid = session_id
         elif provider == "codex" and session_id:
@@ -145,7 +158,7 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
         if provider == "codex" and not session_id:
             ns.start()
         elif provider == "codex" and getattr(ns, "thread_id", None):
-            get_app_client().register(ns.thread_id, ns)
+            ns._client().register(ns.thread_id, ns)
         sessions[sid] = {
             "dir": cwd,
             "backend": backend,
@@ -155,10 +168,15 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
             "mode": mode,
             "session_id": session_id,
             "thread_id": getattr(ns, "thread_id", None),
+            "user": user,
+            "uid": uid,
+            "state_dir": state_dir,
+            "claude_home": claude_home,
+            "codex_home": codex_home,
             "native": ns,
         }
         snap = dict(sessions[sid])
-    common.registry_upsert(sid, common._registry_safe_entry(sid, snap))
+    common.registry_upsert(sid, common._registry_safe_entry(sid, snap), state_dir=state_dir)
     return sid
 
 
@@ -177,23 +195,49 @@ def reattach_sessions():
         os.makedirs(common.STATE_DIR, exist_ok=True)
     except OSError:
         pass
-    reg = common.registry_load()
-    sess = reg.get("sessions") if isinstance(reg, dict) else None
-    if not isinstance(sess, dict) or not sess:
-        return
-    for sid, e in list(sess.items()):
-        if not isinstance(e, dict):
-            common.registry_drop(sid)
+    sources = []
+    for user in sorted(common.USERS.keys()):
+        ctx = common.user_context(user)
+        if ctx:
+            sources.append((ctx, common.registry_load(state_dir=ctx.get("state_dir"))))
+    # Compatibility: old single-user state is assigned to the first configured user.
+    if common.USERS:
+        first_user = next(iter(common.USERS.keys()))
+        legacy = common.registry_load()
+        if isinstance(legacy.get("sessions") if isinstance(legacy, dict) else None, dict):
+            ctx = common.user_context(first_user)
+            if ctx:
+                legacy_ctx = dict(ctx)
+                legacy_ctx["state_dir"] = common.STATE_DIR
+                sources.append((legacy_ctx, legacy))
+    for ctx, reg in sources:
+        sess = reg.get("sessions") if isinstance(reg, dict) else None
+        if not isinstance(sess, dict) or not sess:
             continue
+        for sid, e in list(sess.items()):
+            _reattach_one(ctx, sid, e)
+
+
+def _reattach_one(ctx, sid, e):
+        if not isinstance(e, dict):
+            common.registry_drop(sid, state_dir=ctx.get("state_dir"))
+            return
         backend = common.normalize_backend(e.get("backend") or ("codex_native" if e.get("provider") == "codex" else "claude_native"))
         provider = "codex" if common.is_codex_backend(backend) else "claude"
+        state_dir = e.get("state_dir") or ctx.get("state_dir") or common.STATE_DIR
+        claude_home = e.get("claude_home") or ctx.get("claude_home")
+        codex_home = e.get("codex_home") or ctx.get("codex_home")
         if provider == "codex":
-            ns = CodexSession.recover(sid, e.get("dir", ""), e.get("thread_id") or e.get("session_id"))
+            ns = CodexSession.recover(sid, e.get("dir", ""), e.get("thread_id") or e.get("session_id"),
+                                      user=ctx.get("user", ""), uid=ctx.get("uid", ""), state_dir=state_dir,
+                                      codex_home=codex_home)
         else:
-            ns = NativeSession.recover(sid, e.get("dir", ""))
+            ns = NativeSession.recover(sid, e.get("dir", ""),
+                                       user=ctx.get("user", ""), uid=ctx.get("uid", ""), state_dir=state_dir,
+                                       claude_home=claude_home)
         if not ns:
-            common.registry_drop(sid)
-            continue
+            common.registry_drop(sid, state_dir=state_dir)
+            return
         if "yolo" in e:
             try:
                 ns.yolo = bool(e.get("yolo"))
@@ -209,6 +253,11 @@ def reattach_sessions():
                 "mode": e.get("mode", "new"),
                 "session_id": e.get("session_id") or getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None),
                 "thread_id": e.get("thread_id") or getattr(ns, "thread_id", None),
+                "user": ctx.get("user", ""),
+                "uid": ctx.get("uid", ""),
+                "state_dir": state_dir,
+                "claude_home": claude_home,
+                "codex_home": codex_home,
                 "native": ns,
             }
             _sid[0] = max(_sid[0], _sid_num(sid))
@@ -228,9 +277,27 @@ class ManagerHandler(BaseHandler):
         self.wfile.write(b"auth required")
         return False
 
-    def _serve_session(self, sid, rest):
+    def _ctx(self, required=True):
+        user = common.request_user(self)
+        ctx = common.user_context(user) if user else None
+        if required and not ctx:
+            self._json({"error": "missing user context"}, 401)
+        return ctx
+
+    def _owned_session(self, sid, ctx):
         with _lock:
             s = sessions.get(sid)
+        if not s:
+            return None
+        if ctx and s.get("user") and s.get("user") != ctx.get("user"):
+            return None
+        return s
+
+    def _serve_session(self, sid, rest):
+        ctx = self._ctx(required=True)
+        if not ctx:
+            return
+        s = self._owned_session(sid, ctx)
         if not s:
             body = ("<h3>Session not found or already stopped.</h3><p>Return to <a href='/'>console</a>.</p>").encode("utf-8")
             self.send_response(404)
@@ -292,21 +359,29 @@ class ManagerHandler(BaseHandler):
         if path in ("/", "/index.html"):
             self._serve_index()
             return
+        ctx = self._ctx(required=True)
+        if not ctx:
+            return
         if path == "/api/browse":
             q = urllib.parse.parse_qs(pr.query)
-            self._json(common.browse(q.get("path", [""])[0]))
+            self._json(common.browse(q.get("path", [""])[0], user=ctx.get("user")))
         elif path == "/api/sessions":
             prune_dead()
             with _lock:
-                items = [common.session_obj(sid, s, self.headers.get("Host", "")) for sid, s in sessions.items()]
+                items = [common.session_obj(sid, s, self.headers.get("Host", ""))
+                         for sid, s in sessions.items() if s.get("user") == ctx.get("user")]
             items.sort(key=lambda x: x["started"], reverse=True)
             self._json({"sessions": items})
         elif path == "/api/history":
             q = urllib.parse.parse_qs(pr.query)
-            self._json({"history": common.load_history(int(q.get("limit", ["60"])[0] or 60))})
+            hist = [h for h in common.load_history(int(q.get("limit", ["60"])[0] or 60) * 3, ctx=ctx)
+                    if common.path_allowed_for_user(ctx.get("user"), h.get("cwd") or "")]
+            self._json({"history": hist[:int(q.get("limit", ["60"])[0] or 60)]})
         elif path == "/api/recent_dirs":
             q = urllib.parse.parse_qs(pr.query)
-            self._json({"dirs": common.recent_dirs(int(q.get("limit", ["30"])[0] or 30))})
+            dirs = [d for d in common.recent_dirs(500, ctx=ctx)
+                    if common.path_allowed_for_user(ctx.get("user"), d.get("cwd") or "")]
+            self._json({"dirs": dirs[:int(q.get("limit", ["30"])[0] or 30)]})
         elif path == "/api/backends":
             self._json({"backends": list(common.BACKENDS.keys()),
                         "labels": {k: v.get("label", k) for k, v in common.BACKENDS.items()}})
@@ -318,7 +393,7 @@ class ManagerHandler(BaseHandler):
         else:
             self._json({"error": "not found"}, 404)
 
-    def _resume_native(self, data):
+    def _resume_native(self, data, ctx):
         sid_arg = (data.get("session_id") or "").strip()
         d = (data.get("dir") or "").strip().strip('"')
         backend = common.normalize_backend(data.get("backend"))
@@ -329,7 +404,10 @@ class ManagerHandler(BaseHandler):
         title = data.get("title") or "Resume"
         if common.is_codex_backend(backend):
             try:
-                snap = CodexSession.history_snapshot(sid_arg)
+                snap = CodexSession.history_snapshot(sid_arg, user=ctx.get("user", ""),
+                                                     uid=ctx.get("uid", ""),
+                                                     state_dir=ctx.get("state_dir"),
+                                                     codex_home=ctx.get("codex_home"))
                 evs = snap.get("events") or []
                 if snap.get("cwd") and not os.path.isdir(d):
                     d = snap.get("cwd")
@@ -339,13 +417,16 @@ class ManagerHandler(BaseHandler):
                 evs = [{"type": "codex_notice", "message": "Codex history read failed: %s" % e}]
         if not d or not os.path.isdir(d):
             d = d or os.path.expanduser("~")
+        if not common.path_allowed_for_user(ctx.get("user"), d):
+            self._json({"error": "directory is outside this user's workspaces: %r" % d}, 403)
+            return
         if not common.is_codex_backend(backend):
-            evs = common.load_claude_transcript_events(sid_arg)
+            evs = common.load_claude_transcript_events(sid_arg, ctx=ctx)
         auto_approve = common.AUTO_APPROVE if data.get("yolo") is None else bool(data.get("yolo"))
         try:
             sid = launch_native(d, title=title,
                                 auto_approve=auto_approve, mode="resume",
-                                session_id=sid_arg, events=evs, backend=backend)
+                                session_id=sid_arg, events=evs, backend=backend, ctx=ctx)
         except Exception as e:
             self._json({"error": str(e)}, 500)
             return
@@ -362,29 +443,40 @@ class ManagerHandler(BaseHandler):
             data = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
             data = {}
+        ctx = None
+        if pr.path not in ("/api/_exit", "/api/_soft_exit"):
+            ctx = self._ctx(required=True)
+            if not ctx:
+                return
         if pr.path == "/api/launch":
             d = (data.get("dir") or "").strip().strip('"')
             if not d or not os.path.isdir(d):
                 self._json({"error": "invalid directory: %r" % d}, 400)
                 return
+            if not common.path_allowed_for_user(ctx.get("user"), d):
+                self._json({"error": "directory is outside this user's workspaces: %r" % d}, 403)
+                return
             auto_approve = common.AUTO_APPROVE if data.get("yolo") is None else bool(data.get("yolo"))
             backend = common.normalize_backend(data.get("backend"))
             try:
-                sid = launch_native(d, title=data.get("title") or "", auto_approve=auto_approve, backend=backend)
+                sid = launch_native(d, title=data.get("title") or "", auto_approve=auto_approve, backend=backend, ctx=ctx)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
                 return
             self._json({"ok": True, "sid": sid, "dir": d, "backend": backend,
                         "yolo": auto_approve, "session_path": "/t/%s/" % sid})
         elif pr.path in ("/api/resume", "/api/nresume"):
-            self._resume_native(data)
+            self._resume_native(data, ctx)
         elif pr.path == "/api/stop":
-            self._json({"ok": kill_session((data.get("sid") or "").strip())})
+            sid = (data.get("sid") or "").strip()
+            if not self._owned_session(sid, ctx):
+                self._json({"ok": False}, 404)
+                return
+            self._json({"ok": kill_session(sid)})
         elif pr.path == "/api/ninterrupt":
             # 打断当前轮但保留会话(区别于 /api/stop 杀整个会话)。ns.interrupt 仅 kill 子进程。
             sid = (data.get("sid") or "").strip()
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"error": "native session not found"}, 404)
@@ -393,8 +485,7 @@ class ManagerHandler(BaseHandler):
         elif pr.path == "/api/nsend":
             sid = (data.get("sid") or "").strip()
             prompt = (data.get("prompt") or "").strip()
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"error": "native session not found"}, 404)
@@ -411,8 +502,7 @@ class ManagerHandler(BaseHandler):
             self._json({"ok": True})
         elif pr.path == "/api/nmode":
             sid = (data.get("sid") or "").strip()
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"error": "native session not found"}, 404)
@@ -424,8 +514,7 @@ class ManagerHandler(BaseHandler):
             tuid = (data.get("tool_use_id") or "").strip()
             allow = bool(data.get("allow"))
             always = bool(data.get("always"))
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"error": "native session not found"}, 404)
@@ -435,8 +524,7 @@ class ManagerHandler(BaseHandler):
             sid = (data.get("sid") or "").strip()
             tuid = (data.get("tool_use_id") or "").strip()
             ans = data.get("answers") if "answers" in data else (data.get("answer") or "")
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"error": "native session not found"}, 404)
@@ -444,8 +532,7 @@ class ManagerHandler(BaseHandler):
             self._json({"ok": ns.answer(tuid, ans)})
         elif pr.path == "/api/_perm_gate":
             sid = (data.get("sid") or "").strip()
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"behavior": "deny", "message": "session not found"}, 404)
@@ -459,8 +546,7 @@ class ManagerHandler(BaseHandler):
                 self._json({"behavior": "deny", "message": msg or "user denied"})
         elif pr.path == "/api/_ask_gate":
             sid = (data.get("sid") or "").strip()
-            with _lock:
-                s = sessions.get(sid)
+            s = self._owned_session(sid, ctx)
             ns = s.get("native") if s else None
             if not ns:
                 self._json({"answer": "(session not found)"}, 404)
@@ -468,7 +554,10 @@ class ManagerHandler(BaseHandler):
             ans = ns.await_answer(data.get("tool_use_id") or "", data.get("question") or "", data.get("questions"))
             self._json({"answer": ans})
         elif pr.path == "/api/stop_all":
-            kill_all()
+            with _lock:
+                owned = [sid for sid, s in sessions.items() if s.get("user") == ctx.get("user")]
+            for sid in owned:
+                kill_session(sid)
             self._json({"ok": True})
         elif pr.path == "/api/_exit":
             def _die():
@@ -483,8 +572,12 @@ class ManagerHandler(BaseHandler):
                 try:
                     with _lock:
                         snap = {sid: dict(s) for sid, s in sessions.items()}
-                    entries = {sid: common._registry_safe_entry(sid, s) for sid, s in snap.items()}
-                    common.registry_save(entries)
+                    by_state = {}
+                    for sid, s in snap.items():
+                        sd = s.get("state_dir") or common.STATE_DIR
+                        by_state.setdefault(sd, {})[sid] = common._registry_safe_entry(sid, s)
+                    for sd, entries in by_state.items():
+                        common.registry_save(entries, state_dir=sd)
                 except Exception:
                     pass
                 os._exit(0)
@@ -493,7 +586,10 @@ class ManagerHandler(BaseHandler):
         elif pr.path == "/api/history_delete":
             sid = (data.get("sid") or "").strip()
             try:
-                r = common.delete_history(sid, data.get("backend"))
+                if sid and any(s.get("user") != ctx.get("user") and (getattr(s.get("native"), "claude_sid", None) == sid or getattr(s.get("native"), "thread_id", None) == sid) for s in sessions.values()):
+                    self._json({"error": "history belongs to another user"}, 403)
+                    return
+                r = common.delete_history(sid, data.get("backend"), ctx=ctx)
             except Exception as e:
                 self._json({"error": str(e)}, 500)
                 return

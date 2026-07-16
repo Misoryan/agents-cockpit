@@ -19,7 +19,7 @@ from common import ws_send, ws_recv, STATE_DIR
 
 
 _CLIENT_LOCK = threading.Lock()
-_CLIENT = None
+_CLIENTS = {}
 
 _TASK_SYSTEM = (
     "Task mode: for multi-step work, keep a concise todo list and update it as "
@@ -354,7 +354,11 @@ def _form_fields_from_schema(schema):
 
 
 class CodexAppServerClient:
-    def __init__(self):
+    def __init__(self, user="", uid="", state_dir=None, codex_home=None):
+        self.user = user or ""
+        self.uid = uid or "default"
+        self.state_dir = state_dir
+        self.codex_home = os.path.join(state_dir, "codex-home") if codex_home is None and state_dir else codex_home
         self.proc = None
         self.lock = threading.RLock()
         self.next_id = 1
@@ -382,6 +386,12 @@ class CodexAppServerClient:
             argv = common.codex_argv("app-server", "--stdio")
             if not argv:
                 raise RuntimeError("Codex CLI was not found. Install codex or set [binaries] codex in config.ini.")
+            env = dict(os.environ)
+            if self.codex_home:
+                os.makedirs(self.codex_home, exist_ok=True)
+                env["CODEX_HOME"] = self.codex_home
+            if self.user:
+                env["AGENT_COCKPIT_USER"] = self.user
             self.dead = False
             self.initialized = False
             self.proc = subprocess.Popen(
@@ -395,13 +405,14 @@ class CodexAppServerClient:
                 errors="replace",
                 bufsize=1,
                 creationflags=common.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                env=env,
             )
             threading.Thread(target=self._read_stdout, daemon=True).start()
             threading.Thread(target=self._read_stderr, daemon=True).start()
         res = self.request(
             "initialize",
             {
-                "clientInfo": {"name": "agents-cockpit", "title": "Agents Cockpit", "version": "0"},
+                "clientInfo": {"name": "agents-cockpit", "title": "Agents Cockpit", "version": "0", "user": self.user},
                 "capabilities": {
                     "experimentalApi": True,
                     "mcpServerOpenaiFormElicitation": True,
@@ -741,20 +752,32 @@ class CodexAppServerClient:
                     pass
 
 
-def get_app_client():
-    global _CLIENT
-    with _CLIENT_LOCK:
-        if _CLIENT is None:
-            _CLIENT = CodexAppServerClient()
-        return _CLIENT
+def _client_key(user="", uid="", state_dir=None):
+    return uid or (common.safe_user_id(user) if user else None) or os.path.abspath(state_dir or common.STATE_DIR)
 
 
-def shutdown_app_server():
-    global _CLIENT
+def get_app_client(user="", uid="", state_dir=None, codex_home=None):
+    key = _client_key(user, uid, state_dir)
     with _CLIENT_LOCK:
-        if _CLIENT is not None:
-            _CLIENT.shutdown()
-            _CLIENT = None
+        client = _CLIENTS.get(key)
+        if client is None:
+            client = CodexAppServerClient(user=user, uid=uid or key, state_dir=state_dir, codex_home=codex_home)
+            _CLIENTS[key] = client
+        return client
+
+
+def shutdown_app_server(user=None, uid=None, state_dir=None):
+    with _CLIENT_LOCK:
+        if user or uid or state_dir:
+            key = _client_key(user or "", uid or "", state_dir)
+            client = _CLIENTS.pop(key, None)
+            if client is not None:
+                client.shutdown()
+            return
+        clients = list(_CLIENTS.values())
+        _CLIENTS.clear()
+    for client in clients:
+        client.shutdown()
 
 
 atexit.register(shutdown_app_server)
@@ -763,10 +786,14 @@ atexit.register(shutdown_app_server)
 class CodexSession:
     provider = "codex"
 
-    def __init__(self, sid, cwd, yolo=False, cfg=None):
+    def __init__(self, sid, cwd, yolo=False, cfg=None, user="", uid="", state_dir=None, codex_home=None):
         self.sid = sid
         self.cwd = os.path.abspath(cwd)
         self.yolo = bool(yolo)
+        self.user = user or ""
+        self.uid = uid or ""
+        self.state_dir = state_dir or STATE_DIR
+        self.codex_home = codex_home
         self.clients = set()
         self.clients_lock = threading.Lock()
         self.events = []
@@ -798,8 +825,11 @@ class CodexSession:
         self.last_activity = time.time()
         self._last_persist = 0.0
 
+    def _client(self):
+        return get_app_client(user=self.user, uid=self.uid, state_dir=self.state_dir, codex_home=self.codex_home)
+
     def start(self):
-        res = get_app_client().request("thread/start", self._thread_params(), timeout=30)
+        res = self._client().request("thread/start", self._thread_params(), timeout=30)
         self._apply_thread_response(res)
         self._thread_ready = True
         self._persist()
@@ -826,7 +856,7 @@ class CodexSession:
                     pass
             self._pending.clear()
         try:
-            get_app_client().unregister(self)
+            self._client().unregister(self)
         except Exception:
             pass
         with self.clients_lock:
@@ -842,7 +872,7 @@ class CodexSession:
         if not self.thread_id or not self.last_turn_id:
             return False
         try:
-            get_app_client().request(
+            self._client().request(
                 "turn/interrupt",
                 {"threadId": self.thread_id, "turnId": self.last_turn_id},
                 timeout=10,
@@ -910,7 +940,7 @@ class CodexSession:
         if not self.thread_id:
             return
         try:
-            get_app_client().request(
+            self._client().request(
                 "thread/settings/update",
                 {"threadId": self.thread_id, "collaborationMode": self._collaboration_mode()},
                 timeout=15,
@@ -941,12 +971,12 @@ class CodexSession:
         self.model_provider = res.get("modelProvider") or self.model_provider
         self.service_tier = res.get("serviceTier") or self.service_tier
         if self.thread_id:
-            get_app_client().register(self.thread_id, self)
+            self._client().register(self.thread_id, self)
         if self.model:
             self._record_and_broadcast({"type": "system", "model": self.model, "version": thread.get("cliVersion")})
 
     def _ensure_thread(self):
-        client = get_app_client()
+        client = self._client()
         client.ensure()
         if self.thread_id:
             client.register(self.thread_id, self)
@@ -971,11 +1001,11 @@ class CodexSession:
         try:
             self._ensure_thread()
             self._sync_collaboration_mode()
-            res = get_app_client().request("turn/start", self._turn_params(prompt), timeout=30)
+            res = self._client().request("turn/start", self._turn_params(prompt), timeout=30)
             turn = (res or {}).get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
             if self.last_turn_id:
-                get_app_client().register_turn(self.last_turn_id, self)
+                self._client().register_turn(self.last_turn_id, self)
             self._persist()
         except Exception as e:
             self._busy = False
@@ -1046,7 +1076,7 @@ class CodexSession:
             turn = params.get("turn") or {}
             self.last_turn_id = turn.get("id") or self.last_turn_id
             if self.last_turn_id:
-                get_app_client().register_turn(self.last_turn_id, self)
+                self._client().register_turn(self.last_turn_id, self)
             self._busy = True
             if not self.current_turn_started_at:
                 self.current_turn_started_at = time.time()
@@ -1245,15 +1275,16 @@ class CodexSession:
         }
 
     @classmethod
-    def history_snapshot(cls, thread_id):
-        res = get_app_client().request(
+    def history_snapshot(cls, thread_id, user="", uid="", state_dir=None, codex_home=None):
+        client = get_app_client(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home)
+        res = client.request(
             "thread/read",
             {"threadId": thread_id, "includeTurns": True},
             timeout=30,
         )
         thread = (res or {}).get("thread") or {}
         cwd = thread.get("cwd") or os.path.expanduser("~")
-        dummy = cls("__history__", cwd, yolo=False)
+        dummy = cls("__history__", cwd, yolo=False, user=user, uid=uid, state_dir=state_dir, codex_home=codex_home)
         events = []
         if thread.get("cliVersion") or thread.get("modelProvider"):
             events.append({
@@ -1795,11 +1826,11 @@ class CodexSession:
             self._broadcast({"type": "result", "error": "Codex app-server exited. It will be restarted on the next send."})
 
     def _state_path(self):
-        return os.path.join(STATE_DIR, "codex_%s.json" % self.sid)
+        return os.path.join(self.state_dir, "codex_%s.json" % self.sid)
 
     def _persist(self):
         try:
-            os.makedirs(STATE_DIR, exist_ok=True)
+            os.makedirs(self.state_dir, exist_ok=True)
             with open(self._state_path(), "w", encoding="utf-8") as f:
                 json.dump(
                     {
@@ -1807,6 +1838,8 @@ class CodexSession:
                         "last_turn_id": self.last_turn_id,
                         "cwd": self.cwd,
                         "yolo": self.yolo,
+                        "user": self.user, "uid": self.uid,
+                        "codex_home": self.codex_home,
                         "model": self.model,
                         "model_provider": self.model_provider,
                         "service_tier": self.service_tier,
@@ -1821,11 +1854,15 @@ class CodexSession:
             pass
 
     @classmethod
-    def recover(cls, sid, cwd, expected_thread_id=None):
+    def recover(cls, sid, cwd, expected_thread_id=None, user="", uid="", state_dir=None, codex_home=None):
+        state_dir = state_dir or STATE_DIR
         try:
-            with open(os.path.join(STATE_DIR, "codex_%s.json" % sid), "r", encoding="utf-8") as f:
+            with open(os.path.join(state_dir, "codex_%s.json" % sid), "r", encoding="utf-8") as f:
                 data = json.load(f)
-            ns = cls(sid, data.get("cwd") or cwd, yolo=bool(data.get("yolo")))
+            ns = cls(sid, data.get("cwd") or cwd, yolo=bool(data.get("yolo")),
+                     user=user or data.get("user", ""), uid=uid or data.get("uid", ""),
+                     state_dir=state_dir,
+                     codex_home=codex_home or data.get("codex_home"))
             ns.thread_id = expected_thread_id or data.get("thread_id")
             ns.last_turn_id = data.get("last_turn_id")
             ns.model = data.get("model") or ""
@@ -1840,7 +1877,7 @@ class CodexSession:
                 ns._next_seq = int(data.get("next_seq") or 1)
             if ns.thread_id:
                 try:
-                    snap = cls.history_snapshot(ns.thread_id)
+                    snap = cls.history_snapshot(ns.thread_id, user=ns.user, uid=ns.uid, state_dir=ns.state_dir, codex_home=ns.codex_home)
                     if snap.get("events"):
                         ns.events = snap.get("events") or ns.events
                         if not had_timeline:
@@ -1848,13 +1885,13 @@ class CodexSession:
                         ns.cwd = os.path.abspath(snap.get("cwd") or ns.cwd)
                 except Exception:
                     pass
-                get_app_client().register(ns.thread_id, ns)
+                ns._client().register(ns.thread_id, ns)
             return ns
         except (OSError, ValueError):
             return None
 
 
-def list_thread_history(limit=60, archived=False, search=None):
+def list_thread_history(limit=60, archived=False, search=None, user="", uid="", state_dir=None, codex_home=None):
     if not common.CODEX_BIN:
         return []
     params = {
@@ -1865,7 +1902,7 @@ def list_thread_history(limit=60, archived=False, search=None):
     }
     if search:
         params["searchTerm"] = search
-    res = get_app_client().request("thread/list", params, timeout=30)
+    res = get_app_client(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home).request("thread/list", params, timeout=30)
     data = (res or {}).get("data") or (res or {}).get("threads") or []
     out = []
     for thread in data:
@@ -1875,8 +1912,8 @@ def list_thread_history(limit=60, archived=False, search=None):
     return out
 
 
-def delete_thread(thread_id):
+def delete_thread(thread_id, user="", uid="", state_dir=None, codex_home=None):
     if not thread_id:
         return False
-    get_app_client().request("thread/delete", {"threadId": thread_id}, timeout=30)
+    get_app_client(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home).request("thread/delete", {"threadId": thread_id}, timeout=30)
     return True

@@ -598,3 +598,9 @@ Immediate next commit candidate:
 - `CodexSession` still exposes `_thread_params`, `_turn_params`, `_collaboration_mode`, `_sync_collaboration_mode`, `_apply_thread_response`, `_ensure_thread`, and `_run_turn`, but those compatibility wrappers now delegate to the runner.
 - The runner now owns thread/start params, turn/start params, task-mode prompt prefixing, collaboration mode sync, thread response adoption, thread resume, turn/start request handling, turn registration, and turn-start failure cleanup.
 - Added `tests/check_codex_turn_helpers.py` to cover thread params, task-mode turn params, collaboration settings, thread resume adoption, successful turn start registration, and failed turn cleanup.
+
+## 33. 2026-07-17 notification adapter extraction checkpoint
+
+- Added `codex_notifications.py` with `CodexNotificationAdapter`, starting the notification-adapter slice without changing the existing `codex_session_events.py` helper implementation.
+- `CodexSession` still exposes `_remember_codex_debug_notice`, `_remember_route_debug`, `_codex_notice`, `_handle_updated_event`, `handle_notification`, `_on_turn_completed`, `_on_item_started`, `_on_item_completed`, `_flush_pending_plan_items`, `_on_plan_updated`, `_on_thread_settings_updated`, and `_usage_for_meta`; those wrappers now delegate through the adapter.
+- Added `tests/check_codex_notifications_helpers.py` to cover visible/silent notices, updated-event message extraction, compacted-thread notification handling, and usage meta passthrough through the adapter.

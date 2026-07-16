@@ -20,11 +20,11 @@ import codex_config
 import codex_events
 import codex_forms
 import codex_history
+import codex_notifications
 import codex_pending
 import codex_replay_facade
 import codex_requests
 import codex_routing
-import codex_session_events
 import codex_terminal
 import codex_text
 import codex_thread_history
@@ -237,6 +237,7 @@ class CodexSession:
         self.poll_events = []
         self._replay = codex_replay_facade.CodexReplayFacade(
             self, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
+        self._notifications = codex_notifications.CodexNotificationAdapter(self)
         self._turn = codex_turn.CodexTurnRunner(self)
         self._next_seq = 1
         self._last_usage = None
@@ -990,45 +991,45 @@ class CodexSession:
         return self._turn.run_turn(prompt, image_inputs=image_inputs)
 
     def _remember_codex_debug_notice(self, message, method=None, params=None):
-        return codex_session_events.remember_codex_debug_notice(self, message, method=method, params=params)
+        return self._notifications.remember_codex_debug_notice(message, method=method, params=params)
 
     def _remember_route_debug(self, message, method=None, params=None):
-        return codex_session_events.remember_route_debug(self, message, method=method, params=params)
+        return self._notifications.remember_route_debug(message, method=method, params=params)
 
     def _codex_notice(self, message, method=None, params=None, level=None, silent=False):
-        return codex_session_events.codex_notice(
-            self, message, method=method, params=params, level=level, silent=silent)
+        return self._notifications.codex_notice(
+            message, method=method, params=params, level=level, silent=silent)
 
     def _updated_event_notice_message(self, params):
-        return codex_session_events.updated_event_notice_message(params)
+        return codex_notifications.CodexNotificationAdapter.updated_event_notice_message(params)
 
     def _handle_updated_event(self, method, params):
-        return codex_session_events.handle_updated_event(self, method, params)
+        return self._notifications.handle_updated_event(method, params)
 
     def handle_notification(self, method, params):
-        return codex_session_events.handle_notification(self, method, params)
+        return self._notifications.handle_notification(method, params)
 
     def _on_turn_completed(self, turn):
-        return codex_session_events.on_turn_completed(self, turn)
+        return self._notifications.on_turn_completed(turn)
 
     def _on_item_started(self, item):
-        return codex_session_events.on_item_started(self, item)
+        return self._notifications.on_item_started(item)
 
     def _on_item_completed(self, item):
-        return codex_session_events.on_item_completed(self, item)
+        return self._notifications.on_item_completed(item)
 
     def _flush_pending_plan_items(self):
-        return codex_session_events.flush_pending_plan_items(self)
+        return self._notifications.flush_pending_plan_items()
 
     def _on_plan_updated(self, params):
-        return codex_session_events.on_plan_updated(self, params)
+        return self._notifications.on_plan_updated(params)
 
     def _on_thread_settings_updated(self, settings):
-        return codex_session_events.on_thread_settings_updated(self, settings)
+        return self._notifications.on_thread_settings_updated(settings)
 
     @staticmethod
     def _usage_for_meta(usage):
-        return codex_session_events.usage_for_meta(usage)
+        return codex_notifications.CodexNotificationAdapter.usage_for_meta(usage)
 
     @classmethod
     def history_snapshot(cls, thread_id, user="", uid="", state_dir=None, codex_home=None):

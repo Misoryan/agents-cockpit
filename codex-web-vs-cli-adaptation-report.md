@@ -624,3 +624,10 @@ Immediate next commit candidate:
 - `CodexSession._path_within_cwd()`, `_resolve_mention_path()`, `_image_upload_dir()`, `image_file()`, `prepare_image_inputs()`, `_display_user_content()`, `_user_input_items()`, `_search_file_result()`, and `search_files()` remain as compatibility wrappers, preserving manager API and turn runner behavior.
 - Added `tests/check_codex_input_helpers.py` to cover mention de-duplication, cwd boundary filtering, image validation/storage/detail fallback, replay block creation, and filtered fuzzy-file results.
 - Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the input adapter slice and includes `codex_input.py` in the validation bundle.
+
+## 37. 2026-07-17 slash adapter extraction checkpoint
+
+- Added `codex_slash.py` with `CodexSlashAdapter`, moving slash dispatch, session config tuning, thread lifecycle actions, goal commands, steer, and manual MCP resource/tool helpers out of `codex_native.py`.
+- `CodexSession.handle_slash_command()`, config setters, lifecycle methods, goal helpers, and manual MCP helpers remain as compatibility wrappers, preserving `/api/nslash`, sidebar/history actions, and existing helper tests.
+- Added `tests/check_codex_slash_helpers.py` to cover direct slash adapter dispatch, delegated session-state mutation, compaction request state, goal read notices, steer input mapping, and invalid MCP JSON handling.
+- Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` so the current structure plan records the slash adapter slice and includes `codex_slash.py` in the validation bundle.

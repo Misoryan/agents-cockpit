@@ -638,3 +638,10 @@ Immediate next commit candidate:
 - The adapter now owns tool event/result conversion, incremental tool output append, approval/ask/form waits, dynamic MCP passthrough/rejection, `currentTime/read`, unsupported account/attestation recovery notices, and approve/answer decisions.
 - `CodexSession.handle_server_request()`, `_await_approval()`, `_await_user_input()`, `_await_form_input()`, `_handle_dynamic_tool_call()`, `_call_mcp_tool_for_dynamic()`, `approve()`, and `answer()` remain as compatibility wrappers, preserving app-server routing and browser APIs.
 - Extended `tests/check_codex_requests_helpers.py` to cover the adapter path directly, including tool output accumulation, direct `currentTime/read`, dynamic MCP mapping, and existing recovery/error behavior.
+
+## 39. 2026-07-17 native tool-card renderer extraction checkpoint
+
+- Added `assets/native_tool_cards.js` and moved the Codex assistant `tool_use` card renderer out of `assets/native_events.js`.
+- `nHandle()` now dispatches assistant tool-use blocks to `nRenderToolUseBlock(sid, st, b)`, keeping replay/live event flow unchanged while isolating shell/edit/todo/web/MCP/special tool-card markup for future CLI-parity upgrades.
+- Updated `index.html` to load the new renderer between shared native stage helpers and the event dispatcher, preserving dependency order.
+- Updated `tests/check_replay_loading_frontend.py` so the static frontend contract verifies the new script order and `nRenderToolUseBlock` entrypoint.

@@ -2,7 +2,7 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 server request adapter checkpoint）
+当前基线：`main`（截至 2026-07-17 native tool card extraction checkpoint）
 Codex CLI：`codex-cli 0.142.4`
 协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=27/not_integrated=60。
 
@@ -185,7 +185,7 @@ Browser / Android WebView
 15. `manager_user_api.py` 的 POST 分发继续增长。
     当前按 path 大 if/elif 维护；后续状态变更 API 分级、权限、schema 校验增加时，需要 route table 或小 handler 分组。
 16. 前端仍有全局状态和大 renderer。
-    `assets/native_events.js`、`assets/native_stage.js`、`assets/app_sidebar.js` 仍是主要复杂点；新增 tool card 不应继续堆进同一个长函数。
+    `assets/native_events.js` 的 tool-use card 第一刀已拆到 `assets/native_tool_cards.js`，但 `assets/native_stage.js`、`assets/app_sidebar.js` 和 pending/form/replay 渲染仍是主要复杂点；新增 tool card 应继续进入专门 renderer，而不是堆回事件分发函数。
 17. `codex_client.py` 的 single-busy fallback 需要 trace fixture。
     对缺 thread/turn/item id 的通知，fallback 很实用，但多会话并发下必须用真实协议 trace 证明哪些方法允许 fallback，哪些应 buffer/丢弃/报 visible warning。
 
@@ -281,7 +281,7 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 继续 Phase 2 剩余结构收口：优先拆 frontend renderer 或 push/notification 边界中最容易回归的部分，保持行为不变。
+1. 继续 Phase 2 剩余结构收口：优先拆 frontend pending/form renderer 或 push/notification 边界中最容易回归的部分，保持行为不变。
 2. 每一刀都跑完整轻量验证：`py_compile`、所有 helper tests、JS `node --check`、`git diff --check`。
 3. 跑行为 smoke：WS 双客户端、browser 双页、terminalInteraction；如时间允许补一次手机 visual checklist。
 4. 再做 Phase 3 的只读 profile/config/account status 面板，避免继续盲补 CLI 控件。

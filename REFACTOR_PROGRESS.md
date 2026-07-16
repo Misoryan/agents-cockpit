@@ -208,6 +208,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   approval/ask/form waits, dynamic MCP passthrough/rejection, current-time
   responses, unsupported account/attestation recovery notices, and
   approve/answer decisions are routed through one request-focused adapter.
+- Frontend Codex tool-use card rendering moved out of `assets/native_events.js`
+  into `assets/native_tool_cards.js`, leaving the event dispatcher focused on
+  event routing while shell/edit/todo/web/MCP/special tool card markup stays in
+  a dedicated renderer file.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

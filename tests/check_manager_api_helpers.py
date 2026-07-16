@@ -381,6 +381,10 @@ def main():
                 "approvalPolicy": "on-request",
                 "sandbox": "workspace-write",
                 "webSearch": "live",
+                "reasoningEffort": "medium",
+                "reasoningSummary": "auto",
+                "serviceTier": "flex",
+                "writableRoots": "extras",
             }},
             {"user": "alice"},
             lambda _data, _ctx: ("", None, None),
@@ -394,6 +398,10 @@ def main():
             "approval_policy": "on-request",
             "sandbox": "workspace-write",
             "web_search": "live",
+            "reasoning_effort": "medium",
+            "reasoning_summary": "auto",
+            "service_tier": "flex",
+            "writable_roots": [str(Path(launch_dir, "extras").resolve())],
         }
     finally:
         common.BACKENDS = old_backends

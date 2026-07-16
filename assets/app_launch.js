@@ -25,18 +25,35 @@ function setYolo(v, persist){ lmYolo=!!v; if(persist!==false){ acPrefSet("acYolo
 function updateLmStart(){ $("lm-start").disabled=!lmDir; }
 function codexLaunchConfig(backend){
   if(!isCodexBackend(backend||lmBackend)) return {};
-  return {model:lmCodexModel, webSearch:lmCodexSearch, sandbox:lmCodexSandbox, approvalPolicy:lmCodexApproval};
+  return {
+    model:lmCodexModel,
+    webSearch:lmCodexSearch,
+    sandbox:lmCodexSandbox,
+    approvalPolicy:lmCodexApproval,
+    reasoningEffort:lmCodexReasoning,
+    reasoningSummary:lmCodexSummary,
+    serviceTier:lmCodexServiceTier,
+    writableRoots:lmCodexWritableRoots
+  };
 }
 function setCodexConfigFromInputs(persist){
   if($("lm-codex-model")) lmCodexModel=$("lm-codex-model").value.trim();
   if($("lm-codex-search")) lmCodexSearch=$("lm-codex-search").value;
   if($("lm-codex-sandbox")) lmCodexSandbox=$("lm-codex-sandbox").value;
   if($("lm-codex-approval")) lmCodexApproval=$("lm-codex-approval").value;
+  if($("lm-codex-reasoning")) lmCodexReasoning=$("lm-codex-reasoning").value.trim();
+  if($("lm-codex-summary")) lmCodexSummary=$("lm-codex-summary").value;
+  if($("lm-codex-service-tier")) lmCodexServiceTier=$("lm-codex-service-tier").value.trim();
+  if($("lm-codex-writable-roots")) lmCodexWritableRoots=$("lm-codex-writable-roots").value.trim();
   if(persist!==false){
     acPrefSet("acCodexModel", lmCodexModel, "acCodexModel");
     acPrefSet("acCodexSearch", lmCodexSearch, "acCodexSearch");
     acPrefSet("acCodexSandbox", lmCodexSandbox, "acCodexSandbox");
     acPrefSet("acCodexApproval", lmCodexApproval, "acCodexApproval");
+    acPrefSet("acCodexReasoning", lmCodexReasoning, "acCodexReasoning");
+    acPrefSet("acCodexSummary", lmCodexSummary, "acCodexSummary");
+    acPrefSet("acCodexServiceTier", lmCodexServiceTier, "acCodexServiceTier");
+    acPrefSet("acCodexWritableRoots", lmCodexWritableRoots, "acCodexWritableRoots");
   }
 }
 function renderCodexConfig(){
@@ -46,6 +63,10 @@ function renderCodexConfig(){
   if($("lm-codex-search")) $("lm-codex-search").value=lmCodexSearch||"";
   if($("lm-codex-sandbox")) $("lm-codex-sandbox").value=lmCodexSandbox||"";
   if($("lm-codex-approval")) $("lm-codex-approval").value=lmCodexApproval||"";
+  if($("lm-codex-reasoning")) $("lm-codex-reasoning").value=lmCodexReasoning||"";
+  if($("lm-codex-summary")) $("lm-codex-summary").value=lmCodexSummary||"";
+  if($("lm-codex-service-tier")) $("lm-codex-service-tier").value=lmCodexServiceTier||"";
+  if($("lm-codex-writable-roots")) $("lm-codex-writable-roots").value=lmCodexWritableRoots||"";
 }
 function loadCodexOptions(){
   if(!isCodexBackend(lmBackend) || !lmDir) return;
@@ -62,6 +83,9 @@ function loadCodexOptions(){
       if(!lmCodexSearch && r.config.web_search) lmCodexSearch=r.config.web_search;
       if(!lmCodexSandbox && r.config.sandbox_mode) lmCodexSandbox=r.config.sandbox_mode;
       if(!lmCodexApproval && r.config.approval_policy) lmCodexApproval=r.config.approval_policy;
+      if(!lmCodexReasoning && r.config.model_reasoning_effort) lmCodexReasoning=r.config.model_reasoning_effort;
+      if(!lmCodexSummary && r.config.model_reasoning_summary) lmCodexSummary=r.config.model_reasoning_summary;
+      if(!lmCodexServiceTier && r.config.service_tier) lmCodexServiceTier=r.config.service_tier;
       renderCodexConfig();
     }
     if(hint) hint.textContent=r.error ? ("Codex 配置读取部分失败："+r.error) : "这些字段直接透传给 Codex app-server；留空则使用 CODEX_HOME/config.toml。";
@@ -83,9 +107,9 @@ $("mbnew").addEventListener("click", function(){ openSidebar(); openLaunchNew();
 $("lm-pickdir").addEventListener("click", openBrowse);
 $("lm-yolo").addEventListener("click", function(){ setYolo(!lmYolo); });
 $("set-yolo").addEventListener("click", function(){ setYolo(!lmYolo); });
-["lm-codex-model","lm-codex-search","lm-codex-sandbox","lm-codex-approval"].forEach(function(id){
+["lm-codex-model","lm-codex-search","lm-codex-sandbox","lm-codex-approval","lm-codex-reasoning","lm-codex-summary","lm-codex-service-tier","lm-codex-writable-roots"].forEach(function(id){
   var el=$(id); if(el) el.addEventListener("change", function(){ setCodexConfigFromInputs(); });
-  if(el && id==="lm-codex-model") el.addEventListener("input", function(){ setCodexConfigFromInputs(); });
+  if(el && (id==="lm-codex-model" || id==="lm-codex-reasoning" || id==="lm-codex-service-tier" || id==="lm-codex-writable-roots")) el.addEventListener("input", function(){ setCodexConfigFromInputs(); });
 });
 $("lm-cancel").addEventListener("click", closeLaunch);
 $("launchmodal").addEventListener("click", function(e){ if(e.target===$("launchmodal")) closeLaunch(); });

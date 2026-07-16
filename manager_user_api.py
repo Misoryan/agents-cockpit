@@ -174,7 +174,11 @@ def handle_post(handler, path, data, ctx, native_from_payload_fn, owned_session_
             return
         auto_approve = common.AUTO_APPROVE if data.get("yolo") is None else bool(data.get("yolo"))
         backend = common.normalize_backend(data.get("backend"))
-        cfg = codex_config.normalize_launch_config(data.get("codex") or {})
+        cfg = codex_config.normalize_launch_config(data.get("codex") or {}, cwd=directory)
+        for root in cfg.get("writable_roots") or []:
+            if not common.path_allowed_for_user(ctx.get("user"), root):
+                handler._json({"error": "writable root is outside this user's workspaces: %r" % root}, 403)
+                return
         try:
             sid = launch_native_fn(directory, title=data.get("title") or "",
                                    auto_approve=auto_approve, backend=backend, ctx=ctx,

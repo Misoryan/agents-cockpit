@@ -40,6 +40,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   model, web search, sandbox, and approval policy; backend normalization lives
   in `codex_config.py`, and the values are passed to `thread/start` and
   `turn/start` instead of being cosmetic UI only.
+- Codex launch config now also passes reasoning effort, reasoning summary,
+  service tier, and extra workspace-write writable directories through
+  schema-shaped `thread/start` config and `turn/start` overrides, with user
+  workspace boundary checks before launch.
 - The launch modal reads `model/list`, `permissionProfile/list`, and
   `config/read` asynchronously from app-server so opening a session still stays
   non-blocking when capability discovery is slow or unavailable.
@@ -49,6 +53,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   app-server `thread/compacted` notification to clear busy state, and
   `/approval`, `/sandbox`, `/search` update only when the app-server can really
   consume the setting.
+- The slash palette now also exposes `/reasoning`, `/summary`,
+  `/service-tier`, and `/add-dir` for Codex turns, so common CLI-style model
+  tuning and workspace-write changes can be applied without restarting the web
+  session.
 - Thread lifecycle slash commands now cover `/rename`, `/archive`, and `/fork`
   through app-server `thread/name/set`, `thread/archive`, and `thread/fork`;
   the web UI reports the confirmed backend action to every connected client.

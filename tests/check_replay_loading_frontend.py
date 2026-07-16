@@ -55,6 +55,10 @@ def main():
     assert 'id="lm-codex-field"' in html
     assert 'id="slashmenu"' in html
     assert 'id="hist-archived"' in html
+    assert 'id="lm-codex-reasoning"' in html
+    assert 'id="lm-codex-summary"' in html
+    assert 'id="lm-codex-service-tier"' in html
+    assert 'id="lm-codex-writable-roots"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
@@ -123,6 +127,10 @@ def main():
         '"/approval on-request"',
         '"/sandbox workspace-write"',
         '"/search live"',
+        '"/reasoning medium"',
+        '"/summary auto"',
+        '"/service-tier auto"',
+        '"/add-dir "',
         '"/rename "',
         '"/archive"',
         '"/unarchive"',
@@ -167,6 +175,10 @@ def main():
         "function codexLaunchConfig(backend)",
         "/api/codex_options?dir=",
         "approvalPolicy:lmCodexApproval",
+        "reasoningEffort:lmCodexReasoning",
+        "reasoningSummary:lmCodexSummary",
+        "serviceTier:lmCodexServiceTier",
+        "writableRoots:lmCodexWritableRoots",
         "webSearch:lmCodexSearch",
         "function appendCodexRunActions(el, s)",
         'postJSON("/api/nslash", {sid:sid, command:command})',

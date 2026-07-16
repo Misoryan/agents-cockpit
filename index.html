@@ -315,6 +315,11 @@
         <label>联网搜索 <select class="mselect" id="lm-codex-search"><option value="">跟随配置</option><option value="live">live</option><option value="disabled">disabled</option></select></label>
         <label>沙箱 <select class="mselect" id="lm-codex-sandbox"><option value="">跟随配置</option><option value="read-only">read-only</option><option value="workspace-write">workspace-write</option><option value="danger-full-access">danger-full-access</option></select></label>
         <label>审批 <select class="mselect" id="lm-codex-approval"><option value="">跟随配置</option><option value="untrusted">untrusted</option><option value="on-request">on-request</option><option value="never">never</option><option value="on-failure">on-failure</option></select></label>
+        <label>Reasoning <input class="mselect" id="lm-codex-reasoning" list="lm-codex-reasoning-list" placeholder="default / low / medium / high"></label>
+        <datalist id="lm-codex-reasoning-list"><option value="low"><option value="medium"><option value="high"></datalist>
+        <label>Reasoning summary <select class="mselect" id="lm-codex-summary"><option value="">????</option><option value="auto">auto</option><option value="concise">concise</option><option value="detailed">detailed</option><option value="none">none</option></select></label>
+        <label>Service tier <input class="mselect" id="lm-codex-service-tier" placeholder="default / auto / flex"></label>
+        <label>Writable dirs <textarea class="mselect" id="lm-codex-writable-roots" rows="2" placeholder="?????????????"></textarea></label>
       </div>
       <div class="mhint" id="lm-codex-hint">这些字段直接透传给 Codex app-server；留空则使用 CODEX_HOME/config.toml。</div>
     </div>

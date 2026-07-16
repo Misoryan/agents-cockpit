@@ -19,23 +19,37 @@ def main():
         "approvalPolicy": "on-request",
         "sandbox": "workspace-write",
         "webSearch": "live",
+        "reasoningEffort": "medium",
+        "reasoningSummary": "concise",
+        "serviceTier": "auto",
+        "writableRoots": ["extras", "extras"],
         "ignored": "x",
-    })
+    }, cwd="C:/repo")
     assert cfg == {
         "model": "gpt-5-codex",
         "approval_policy": "on-request",
         "sandbox": "workspace-write",
         "web_search": "live",
+        "reasoning_effort": "medium",
+        "reasoning_summary": "concise",
+        "service_tier": "auto",
+        "writable_roots": [os.path.abspath("C:/repo/extras")],
     }
     assert codex_config.normalize_launch_config({"approvalPolicy": "bad", "sandbox": "bad"}) == {}
     assert codex_config.normalize_launch_config({"search": True})["web_search"] == "live"
     assert codex_config.normalize_launch_config({"search": False})["web_search"] == "disabled"
-    assert codex_config.thread_config(cfg) == {"web_search": "live"}
+    assert codex_config.thread_config(cfg) == {
+        "web_search": "live",
+        "model_reasoning_effort": "medium",
+        "model_reasoning_summary": "concise",
+        "service_tier": "auto",
+        "sandbox_workspace_write": {"writable_roots": [os.path.abspath("C:/repo/extras")]},
+    }
     assert codex_config.sandbox_policy("danger-full-access") == {"type": "dangerFullAccess"}
     assert codex_config.sandbox_policy("read-only") == {"type": "readOnly"}
-    assert codex_config.sandbox_policy("workspace-write", "C:/repo") == {
+    assert codex_config.sandbox_policy("workspace-write", "C:/repo", ["C:/repo/extras"]) == {
         "type": "workspaceWrite",
-        "writableRoots": ["C:/repo"],
+        "writableRoots": [os.path.abspath("C:/repo"), os.path.abspath("C:/repo/extras")],
     }
 
     with tempfile.TemporaryDirectory() as td:
@@ -46,14 +60,21 @@ def main():
         assert thread["model"] == "gpt-5-codex"
         assert thread["approvalPolicy"] == "on-request"
         assert thread["sandbox"] == "workspace-write"
-        assert thread["config"] == {"web_search": "live"}
+        assert thread["serviceTier"] == "auto"
+        assert thread["config"]["web_search"] == "live"
+        assert thread["config"]["model_reasoning_effort"] == "medium"
+        assert thread["config"]["model_reasoning_summary"] == "concise"
         session.thread_id = "thread-1"
         turn = session._turn_params("hello")
         assert turn["model"] == "gpt-5-codex"
         assert turn["approvalPolicy"] == "on-request"
+        assert turn["serviceTier"] == "auto"
+        assert turn["effort"] == "medium"
+        assert turn["summary"] == "concise"
         assert turn["sandboxPolicy"]["type"] == "workspaceWrite"
-        assert turn["sandboxPolicy"]["writableRoots"] == [os.path.abspath(td)]
+        assert turn["sandboxPolicy"]["writableRoots"] == [os.path.abspath(td), os.path.abspath("C:/repo/extras")]
         assert turn["collaborationMode"]["settings"]["model"] == "gpt-5-codex"
+        assert turn["collaborationMode"]["settings"]["reasoning_effort"] == "medium"
         mention_turn = session._turn_params("read @README.md")
         mention_items = [item for item in mention_turn["input"] if item.get("type") == "mention"]
         assert mention_items and mention_items[0]["path"] == os.path.abspath(Path(td, "README.md"))
@@ -87,6 +108,29 @@ def main():
             "web_search": "live",
         }
         assert fresh.cfg["web_search"] == "live"
+        assert session.handle_slash_command("/reasoning high") == {
+            "ok": True,
+            "command": "reasoning",
+            "reasoning_effort": "high",
+        }
+        assert session.cfg["reasoning_effort"] == "high"
+        assert session.handle_slash_command("/summary detailed") == {
+            "ok": True,
+            "command": "summary",
+            "reasoning_summary": "detailed",
+        }
+        assert session.cfg["reasoning_summary"] == "detailed"
+        assert session.handle_slash_command("/service-tier flex") == {
+            "ok": True,
+            "command": "service-tier",
+            "service_tier": "flex",
+        }
+        assert session.cfg["service_tier"] == "flex"
+        assert session.handle_slash_command("/add-dir subdir") == {
+            "ok": True,
+            "command": "writable-roots",
+            "writable_roots": [os.path.abspath(Path(td, "subdir"))],
+        }
 
         yolo = CodexSession("s2", td, yolo=True, cfg=cfg, state_dir=td)
         assert yolo._thread_params()["approvalPolicy"] == "never"

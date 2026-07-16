@@ -207,7 +207,7 @@ class CodexSession:
         self.sid = sid
         self.cwd = os.path.abspath(cwd)
         self.yolo = bool(yolo)
-        self.cfg = codex_config.normalize_launch_config(cfg)
+        self.cfg = codex_config.normalize_launch_config(cfg, cwd=self.cwd)
         self.user = user or ""
         self.uid = uid or ""
         self.state_dir = state_dir or STATE_DIR
@@ -346,6 +346,14 @@ class CodexSession:
             return self.set_sandbox_mode(arg)
         if name == "/search":
             return self.set_web_search(arg)
+        if name == "/reasoning":
+            return self.set_reasoning_effort(arg)
+        if name == "/summary":
+            return self.set_reasoning_summary(arg)
+        if name == "/service-tier":
+            return self.set_service_tier(arg)
+        if name in ("/writable-roots", "/add-dir"):
+            return self.set_writable_roots(arg)
         if name == "/rename":
             return self.rename_thread(arg)
         if name == "/archive":
@@ -425,6 +433,58 @@ class CodexSession:
         self._codex_notice("Web search will be %s when this Codex thread starts" % mode, "slash/search")
         self._persist()
         return {"ok": True, "command": "search", "web_search": mode}
+
+    def set_reasoning_effort(self, effort):
+        effort = (effort or "").strip()
+        if not effort:
+            return {"ok": False, "error": "usage: /reasoning <effort> (for example low|medium|high)"}
+        self.cfg["reasoning_effort"] = effort
+        self._sync_collaboration_mode()
+        self._codex_notice("Reasoning effort set for subsequent Codex turns: %s" % effort, "slash/reasoning")
+        self._persist()
+        return {"ok": True, "command": "reasoning", "reasoning_effort": effort}
+
+    def set_reasoning_summary(self, summary):
+        summary = (summary or "").strip().lower()
+        if summary not in codex_config.REASONING_SUMMARIES:
+            return {
+                "ok": False,
+                "error": "usage: /summary %s" % "|".join(codex_config.REASONING_SUMMARIES),
+            }
+        self.cfg["reasoning_summary"] = summary
+        self._codex_notice("Reasoning summary set for subsequent Codex turns: %s" % summary, "slash/summary")
+        self._persist()
+        return {"ok": True, "command": "summary", "reasoning_summary": summary}
+
+    def set_service_tier(self, tier):
+        tier = (tier or "").strip()
+        if not tier:
+            self.cfg.pop("service_tier", None)
+            self._codex_notice("Service tier override cleared for subsequent Codex turns", "slash/service-tier")
+            self._persist()
+            return {"ok": True, "command": "service-tier", "service_tier": ""}
+        self.cfg["service_tier"] = tier
+        self._codex_notice("Service tier set for subsequent Codex turns: %s" % tier, "slash/service-tier")
+        self._persist()
+        return {"ok": True, "command": "service-tier", "service_tier": tier}
+
+    def set_writable_roots(self, roots_text):
+        roots = codex_config.normalize_writable_roots(roots_text, cwd=self.cwd)
+        denied = [root for root in roots if not common.path_allowed_for_user(self.user, root)]
+        if denied:
+            return {"ok": False, "error": "writable root is outside this user's workspaces: %s" % denied[0]}
+        if not roots:
+            self.cfg.pop("writable_roots", None)
+            self._codex_notice("Additional writable roots cleared for subsequent Codex turns", "slash/writable-roots")
+            self._persist()
+            return {"ok": True, "command": "writable-roots", "writable_roots": []}
+        self.cfg["writable_roots"] = roots
+        self._codex_notice(
+            "Additional writable roots set for subsequent Codex turns: %s" % ", ".join(roots),
+            "slash/writable-roots",
+        )
+        self._persist()
+        return {"ok": True, "command": "writable-roots", "writable_roots": roots}
 
     def start_compaction(self):
         self._ensure_thread()
@@ -975,6 +1035,8 @@ class CodexSession:
             params["approvalPolicy"] = self.cfg["approval_policy"]
         if self.cfg.get("sandbox"):
             params["sandbox"] = self.cfg["sandbox"]
+        if self.cfg.get("service_tier"):
+            params["serviceTier"] = self.cfg["service_tier"]
         config = codex_config.thread_config(self.cfg)
         if config:
             params["config"] = config
@@ -993,15 +1055,22 @@ class CodexSession:
             "input": self._user_input_items(text, image_inputs=image_inputs),
             "collaborationMode": self._collaboration_mode(),
         }
+        if self.cfg.get("model"):
+            params["model"] = self.cfg["model"]
+        if self.cfg.get("service_tier"):
+            params["serviceTier"] = self.cfg["service_tier"]
+        if self.cfg.get("reasoning_effort"):
+            params["effort"] = self.cfg["reasoning_effort"]
+        if self.cfg.get("reasoning_summary"):
+            params["summary"] = self.cfg["reasoning_summary"]
         if self.yolo:
             params["approvalPolicy"] = "never"
             params["sandboxPolicy"] = {"type": "dangerFullAccess"}
         else:
-            if self.cfg.get("model"):
-                params["model"] = self.cfg["model"]
             if self.cfg.get("approval_policy"):
                 params["approvalPolicy"] = self.cfg["approval_policy"]
-            sandbox = codex_config.sandbox_policy(self.cfg.get("sandbox"), self.cwd)
+            sandbox = codex_config.sandbox_policy(
+                self.cfg.get("sandbox"), self.cwd, self.cfg.get("writable_roots"))
             if sandbox:
                 params["sandboxPolicy"] = sandbox
         return params
@@ -1011,7 +1080,7 @@ class CodexSession:
             "mode": "plan" if self.plan_mode else "default",
             "settings": {
                 "model": self.model or self.cfg.get("model") or "",
-                "reasoning_effort": None,
+                "reasoning_effort": self.cfg.get("reasoning_effort") or None,
                 "developer_instructions": None,
             },
         }

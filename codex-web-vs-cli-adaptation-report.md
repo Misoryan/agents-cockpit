@@ -316,3 +316,12 @@ git diff --check
 - Added an Active/Archived sidebar filter for Codex thread history. The archived view requests `/api/history?live_codex=1&archived=1`, which flows to app-server `thread/list` with `archived=true` instead of relying on stale local cache.
 - Added a visible `Unarchive` action for archived Codex history rows through `/api/codex_history_action` -> `thread/unarchive`, completing the first UI entry point for archived thread lifecycle parity.
 - Kept the active view non-disruptive: running sessions are only attached to the normal history view, so switching to archived history does not mix live sessions into archived results or force active conversation DOM reloads.
+
+
+## 11. 2026-07-17 launch config parity checkpoint
+
+- Extended Codex launch config beyond model/search/sandbox/approval: the modal now captures reasoning effort, reasoning summary, service tier, and extra writable directories.
+- Backend normalization in `codex_config.py` keeps these values schema-shaped: `serviceTier`, `effort`, `summary`, and workspace-write `writableRoots` are sent on `turn/start`, while `thread/start` receives matching config overrides such as `model_reasoning_effort`, `model_reasoning_summary`, `service_tier`, and `sandbox_workspace_write.writable_roots`.
+- Extra writable roots are normalized relative to the launch cwd and checked against the logged-in user's allowed workspace roots before launch or slash updates, preserving multi-user path boundaries.
+- Slash parity also gained `/reasoning`, `/summary`, `/service-tier`, and `/add-dir`, so subsequent Codex turns can be tuned without restarting the web session.
+- Remaining launch-config gap: CLI `--profile` still has no direct, safe app-server thread/start field in the current schema, so it remains documented as a gap rather than shown as a fake UI option.

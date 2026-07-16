@@ -11,7 +11,7 @@ function setMainView(view){
 var currentSid=null;
 var nativeStages={}, nativeWs={}, nativeReconnectTimers={}, nativeReconnectState={}, nativePollTimers={}, nativePollBusy={};
 var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true;
-var lmCodexModel="", lmCodexSearch="", lmCodexSandbox="", lmCodexApproval="", lmCodexOptionsKey="";
+var lmCodexModel="", lmCodexSearch="", lmCodexSandbox="", lmCodexApproval="", lmCodexReasoning="", lmCodexSummary="", lmCodexServiceTier="", lmCodexWritableRoots="", lmCodexOptionsKey="";
 /* Preferences: cookie first, with localStorage fallback migrated into cookies. */
 (function(){
   var b = acPrefGetRaw("acBackend", "acBackend");
@@ -24,4 +24,8 @@ var lmCodexModel="", lmCodexSearch="", lmCodexSandbox="", lmCodexApproval="", lm
   lmCodexSearch = acPrefGetRaw("acCodexSearch", "acCodexSearch").val || "";
   lmCodexSandbox = acPrefGetRaw("acCodexSandbox", "acCodexSandbox").val || "";
   lmCodexApproval = acPrefGetRaw("acCodexApproval", "acCodexApproval").val || "";
+  lmCodexReasoning = acPrefGetRaw("acCodexReasoning", "acCodexReasoning").val || "";
+  lmCodexSummary = acPrefGetRaw("acCodexSummary", "acCodexSummary").val || "";
+  lmCodexServiceTier = acPrefGetRaw("acCodexServiceTier", "acCodexServiceTier").val || "";
+  lmCodexWritableRoots = acPrefGetRaw("acCodexWritableRoots", "acCodexWritableRoots").val || "";
 })();

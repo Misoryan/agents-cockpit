@@ -198,6 +198,28 @@ function nSpecialToolBody(name, input){
   }
   return "";
 }
+function nToolInputPreview(input){
+  if(!input || typeof input!=="object" || Array.isArray(input)) return "";
+  var keys=Object.keys(input), shown=keys.slice(0,4);
+  if(!shown.length) return "";
+  return '<div class="tool-arg-preview">'+shown.map(function(k){
+    var v=input[k], text=(v && typeof v==="object")?JSON.stringify(v):String(v);
+    return '<div><span>'+nEsc(k)+'</span><b>'+nEsc(text.slice(0,180))+'</b></div>';
+  }).join("")+(keys.length>shown.length?'<div><span>more</span><b>'+nEsc(keys.length-shown.length)+' fields</b></div>':'')+'</div>';
+}
+function nStructuredToolBody(name, input){
+  var raw=String(name||""), lower=raw.toLowerCase();
+  if(lower.indexOf(".")<0 && lower.indexOf("/")<0) return "";
+  if(["webfetch","websearch","exitplanmode"].indexOf(lower)>=0) return "";
+  var split=raw.indexOf(".")>=0 ? raw.split(".", 2) : raw.split("/", 2);
+  var server=split[0]||"tool", tool=raw.slice((split[0]||"").length+1)||raw;
+  var pretty="";
+  try{ pretty=JSON.stringify(input||{}, null, 2); }catch(e){ pretty=String(input||""); }
+  return '<div class="special-card mcp-card"><div class="special-title">'+_I('wrench')+' Tool call</div>'+
+         nMiniKvHtml([["server", server], ["tool", tool]])+
+         nToolInputPreview(input||{})+
+         '<details class="tool-args"><summary>Arguments</summary><pre>'+nEsc(pretty)+'</pre></details></div>';
+}
 function nShellGroupKey(name){
   name=String(name||"").toLowerCase();
   return (name==="bash"||name==="powershell")?name:"";

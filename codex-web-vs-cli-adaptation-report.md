@@ -492,3 +492,11 @@ Immediate next commit candidate:
 - The cards expose the most useful fields directly: sleep duration/reason, compaction status/summary/tokens, image prompt/size/model, and viewed image path or URL.
 - This is display-only and keeps the same replay event shape, so multi-client live rendering, history replay, reconnect, and catch-up polling continue to use the same event stream.
 - Added frontend contract and Node helper checks for `nSpecialToolBody` and the new tool-use branches.
+
+
+## 19. 2026-07-17 MCP/dynamic tool-use card checkpoint
+
+- Added a structured start-card path for dotted or slash-style MCP/dynamic tool names, such as `server.tool` and `mcpServer.resource/read`.
+- These tool-use cards now show server/tool labels, a short argument preview, and collapsed pretty arguments instead of defaulting directly to a raw JSON input block.
+- The renderer keeps the same `tool_use` replay event shape and only changes frontend presentation, so live clients, replay, reconnect, and catch-up polling remain protocol-compatible.
+- Added frontend contract and Node helper checks for `nStructuredToolBody`, argument previews, and the non-interference case where normal shell tools still use their existing renderers.

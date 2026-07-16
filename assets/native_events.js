@@ -144,8 +144,11 @@ function nHandle(sid, obj){
         if(_isTodo && _todoList.length){ st.todos=_todoList; if(currentSid===sid) nRenderTasks(st); }
         var _body;
         var _special=nSpecialToolBody(_n, _inp);
+        var _structured=_special?"":nStructuredToolBody(b.name, _inp);
         if(_special){
           _body=_special;
+        } else if(_structured){
+          _body=_structured;
         } else if(_n==="bash"||_n==="powershell"){
           _body='<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>';
         } else if(_isTodo){

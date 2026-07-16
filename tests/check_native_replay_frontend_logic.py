@@ -25,7 +25,8 @@ const {
   nDiffStats,
   nToolResultMarkup,
   nJsonResultHtml,
-  nSpecialToolBody
+  nSpecialToolBody,
+  nStructuredToolBody
 } = ctx;
 
 let st = {renderedEvents: {}, lastSeq: 0};
@@ -80,6 +81,12 @@ assert.ok(nSpecialToolBody("sleep", {durationMs: 1200, reason: "wait"}).includes
 assert.ok(nSpecialToolBody("contextcompaction", {status: "started", summary: "compact"}).includes("compact-card"));
 assert.ok(nSpecialToolBody("imagegeneration", {prompt: "a cat", size: "1024x1024"}).includes("image-card"));
 assert.ok(nSpecialToolBody("imageview", {path: "https://example.test/a.png"}).includes("special-path"));
+const mcpBody = nStructuredToolBody("demo.lookup", {query: "abc", limit: 3});
+assert.ok(mcpBody.includes("mcp-card"));
+assert.ok(mcpBody.includes("tool-arg-preview"));
+assert.ok(mcpBody.includes("demo"));
+assert.ok(mcpBody.includes("lookup"));
+assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
 
 (async function(){
   let catchupEvents = [];

@@ -147,6 +147,8 @@ checkout. It is intentionally concise so future changes can stay incremental.
   without changing the replay event contract.
 - Codex sleep, context-compaction, image-generation, and image-view tool starts
   now use dedicated compact cards instead of raw JSON input dumps.
+- MCP/dynamic dotted tool-use starts now render as structured tool-call cards
+  with server/tool labels, argument previews, and collapsed pretty arguments.
 
 ## Optional Follow-ups
 

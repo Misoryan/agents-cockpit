@@ -24,6 +24,7 @@ const {
   nReplayEventKey,
   nReplayBatchAsync,
   nDiffResultHtml,
+  nDiffFileListHtml,
   nDiffStats,
   nToolResultMarkup,
   nJsonResultHtml,
@@ -66,13 +67,27 @@ assert.deepStrictEqual(handled, ["seq:2", "seq:3"]);
 assert.strictEqual(st2.lastSeq, 3);
 
 const sampleDiff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@\n-old\n+new";
-assert.deepStrictEqual(JSON.parse(JSON.stringify(nDiffStats(sampleDiff))), {lines:6, files:1, add:1, del:1});
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nDiffStats(sampleDiff))), {lines:6, files:1, add:1, del:1, fileList:["a.py"]});
 const diffHtml = nDiffResultHtml(sampleDiff);
 assert.ok(diffHtml.includes("Diff"));
 assert.ok(diffHtml.includes("diff-unified"));
+assert.ok(diffHtml.includes("diff-file-list"));
+assert.ok(diffHtml.includes("diff-file-chip"));
 assert.ok(diffHtml.includes("du-add"));
 assert.ok(diffHtml.includes("du-del"));
 assert.ok(nToolResultMarkup("turn-diff", sampleDiff).includes("diff-unified"));
+const multiDiff = Array.from({length:10}, (_, i) => {
+  const name = "src/file" + i + ".js";
+  return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@\n-old" + i + "\n+new" + i;
+}).join("\n");
+const multiStats = nDiffStats(multiDiff);
+assert.strictEqual(multiStats.files, 10);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(multiStats.fileList.slice(0,3))), ["src/file0.js", "src/file1.js", "src/file2.js"]);
+const multiHtml = nDiffResultHtml(multiDiff);
+assert.ok(multiHtml.includes("diff-large"));
+assert.ok(!multiHtml.includes("diff-det\" open"));
+assert.ok(multiHtml.includes("+2 more"));
+assert.ok(nDiffFileListHtml(multiStats.fileList).includes("src/file7.js"));
 assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("Command"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("exit 2"));

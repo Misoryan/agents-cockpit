@@ -729,3 +729,10 @@ Immediate next commit candidate:
 - Enhanced `assets/native_tool_results.js` so Bash/PowerShell results show CLI-like summaries with exit status, duration, output line count, section labels, future stdout/stderr split support, and large-output auto-collapse.
 - Updated the native event dispatcher to pass the whole tool-result block to the result renderer without changing the replay event shape for other tools.
 - Added frontend and conversion tests for command duration parsing, split stdout/stderr rendering, metadata preservation, and updated static script contracts.
+
+## 52. 2026-07-17 Codex diff file summary checkpoint
+
+- Enhanced `assets/native_tool_results.js` diff result cards with parsed file lists, file chips, `+N more` overflow summaries, and large-diff auto-collapse while keeping the replay event shape unchanged.
+- Added shared CSS for diff file chips and unified diff bodies in `index.html` so standalone result cards and tool-embedded results render the same summary affordance.
+- Updated frontend logic and static-contract tests to lock the new `fileList`, `diff-file-list`, `diff-file-chip`, and `diff-large` behavior.
+- This is the first Phase 4 file-change slice after command-result cards; deeper per-file navigation and richer patch summaries can build on this parser without touching replay semantics.

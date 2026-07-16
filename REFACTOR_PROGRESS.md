@@ -255,6 +255,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Codex command result cards now parse command exit status and duration,
   preserve future stdout/stderr metadata as separate sections, and collapse very
   large successful output by default while keeping small or failed output open.
+- Codex diff result cards now parse changed file names, show file chips with
+  `+N more` overflow, and collapse very large diffs by default while preserving
+  the existing replay event contract.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

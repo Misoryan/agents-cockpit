@@ -51,25 +51,32 @@ function nCommandResultHtml(txt, toolName, meta){
   var openAttr=(bodyCount>80 && String(parts.exitCode||"0")==="0")?"":" open";
   return '<details class="tres-det cmd-det"'+openAttr+'><summary>'+nEsc(summary)+'</summary>'+body+'</details>';
 }
+function nDiffCleanPath(path){
+  path=String(path||"").trim();
+  if(path.indexOf("\"")===0 && path.lastIndexOf("\"")===path.length-1) path=path.slice(1,-1);
+  if(path.indexOf("a/")===0 || path.indexOf("b/")===0) path=path.slice(2);
+  return path;
+}
+function nDiffAddFile(files, path){
+  path=nDiffCleanPath(path);
+  if(!path || path==="/dev/null" || files.seen[path]) return;
+  files.seen[path]=true;
+  files.list.push(path);
+}
 function nDiffStats(txt){
   var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
-  var files={}, add=0, del=0;
-  function fkey(path){
-    path=String(path||"");
-    if(path.indexOf("a/")===0 || path.indexOf("b/")===0) path=path.slice(2);
-    return path;
-  }
+  var files={seen:{}, list:[]}, add=0, del=0;
   lines.forEach(function(line){
     if(line.indexOf("diff --git ")===0){
       var parts=line.split(" ");
-      files[fkey(parts[3]||parts[2]||line)]=true;
+      nDiffAddFile(files, parts[3]||parts[2]||line);
     }
-    else if(line.indexOf("+++ ")===0){ files[fkey(line.slice(4))]=true; }
+    else if(line.indexOf("+++ ")===0){ nDiffAddFile(files, line.slice(4)); }
+    else if(line.indexOf("--- ")===0){ nDiffAddFile(files, line.slice(4)); }
     else if(line.indexOf("+")===0){ add++; }
     else if(line.indexOf("-")===0 && line.indexOf("--- ")!==0){ del++; }
   });
-  var fileCount=Object.keys(files).filter(function(k){ return k && k!=="/dev/null"; }).length;
-  return {lines:lines.length, files:fileCount, add:add, del:del};
+  return {lines:lines.length, files:files.list.length, add:add, del:del, fileList:files.list};
 }
 function nLooksLikeDiff(txt){
   txt=String(txt==null?"":txt);
@@ -83,15 +90,25 @@ function nDiffLineClass(line){
   if(line.indexOf("-")===0) return "du-del";
   return "du-line";
 }
+function nDiffFileListHtml(files){
+  files=Array.isArray(files)?files:[];
+  if(!files.length) return "";
+  var max=8, shown=files.slice(0,max).map(function(path){
+    return '<span class="diff-file-chip">'+nEsc(path)+'</span>';
+  }).join("");
+  var more=files.length>max?'<span class="diff-file-more">+'+(files.length-max)+' more</span>':"";
+  return '<div class="diff-file-list">'+shown+more+'</div>';
+}
 function nDiffResultHtml(txt){
   txt=String(txt==null?"":txt);
   var st=nDiffStats(txt), summary="Diff";
   if(st.files) summary+=" · "+st.files+" file"+(st.files>1?"s":"");
   summary+=" · +"+st.add+" -"+st.del+" · "+st.lines+" lines";
+  var isLarge=st.lines>220 || st.files>8;
   var rows=txt.split(String.fromCharCode(10)).map(function(line){
     return '<span class="du-line '+nDiffLineClass(line)+'">'+nEsc(line || " ")+'</span>';
   }).join("");
-  return '<details class="tres-det diff-det" open><summary>'+nEsc(summary)+'</summary><pre class="diff-unified">'+rows+'</pre></details>';
+  return '<details class="tres-det diff-det'+(isLarge?' diff-large':'')+'"'+(isLarge?'':' open')+'><summary>'+nEsc(summary)+'</summary>'+nDiffFileListHtml(st.fileList)+'<pre class="diff-unified">'+rows+'</pre></details>';
 }
 function nTryJson(txt){
   txt=String(txt==null?"":txt).trim();

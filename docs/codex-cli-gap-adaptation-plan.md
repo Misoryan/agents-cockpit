@@ -165,8 +165,8 @@ Browser / Android WebView
    启动弹窗已有第一版只读 `config/read` 状态行，能展示 model/approval/sandbox/search/reasoning/service tier 和 model/profile 数量；后续还需要完整 layer/profile/account 状态页。
 7. terminalInteraction 还缺真实复杂命令场景。
    adapter 层 smoke 已有，但还需要用真实 Codex command exec 验证长命令、多次 stdin、移动端输入和异常断开。
-8. tool card 仍需接近 CLI 的摘要能力。
-   command/file/webSearch/MCP card 需要更清楚的 status、cwd、duration、stdout/stderr、exit code、文件列表和大输出折叠。
+8. tool card 仍需继续接近 CLI 的摘要能力。
+   command card 已有 cwd 显示和 exit code/output-line 摘要第一刀；后续还需要 duration、stdout/stderr 分区、文件列表和大输出折叠。
 9. history/lifecycle 的结果展示仍偏“能用”。
    Fork/Rollback/Compact/Goal 应显示更明确的结果对象和下一步动作。
 10. slash/command discovery 仍粗糙。
@@ -185,7 +185,7 @@ Browser / Android WebView
 15. `manager_user_api.py` 的 POST 分发继续增长。
     当前按 path 大 if/elif 维护；后续状态变更 API 分级、权限、schema 校验增加时，需要 route table 或小 handler 分组。
 16. 前端仍有全局状态和大 renderer。
-    `assets/native_events.js` 的 tool-use card 第一刀已拆到 `assets/native_tool_cards.js`，但 `assets/native_stage.js`、`assets/app_sidebar.js` 和 pending/form/replay 渲染仍是主要复杂点；新增 tool card 应继续进入专门 renderer，而不是堆回事件分发函数。
+    `assets/native_events.js` 的 tool-use card 第一刀已拆到 `assets/native_tool_cards.js`，tool result/diff/json 渲染已拆到 `assets/native_tool_results.js`；但 `assets/native_stage.js`、`assets/app_sidebar.js` 和 pending/form/replay 渲染仍是主要复杂点；新增 tool card 应继续进入专门 renderer，而不是堆回事件分发函数。
 17. `codex_client.py` 的 single-busy fallback 需要 trace fixture。
     对缺 thread/turn/item id 的通知，fallback 很实用，但多会话并发下必须用真实协议 trace 证明哪些方法允许 fallback，哪些应 buffer/丢弃/报 visible warning。
 

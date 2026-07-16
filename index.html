@@ -127,6 +127,8 @@
         .nmsg.tool,.nmsg.result,.nmsg.think{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12.5px;padding:11px 13px}
         .nmsg.tool .tname{color:var(--ink);font-weight:650;font:13px var(--sans)}
         .nmsg.tool .tcmd{font:13px var(--mono);color:var(--ink);background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin:8px 0 0;white-space:pre-wrap;word-break:break-all}
+        .nmsg.tool .tcmeta{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 8px;margin-top:6px;font:11px/1.35 var(--mono);color:var(--muted)}
+        .nmsg.tool .tcmeta b{font-weight:500;color:var(--ink);word-break:break-all}
         .nmsg.tool .tres{margin-top:8px}
         .nmsg.tool .tres pre{margin:0}
         .nmsg.tool.tool-group .tool-group-body{display:flex;flex-direction:column;gap:10px;margin-top:8px}
@@ -403,6 +405,7 @@
 <script src="/assets/app_state.js"></script>
 <script src="/assets/native_utils.js"></script>
 <script src="/assets/native_stage.js"></script>
+<script src="/assets/native_tool_results.js"></script>
 <script src="/assets/native_replay.js"></script>
 <script src="/assets/native_forms.js"></script>
 <script src="/assets/native_tool_cards.js"></script>

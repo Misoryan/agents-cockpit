@@ -23,6 +23,7 @@ function nRenderToolUseBlock(sid, st, b){
     _body=_structured;
   } else if(_n==="bash"||_n==="powershell"){
     _body='<div class="tcmd">$ '+nEsc(_cmd||"")+'</div>';
+    if(_inp.cwd){ _body+='<div class="tcmeta"><span>cwd</span><b>'+nEsc(_inp.cwd)+'</b></div>'; }
   } else if(_isTodo){
     _body='<div class="todo">'+_todoList.map(function(x){
       var _st=x.status||"pending", _ic=_st==="completed"?_I('circle-check'):(_st==="in_progress"?_I('circle-dashed'):_I('circle'));

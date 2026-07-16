@@ -15,6 +15,7 @@ let ctx = {console, setTimeout, clearTimeout, window: {}, _I: () => ""};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
 const {
   nMarkRendered,
@@ -72,6 +73,8 @@ assert.ok(diffHtml.includes("du-add"));
 assert.ok(diffHtml.includes("du-del"));
 assert.ok(nToolResultMarkup("turn-diff", sampleDiff).includes("diff-unified"));
 assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
+assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("Command"));
+assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("exit 2"));
 const jsonHtml = nJsonResultHtml('{"content":[{"type":"text","text":"hello from mcp"}],"isError":false}', "demo.tool");
 assert.ok(jsonHtml.includes("JSON · demo.tool"));
 assert.ok(jsonHtml.includes("json-preview"));

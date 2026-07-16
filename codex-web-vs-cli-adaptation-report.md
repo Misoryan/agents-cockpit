@@ -652,3 +652,10 @@ Immediate next commit candidate:
 - `assets/app_launch.js` now summarizes high-frequency inherited fields from app-server config (`model`, approval, sandbox, web search, reasoning effort/summary, and service tier) plus available model/profile counts.
 - This does not add unsafe profile/config writes; it only makes the current inherited Codex defaults more visible before launch, aligning with the plan's read-only-first config strategy.
 - Updated `tests/check_replay_loading_frontend.py` to lock the new DOM id and status-rendering helper entrypoints.
+
+## 41. 2026-07-17 native tool-result renderer extraction checkpoint
+
+- Added `assets/native_tool_results.js` and moved result/diff/JSON tool-result rendering out of `assets/native_stage.js`.
+- `nRenderToolResult()` keeps the same public entrypoint for replay/live tool results, but diff stats, JSON previews, generic result markup, and standalone result host lookup now live in the dedicated result renderer.
+- Improved command readability: shell command cards show `cwd` when present, and Bash/PowerShell results now summarize exit code and output line count instead of only showing a generic line count.
+- Updated `index.html`, `tests/check_native_replay_frontend_logic.py`, and `tests/check_replay_loading_frontend.py` to load and validate the new result renderer.

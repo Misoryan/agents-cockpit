@@ -212,6 +212,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   into `assets/native_tool_cards.js`, leaving the event dispatcher focused on
   event routing while shell/edit/todo/web/MCP/special tool card markup stays in
   a dedicated renderer file.
+- Frontend tool-result rendering moved from `assets/native_stage.js` into
+  `assets/native_tool_results.js`; command results now summarize exit code and
+  output line count, while shell command cards show `cwd` when app-server
+  provides it.
 - The Codex launch modal now shows a read-only `config/read` status line with
   high-frequency fields plus model/profile counts, making it clearer which
   Codex defaults the Web session will inherit when launch overrides are blank.

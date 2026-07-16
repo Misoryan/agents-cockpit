@@ -680,3 +680,10 @@ Immediate next commit candidate:
 - `nHandle()` now delegates `stream_event` to `nHandleStreamEvent()` and assistant thinking blocks to `nRenderAssistantThinkingBlock()`, keeping live/replay routing unchanged while isolating text/thinking UI behavior.
 - Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so the current structure map and static frontend contracts include the new text renderer.
 - This leaves the next low-risk frontend seams as sidebar lifecycle actions, tool-body helper placement, or push/notification boundaries rather than adding more markup to the central event dispatcher.
+
+## 45. 2026-07-17 sidebar Codex action extraction checkpoint
+
+- Added `assets/app_sidebar_codex_actions.js` and moved running/history Codex lifecycle action helpers out of `assets/app_sidebar.js`.
+- The sidebar still calls `appendCodexRunActions()` and `appendCodexHistoryActions()` from conversation rows, but `/api/nslash` and `/api/codex_history_action` posting plus action-button construction now live in the dedicated Codex action module.
+- Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so script order and static contracts include the new sidebar action module.
+- This keeps sidebar list rendering separate from CLI-parity lifecycle actions, making future Fork/Rollback/Goal/Archive UX work safer for multi-client session list refreshes.

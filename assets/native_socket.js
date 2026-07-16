@@ -41,9 +41,10 @@ function nativeConnect(sid, opts){
     }
   }
   var proto=location.protocol==="https:"?"wss:":"ws:";
-  var after=(st && nStageHasReplayContent(st)) ? nativeReplayAfter(st) : 0;
-  after=after ? ("?after="+encodeURIComponent(String(after))) : "";
+  var afterSeq=(st && nStageHasReplayContent(st)) ? nativeReplayAfter(st) : 0;
+  var after=afterSeq ? ("?after="+encodeURIComponent(String(afterSeq))) : "";
   var ws=new WebSocket(proto+"//"+location.host+"/t/"+sid+"/ws"+after);
+  ws._afterSeq=afterSeq;
   ws._openedAt=Date.now();
   nativeWs[sid]=ws;
   ws.onopen=function(){
@@ -64,7 +65,13 @@ function nativeConnect(sid, opts){
     rs.attempts = lived>10000 ? 0 : Math.min(6, (rs.attempts||0)+1);
     nativeReconnectState[sid]=rs;
     if(window.NATIVE_DEBUG || now-(rs.lastLog||0)>10000){
-      console.log("[N] ws closed", sid, "code="+ev.code, ev.reason||"", "retry="+nativeReconnectDelay(sid,1500)+"ms");
+      var _st=nativeStages[sid]||{};
+      console.log("[N] ws closed", sid, "code="+ev.code, ev.reason||"",
+        "retry="+nativeReconnectDelay(sid,1500)+"ms",
+        "lastSeq="+((_st&&_st.lastSeq)||0),
+        "after="+(ws._afterSeq||0),
+        "hasContent="+(!!(_st&&nStageHasReplayContent(_st))),
+        "visibility="+(document.visibilityState||""));
       rs.lastLog=now;
     }
     if(nativeWs[sid]===ws) nativeWs[sid]=null;

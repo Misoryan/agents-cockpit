@@ -170,7 +170,9 @@ function nativePollOnce(sid){
   if(nativePollBusy[sid]){ nativeStartPolling(sid,false); return; }
   var st=nativeStage(sid), after=nativeReplayAfter(st);
   nativePollBusy[sid]=true;
-  api("/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after)).then(function(r){
+  var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after);
+  if(window.NATIVE_DEBUG){ try{ console.log("[N] replay poll", sid, "after="+after, "url="+url); }catch(_e){} }
+  api(url).then(function(r){
     nativePollBusy[sid]=false;
     if(!r || r.ok===false){ nativeStartPolling(sid,false); return; }
     var evs=r.events||[];
@@ -211,10 +213,13 @@ function nativeCatchupPoll(sid, reason){
   st.lastCatchupPoll=now;
   st.catchupInFlight=true;
   var after=nativeReplayAfter(st);
-  api("/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after)).then(function(r){
+  var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after);
+  if(window.NATIVE_DEBUG){ try{ console.log("[N] catch-up", sid, "reason="+(reason||""), "after="+after, "url="+url); }catch(_e){} }
+  api(url).then(function(r){
     st.catchupInFlight=false;
     if(!r || r.ok===false || currentSid!==sid || !nativeStages[sid]) return;
     var evs=r.events||[];
+    if(window.NATIVE_DEBUG){ try{ console.log("[N] catch-up result", sid, "events="+evs.length, "snapshot="+(!!r.snapshot), "pending="+((r.pending||[]).length)); }catch(_e){} }
     if(evs.length){ nReplayBatchAsync(sid, st, evs, {silent:true}); }
     if(r.snapshot){ nHandle(sid, r.snapshot); }
     (r.pending||[]).forEach(function(ev){ nHandle(sid, ev); });

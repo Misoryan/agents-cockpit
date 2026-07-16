@@ -262,7 +262,7 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 先做真实浏览器/手机 visual smoke 清单或自动化，因为这是当前“多端流畅体验”剩余证据缺口。
+1. 先做真实浏览器/手机 visual smoke 清单或自动化，因为这是当前“多端流畅体验”剩余证据缺口。清单和记录模板已落到 `docs/codex-visual-smoke-checklist.md` 与 `tools/codex_visual_smoke_report.py`，下一步是尽量补浏览器自动化或实际跑一次双端记录。
 2. 做 terminalInteraction 长链路 E2E，补齐 CLI 中最容易出问题的交互命令场景。
 3. 做 Origin/CSRF hardening，避免远程暴露能力继续扩大后再补安全边界。
 4. 拆 `CodexSession` 的 request/notification/replay 边界，避免 Phase B/C 新功能再次加重主类。

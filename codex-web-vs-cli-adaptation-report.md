@@ -508,3 +508,12 @@ Immediate next commit candidate:
 - The same smoke also exercises the Agents Cockpit dynamic-tool passthrough handler with an explicit `smoke.echo -> mcp:codex_smoke/echo` mapping, verifying that it records matching `tool_use` / `tool_result` events and returns `DynamicToolCallResponse` content from the MCP result.
 - This closes the first real MCP E2E validation gap without depending on external services or the user's permanent Codex config.
 - Added `tests/check_codex_mcp_smoke_helpers.py` so the smoke helper structure is covered by the normal fast `tests/check_*.py` bundle, while the live E2E is run explicitly with `python tools\codex_mcp_smoke.py --cwd .`.
+
+
+## 21. 2026-07-17 visual smoke gate checkpoint
+
+- Added `docs/codex-visual-smoke-checklist.md` as the repeatable browser/mobile visual QA gate for Codex multi-client sync. It covers dual-client open, streaming sync, Plan/pending cards, tool card replay, image input, WebSocket disconnect recovery, stale-open catch-up, lifecycle actions, narrow mobile input, and long-history loading.
+- Added `tools/codex_visual_smoke_report.py` to generate a per-run Markdown evidence template with git status, Codex CLI version, protocol-smoke commands, V01-V10 scenario rows, and failure fields for close code / last seq / catch-up URL.
+- Expanded `window.NATIVE_DEBUG` logs for WebSocket close and replay catch-up paths so visual smoke runs can capture close code, retry delay, replay cursor, content presence, visibility state, catch-up URL, event count, snapshot state, and pending count without exposing raw conversation data.
+- Added `tests/check_codex_visual_smoke_report.py` so the checklist and template stay aligned with the current Phase A stability requirements.
+- This still does not claim that a real browser/mobile smoke has been executed in this checkpoint; it makes that user-visible gate explicit and repeatable before the next browser automation or manual QA pass.

@@ -468,3 +468,11 @@ Immediate next commit candidate:
 - The catch-up path is intentionally silent: it uses existing replay de-duplication and `nReplayBatchAsync(..., {silent:true})`, handles `state_snapshot` and pending cards, and does not clear the existing DOM. This targets stale-open WS cases separately from normal closed-socket polling.
 - Added per-stage `lastCatchupPoll` and `catchupInFlight` guards so the regular 4s `/api/sessions` signal loop cannot flood replay requests while a session is actively streaming.
 - Added frontend contract coverage in `tests/check_replay_loading_frontend.py` and a Node-level behavior check in `tests/check_native_replay_frontend_logic.py` to lock the `after=<lastSeq>` URL, silent replay behavior, open-WS trigger, and throttling.
+
+
+## 16. 2026-07-17 diff card checkpoint
+
+- Improved the `turn/diff/updated` display path on the frontend. Standalone tool results with `tool_use_id = "turn-diff"` now render as a dedicated unified diff card with file/add/delete/line summary instead of a generic `Result (...)` text blob.
+- Repeated `turn/diff/updated` snapshots now update the same standalone result card via `data-tuid`, reducing duplicate diff cards during long coding turns and keeping replay/live rendering less noisy across clients.
+- The generic tool-result renderer now detects diff-like content and uses the same diff card; non-diff output keeps the existing collapsed result block.
+- Added frontend static and Node helper checks for `nDiffResultHtml`, `nToolResultMarkup`, and `nRenderToolResult`, covering summary stats, add/delete line classes, and the special `turn-diff` path.

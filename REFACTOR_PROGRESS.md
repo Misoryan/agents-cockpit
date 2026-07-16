@@ -139,6 +139,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   session status polling can call `/api/nreplay?after=<lastSeq>` even while the
   WebSocket is still open, so stale-open sockets can recover missed events
   silently without clearing or repainting the conversation.
+- Standalone Codex diff results now render as update-in-place diff cards instead
+  of generic result blobs, so repeated `turn/diff/updated` snapshots replace the
+  same card and keep long coding turns closer to the CLI diff experience.
 
 ## Optional Follow-ups
 

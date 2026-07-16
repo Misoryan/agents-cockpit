@@ -67,6 +67,51 @@ function nToolResultHtml(txt){
   var _resSum='Result ('+_lines+' lines)';
   return '<details class="tres-det"><summary>'+nEsc(_resSum)+'</summary><pre>'+nEsc(txt)+'</pre></details>';
 }
+function nDiffStats(txt){
+  var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
+  var files={}, add=0, del=0;
+  function fkey(path){
+    path=String(path||"");
+    if(path.indexOf("a/")===0 || path.indexOf("b/")===0) path=path.slice(2);
+    return path;
+  }
+  lines.forEach(function(line){
+    if(line.indexOf("diff --git ")===0){
+      var parts=line.split(" ");
+      files[fkey(parts[3]||parts[2]||line)]=true;
+    }
+    else if(line.indexOf("+++ ")===0){ files[fkey(line.slice(4))]=true; }
+    else if(line.indexOf("+")===0){ add++; }
+    else if(line.indexOf("-")===0 && line.indexOf("--- ")!==0){ del++; }
+  });
+  var fileCount=Object.keys(files).filter(function(k){ return k && k!=="/dev/null"; }).length;
+  return {lines:lines.length, files:fileCount, add:add, del:del};
+}
+function nLooksLikeDiff(txt){
+  txt=String(txt==null?"":txt);
+  return txt.indexOf("diff --git ")>=0 || txt.indexOf(String.fromCharCode(10)+"@@ ")>=0 ||
+         txt.indexOf("--- ")===0 || txt.indexOf(String.fromCharCode(10)+"--- ")>=0;
+}
+function nDiffLineClass(line){
+  if(line.indexOf("@@")===0) return "du-hunk";
+  if(line.indexOf("diff --git ")===0 || line.indexOf("index ")===0 || line.indexOf("+++ ")===0 || line.indexOf("--- ")===0) return "du-file";
+  if(line.indexOf("+")===0) return "du-add";
+  if(line.indexOf("-")===0) return "du-del";
+  return "du-line";
+}
+function nDiffResultHtml(txt){
+  txt=String(txt==null?"":txt);
+  var st=nDiffStats(txt), summary="Diff";
+  if(st.files) summary+=" · "+st.files+" file"+(st.files>1?"s":"");
+  summary+=" · +"+st.add+" -"+st.del+" · "+st.lines+" lines";
+  var rows=txt.split(String.fromCharCode(10)).map(function(line){
+    return '<span class="du-line '+nDiffLineClass(line)+'">'+nEsc(line || " ")+'</span>';
+  }).join("");
+  return '<details class="tres-det diff-det" open><summary>'+nEsc(summary)+'</summary><pre class="diff-unified">'+rows+'</pre></details>';
+}
+function nToolResultMarkup(toolId, txt){
+  return (toolId==="turn-diff" || nLooksLikeDiff(txt)) ? nDiffResultHtml(txt) : nToolResultHtml(txt);
+}
 function nShellGroupKey(name){
   name=String(name||"").toLowerCase();
   return (name==="bash"||name==="powershell")?name:"";
@@ -94,6 +139,25 @@ function nFindToolResultHost(st, tuid){
   var root=st.turnCard||st.root, nodes=root.querySelectorAll('.tool-entry,.nmsg.tool');
   for(var i=0;i<nodes.length;i++){ if(nodes[i].dataset && nodes[i].dataset.tuid===String(tuid||"")) return nodes[i]; }
   return null;
+}
+function nFindStandaloneResultHost(st, tuid){
+  if(!tuid) return null;
+  var root=st.turnCard||st.root, nodes=root.querySelectorAll('.nmsg.result[data-tuid]');
+  for(var i=nodes.length-1;i>=0;i--){ if(nodes[i].dataset && nodes[i].dataset.tuid===String(tuid)) return nodes[i]; }
+  return null;
+}
+function nRenderToolResult(st, tuid, txt){
+  var html=nToolResultMarkup(tuid, txt);
+  var tu=nFindToolResultHost(st, tuid);
+  if(tu){
+    var r=tu.querySelector('.tres'); if(r){ r.innerHTML=html; }
+    return;
+  }
+  var old=nFindStandaloneResultHost(st, tuid);
+  if(old){ old.innerHTML=html; return; }
+  var d=document.createElement("div"); d.className="nmsg result";
+  if(tuid) d.dataset.tuid=String(tuid);
+  d.innerHTML=html; (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }
 function nExtractProposedPlan(text){
   text=String(text==null?"":text);

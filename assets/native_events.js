@@ -246,9 +246,7 @@ function nHandle(sid, obj){
         humanImages.push(b);
       } else if(b && b.type==="tool_result"){
         var c=b.content; var txt=typeof c==="string"?c:JSON.stringify(c,null,2);
-        var tu=nFindToolResultHost(st, b.tool_use_id);
-        if(tu){ var r=tu.querySelector('.tres'); if(r){ r.innerHTML=nToolResultHtml(txt); } }
-        else { nAddRow(st, "result", nToolResultHtml(txt)); }
+        nRenderToolResult(st, b.tool_use_id, txt);
       }
     });
     if(humanParts.length || humanImages.length){ nAddHumanContent(st,humanParts.join("\n"), humanImages, sid); }

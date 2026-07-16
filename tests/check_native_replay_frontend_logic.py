@@ -11,14 +11,19 @@ def main():
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
-let ctx = {console, setTimeout, clearTimeout};
+let ctx = {console, setTimeout, clearTimeout, window: {}};
 vm.createContext(ctx);
+vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
 const {
   nMarkRendered,
   nReplayUnseenEvents,
   nReplayEventKey,
-  nReplayBatchAsync
+  nReplayBatchAsync,
+  nDiffResultHtml,
+  nDiffStats,
+  nToolResultMarkup
 } = ctx;
 
 let st = {renderedEvents: {}, lastSeq: 0};
@@ -54,6 +59,16 @@ nReplayBatchAsync("s1", st2, [
 ], {silent:true});
 assert.deepStrictEqual(handled, ["seq:2", "seq:3"]);
 assert.strictEqual(st2.lastSeq, 3);
+
+const sampleDiff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@\n-old\n+new";
+assert.deepStrictEqual(JSON.parse(JSON.stringify(nDiffStats(sampleDiff))), {lines:6, files:1, add:1, del:1});
+const diffHtml = nDiffResultHtml(sampleDiff);
+assert.ok(diffHtml.includes("Diff"));
+assert.ok(diffHtml.includes("diff-unified"));
+assert.ok(diffHtml.includes("du-add"));
+assert.ok(diffHtml.includes("du-del"));
+assert.ok(nToolResultMarkup("turn-diff", sampleDiff).includes("diff-unified"));
+assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
 
 (async function(){
   let catchupEvents = [];

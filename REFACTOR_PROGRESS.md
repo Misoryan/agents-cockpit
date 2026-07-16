@@ -121,6 +121,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - MCP status/resource browsing now also emits replayable tool_use/tool_result
   pairs, so every connected client sees the same structured result card instead
   of relying only on hidden notice details.
+- MCP status/resource result cards now get a dedicated browser renderer with
+  server/resource/tool sections and "Read" actions that call the existing
+  `/mcp-resource` backend path, keeping resource browsing replay-safe and
+  multi-client visible.
 - Codex dynamic tool calls now have a safe first passthrough slice:
   `[codex_dynamic_tools]` maps explicit `namespace.tool`, `namespace.*`, or
   bare `tool` keys to `mcp:<server>/<tool>` targets; mapped `item/tool/call`

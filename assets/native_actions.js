@@ -268,6 +268,14 @@ $("nativeinput").addEventListener("paste", function(e){
   if(files.length){ e.preventDefault(); nAddImageFiles(files); }
 });
 $("nativemsgs").addEventListener("scroll", nUpdateScrollButton);
+$("nativemsgs").addEventListener("click", function(e){
+  var btn=e.target && e.target.closest ? e.target.closest(".mcp-action") : null;
+  if(!btn) return;
+  var command=btn.dataset ? (btn.dataset.mcpCommand||"") : "";
+  if(!command || !currentSid) return;
+  e.preventDefault();
+  nativeSlashCommand(command, nativeStage(currentSid));
+});
 $("scrollbottom").addEventListener("click", nJumpBottom);
 document.addEventListener("keydown", function(e){
   if(e.ctrlKey && e.key==="Tab"){ e.preventDefault(); switchTab(e.shiftKey?-1:1); }

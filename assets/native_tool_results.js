@@ -185,9 +185,95 @@ function nJsonResultPreview(obj){
   if(!items.length) return "";
   return '<div class="json-preview">'+items.map(function(t){ return '<div>'+nEsc(t)+'</div>'; }).join("")+'</div>';
 }
+function nMcpSlashArg(value){
+  value=String(value==null?"":value);
+  return '"'+value.replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"';
+}
+function nMcpActionButton(command, label){
+  if(!command) return "";
+  return '<button type="button" class="mcp-action" data-mcp-command="'+nEscAttr(command)+'">'+nEsc(label||"Open")+'</button>';
+}
+function nMcpCountLabel(count, one, many){
+  count=Number(count)||0;
+  return count+" "+(count===1?one:many);
+}
+function nMcpResourceRows(server, resources){
+  resources=Array.isArray(resources)?resources:[];
+  if(!resources.length) return '<div class="mcp-empty">No resources</div>';
+  var max=20;
+  var rows=resources.slice(0,max).map(function(res){
+    res=res||{};
+    var name=res.name||res.title||res.uri||"resource", uri=res.uri||"", desc=res.description||"", mime=res.mimeType||"";
+    var meta=[mime, desc].filter(Boolean).join(" 路 ");
+    var cmd=uri?('/mcp-resource '+nMcpSlashArg(server)+" "+nMcpSlashArg(uri)):"";
+    return '<div class="mcp-row"><div class="mcp-row-main"><b>'+nEsc(name)+'</b><span>'+nEsc(uri)+'</span>'+(meta?'<small>'+nEsc(meta)+'</small>':'')+'</div>'+nMcpActionButton(cmd,"Read")+'</div>';
+  }).join("");
+  if(resources.length>max) rows+='<div class="mcp-more">+'+(resources.length-max)+' more resources</div>';
+  return rows;
+}
+function nMcpTemplateRows(templates){
+  templates=Array.isArray(templates)?templates:[];
+  if(!templates.length) return '<div class="mcp-empty">No resource templates</div>';
+  var max=12;
+  var rows=templates.slice(0,max).map(function(tpl){
+    tpl=tpl||{};
+    var name=tpl.name||tpl.title||tpl.uriTemplate||"template", uri=tpl.uriTemplate||"", meta=[tpl.mimeType||"", tpl.description||""].filter(Boolean).join(" 路 ");
+    return '<div class="mcp-row passive"><div class="mcp-row-main"><b>'+nEsc(name)+'</b><span>'+nEsc(uri)+'</span>'+(meta?'<small>'+nEsc(meta)+'</small>':'')+'</div></div>';
+  }).join("");
+  if(templates.length>max) rows+='<div class="mcp-more">+'+(templates.length-max)+' more templates</div>';
+  return rows;
+}
+function nMcpToolRows(tools){
+  tools=Array.isArray(tools)?tools:[];
+  if(!tools.length) return '<div class="mcp-empty">No tools</div>';
+  var max=16;
+  var rows=tools.slice(0,max).map(function(tool){
+    tool=tool||{};
+    return '<div class="mcp-row passive"><div class="mcp-row-main"><b>'+nEsc(tool.name||"tool")+'</b>'+(tool.description?'<span>'+nEsc(tool.description)+'</span>':'')+'</div></div>';
+  }).join("");
+  if(tools.length>max) rows+='<div class="mcp-more">+'+(tools.length-max)+' more tools</div>';
+  return rows;
+}
+function nMcpRawDetails(obj){
+  var pretty;
+  try{ pretty=JSON.stringify(obj,null,2); }catch(e){ pretty=""; }
+  return pretty?'<details class="mcp-raw"><summary>Raw JSON</summary><pre class="json-result">'+nEsc(pretty)+'</pre></details>':"";
+}
+function nMcpServerCard(server){
+  server=server||{};
+  var name=server.name||"MCP server", auth=server.authStatus||"unknown";
+  var tools=server.toolList||[], resources=server.resourceList||[], templates=server.resourceTemplateList||[];
+  var toolCount=server.tools!=null?server.tools:tools.length;
+  var resCount=server.resources!=null?server.resources:resources.length;
+  var tplCount=server.resourceTemplates!=null?server.resourceTemplates:templates.length;
+  var browse=nMcpActionButton('/mcp-resources '+nMcpSlashArg(name), "Browse");
+  var body="";
+  if(resources.length){ body+='<div class="mcp-section"><h4>Resources</h4>'+nMcpResourceRows(name, resources)+'</div>'; }
+  if(templates.length){ body+='<div class="mcp-section"><h4>Templates</h4>'+nMcpTemplateRows(templates)+'</div>'; }
+  if(tools.length){ body+='<div class="mcp-section"><h4>Tools</h4>'+nMcpToolRows(tools)+'</div>'; }
+  return '<div class="mcp-server-card"><div class="mcp-card-head"><div><b>'+nEsc(name)+'</b><span>'+nEsc(auth)+'</span></div><div class="mcp-counts"><span>'+nMcpCountLabel(toolCount,"tool","tools")+'</span><span>'+nMcpCountLabel(resCount,"resource","resources")+'</span><span>'+nMcpCountLabel(tplCount,"template","templates")+'</span></div>'+browse+'</div>'+body+'</div>';
+}
+function nMcpStatusResultHtml(obj, toolName){
+  var name=String(toolName||"").toLowerCase();
+  var isStatus=name==="mcpserverstatus.list" || (obj && Array.isArray(obj.servers));
+  var isResources=name==="mcpserverstatus.resources" || (obj && obj.server && (Array.isArray(obj.resources)||Array.isArray(obj.resourceTemplates)));
+  if(!isStatus && !isResources) return "";
+  if(isResources){
+    var server=obj.server||"MCP server", resources=obj.resources||[], templates=obj.resourceTemplates||[], tools=obj.tools||[];
+    var summary="MCP Resources | "+server+" | "+nMcpCountLabel(resources.length,"resource","resources")+" | "+nMcpCountLabel(templates.length,"template","templates")+" | "+nMcpCountLabel(tools.length,"tool","tools");
+    return '<details class="tres-det mcp-det" open><summary>'+nEsc(summary)+'</summary><div class="mcp-resource-card"><div class="mcp-card-head"><div><b>'+nEsc(server)+'</b><span>'+nEsc(obj.authStatus||"unknown")+'</span></div></div><div class="mcp-section"><h4>Resources</h4>'+nMcpResourceRows(server, resources)+'</div><div class="mcp-section"><h4>Resource templates</h4>'+nMcpTemplateRows(templates)+'</div><div class="mcp-section"><h4>Tools</h4>'+nMcpToolRows(tools)+'</div>'+nMcpRawDetails(obj)+'</div></details>';
+  }
+  var servers=Array.isArray(obj.servers)?obj.servers:[];
+  var sum="MCP Status | "+nMcpCountLabel(servers.length,"server","servers");
+  if(obj.nextCursor) sum+=" | more pages";
+  var body=servers.length?servers.map(nMcpServerCard).join(""):'<div class="mcp-empty">No MCP servers returned</div>';
+  return '<details class="tres-det mcp-det" open><summary>'+nEsc(sum)+'</summary><div class="mcp-status-card">'+body+nMcpRawDetails(obj)+'</div></details>';
+}
 function nJsonResultHtml(txt, toolName){
   var obj=nTryJson(txt);
   if(obj==null) return "";
+  var mcp=nMcpStatusResultHtml(obj, toolName);
+  if(mcp) return mcp;
   var pretty;
   try{ pretty=JSON.stringify(obj,null,2); }catch(e){ pretty=txt; }
   var summary=nJsonResultSummary(obj, toolName);

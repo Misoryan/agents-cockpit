@@ -92,14 +92,14 @@ Browser / Android WebView
 - sleep/contextCompaction/imageGeneration/imageView 有专用 compact card。
 - MCP 手动调用、status/resource 浏览和 dynamic allowlist passthrough 有真实或 helper 级验证路径。
 - terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。
-- `mcpServer/startupStatus/updated` 和 `mcpServer/oauthLogin/completed` 已变成可见 notice；`/mcp-status [full|tools]` 和 `/mcp-resources <server>` 可用 `mcpServerStatus/list` 浏览服务器、auth、tools、resources 和 templates，并同步成 replayable tool result card。
+- `mcpServer/startupStatus/updated` 和 `mcpServer/oauthLogin/completed` 已变成可见 notice；`/mcp-status [full|tools]` 和 `/mcp-resources <server>` 可用 `mcpServerStatus/list` 浏览服务器、auth、tools、resources 和 templates，并同步成 replayable 专用 MCP result card，资源行可直接触发 `/mcp-resource`。
 
 仍缺：
 
 - command execution card 还不如 CLI 清晰：cwd、duration、stdout/stderr 分区、exit code、长输出折叠、失败摘要仍可加强。
 - 多文件/大 diff 缺文件级导航、折叠、定位和 patch summary。
 - terminalInteraction 仍缺真实 Codex 长时间命令、多轮 stdin、断线恢复、移动端输入的完整 E2E。
-- MCP 已有 status/resource browser 和结构化结果卡第一刀；仍缺真正的 OAuth/login 闭环、资源点击读取 UI、分页/搜索和 richer MCP admin 面板。
+- MCP 已有 status/resource browser、结构化结果卡和资源读取按钮第一刀；仍缺真正的 OAuth/login 闭环、分页/搜索和 richer MCP admin 面板。
 
 ### 3.4 会话生命周期与历史
 
@@ -254,7 +254,7 @@ Browser / Android WebView
 - command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区和大成功输出折叠。）
 - file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠。）
 - terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke，以及 standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。）
-- MCP 增加 startup status、resource browser、OAuth/login 降级提示。（第一刀已落地：startup/OAuth notification 可见，`/mcp-status` 与 `/mcp-resources` 调用 `mcpServerStatus/list` 展示 auth/tools/resources/templates，并产生多端 replayable tool result card；真正 OAuth/login 闭环、分页/搜索和资源点击读取仍待做。）
+- MCP 增加 startup status、resource browser、OAuth/login 降级提示。（第一刀已落地：startup/OAuth notification 可见，`/mcp-status` 与 `/mcp-resources` 调用 `mcpServerStatus/list` 展示 auth/tools/resources/templates，并产生多端 replayable 专用 result card；资源行可直接调用 `/mcp-resource`，真正 OAuth/login 闭环、分页/搜索仍待做。）
 
 验收：用户能从 Web 卡片判断工具做了什么、成功/失败原因和下一步，而不是只能读原始事件。
 

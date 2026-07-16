@@ -778,3 +778,9 @@ Immediate next commit candidate:
 - MCP inventory now shows up as the same structured JSON result cards used for other Codex tool outputs, so reconnecting or second clients do not depend on a transient notice detail panel to inspect resources/tools.
 - Extended MCP status helper tests to verify the emitted result-card payloads while keeping the existing `mcpServerStatus/list` request shape and slash command results unchanged.
 - Extended the live MCP smoke to call `mcpServerStatus/list` against the temporary stdio server, so the status path is verified alongside direct MCP tool calls and dynamic-tool passthrough.
+
+## 59. 2026-07-17 MCP resource browser card checkpoint
+
+- Added a dedicated frontend renderer for `mcpServerStatus.list` and `mcpServerStatus.resources` JSON results in `assets/native_tool_results.js`.
+- MCP inventory now renders as server/resource/template/tool sections instead of a raw JSON block, and resource rows include `Read` actions wired to the existing `/mcp-resource <server> <uri>` slash/backend path.
+- Added delegated click handling in `assets/native_actions.js`, plus CSS and frontend tests, so the resource browser remains replay-safe and usable from reconnected or second clients.

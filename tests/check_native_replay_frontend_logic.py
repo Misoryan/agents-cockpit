@@ -31,6 +31,7 @@ const {
   nDiffStats,
   nToolResultMarkup,
   nJsonResultHtml,
+  nMcpStatusResultHtml,
   nTerminalCardHtml,
   nSpecialToolBody,
   nStructuredToolBody
@@ -124,6 +125,33 @@ assert.ok(jsonHtml.includes("JSON · demo.tool"));
 assert.ok(jsonHtml.includes("json-preview"));
 assert.ok(jsonHtml.includes("json-result"));
 assert.ok(nToolResultMarkup("mcp-tool-demo", '{"error":"bad"}', "demo.tool").includes("JSON · demo.tool · error"));
+const mcpStatusHtml = nMcpStatusResultHtml({
+  servers: [{
+    name: "docs",
+    authStatus: "unsupported",
+    tools: 1,
+    resources: 1,
+    resourceTemplates: 1,
+    resourceList: [{name:"Guide", uri:"file://guide.md", mimeType:"text/markdown"}],
+    toolList: [{name:"search", description:"Search docs"}],
+    resourceTemplateList: [{name:"Issue", uriTemplate:"issue://{id}"}]
+  }]
+}, "mcpServerStatus.list");
+assert.ok(mcpStatusHtml.includes("MCP Status"));
+assert.ok(mcpStatusHtml.includes("mcp-server-card"));
+assert.ok(mcpStatusHtml.includes("data-mcp-command"));
+assert.ok(mcpStatusHtml.includes("/mcp-resource"));
+assert.ok(mcpStatusHtml.includes("file://guide.md"));
+const mcpResourceHtml = nToolResultMarkup("mcp-resources-docs", JSON.stringify({
+  server: "docs",
+  authStatus: "unsupported",
+  resources: [{name:"Guide", uri:"file://guide.md"}],
+  resourceTemplates: [{name:"Issue", uriTemplate:"issue://{id}"}],
+  tools: [{name:"search", description:"Search docs"}]
+}), "mcpServerStatus.resources");
+assert.ok(mcpResourceHtml.includes("MCP Resources"));
+assert.ok(mcpResourceHtml.includes("mcp-resource-card"));
+assert.ok(mcpResourceHtml.includes("/mcp-resource"));
 assert.ok(nSpecialToolBody("sleep", {durationMs: 1200, reason: "wait"}).includes("sleep-card"));
 assert.ok(nSpecialToolBody("contextcompaction", {status: "started", summary: "compact"}).includes("compact-card"));
 assert.ok(nSpecialToolBody("imagegeneration", {prompt: "a cat", size: "1024x1024"}).includes("image-card"));

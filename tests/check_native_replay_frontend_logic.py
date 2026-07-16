@@ -24,7 +24,9 @@ const {
   nReplayEventKey,
   nReplayBatchAsync,
   nDiffResultHtml,
+  nDiffFileSections,
   nDiffFileListHtml,
+  nDiffPatchSummaryHtml,
   nDiffStats,
   nToolResultMarkup,
   nJsonResultHtml,
@@ -68,11 +70,16 @@ assert.strictEqual(st2.lastSeq, 3);
 
 const sampleDiff = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@\n-old\n+new";
 assert.deepStrictEqual(JSON.parse(JSON.stringify(nDiffStats(sampleDiff))), {lines:6, files:1, add:1, del:1, fileList:["a.py"]});
+const sampleSections = nDiffFileSections(sampleDiff);
+assert.strictEqual(sampleSections.length, 1);
+assert.deepStrictEqual(JSON.parse(JSON.stringify({path:sampleSections[0].path, add:sampleSections[0].add, del:sampleSections[0].del})), {path:"a.py", add:1, del:1});
 const diffHtml = nDiffResultHtml(sampleDiff);
 assert.ok(diffHtml.includes("Diff"));
 assert.ok(diffHtml.includes("diff-unified"));
+assert.ok(diffHtml.includes("diff-patch-summary"));
 assert.ok(diffHtml.includes("diff-file-list"));
 assert.ok(diffHtml.includes("diff-file-chip"));
+assert.ok(diffHtml.includes("diff-file-chip-stat"));
 assert.ok(diffHtml.includes("du-add"));
 assert.ok(diffHtml.includes("du-del"));
 assert.ok(nToolResultMarkup("turn-diff", sampleDiff).includes("diff-unified"));
@@ -81,13 +88,19 @@ const multiDiff = Array.from({length:10}, (_, i) => {
   return "diff --git a/" + name + " b/" + name + "\n--- a/" + name + "\n+++ b/" + name + "\n@@\n-old" + i + "\n+new" + i;
 }).join("\n");
 const multiStats = nDiffStats(multiDiff);
+const multiSections = nDiffFileSections(multiDiff);
 assert.strictEqual(multiStats.files, 10);
+assert.strictEqual(multiSections.length, 10);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(multiStats.fileList.slice(0,3))), ["src/file0.js", "src/file1.js", "src/file2.js"]);
 const multiHtml = nDiffResultHtml(multiDiff);
 assert.ok(multiHtml.includes("diff-large"));
 assert.ok(!multiHtml.includes("diff-det\" open"));
+assert.ok(multiHtml.includes("diff-file-sections"));
+assert.ok(multiHtml.includes("diff-file-section"));
+assert.ok(multiHtml.includes("largest: src/file0.js +1 -1"));
 assert.ok(multiHtml.includes("+2 more"));
-assert.ok(nDiffFileListHtml(multiStats.fileList).includes("src/file7.js"));
+assert.ok(nDiffFileListHtml(multiSections).includes("src/file7.js"));
+assert.ok(nDiffPatchSummaryHtml(multiStats, multiSections).includes("10 files"));
 assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("Command"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("exit 2"));

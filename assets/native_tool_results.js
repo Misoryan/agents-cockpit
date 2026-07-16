@@ -57,26 +57,46 @@ function nDiffCleanPath(path){
   if(path.indexOf("a/")===0 || path.indexOf("b/")===0) path=path.slice(2);
   return path;
 }
-function nDiffAddFile(files, path){
+function nDiffGitPath(line){
+  var parts=String(line||"").split(" ");
+  return nDiffCleanPath(parts[3]||parts[2]||"patch") || "patch";
+}
+function nDiffSetSectionPath(sec, path, prefer){
   path=nDiffCleanPath(path);
-  if(!path || path==="/dev/null" || files.seen[path]) return;
-  files.seen[path]=true;
-  files.list.push(path);
+  if(!path || path==="/dev/null") return;
+  if(prefer || !sec.path || sec.path==="patch") sec.path=path;
+}
+function nDiffFileSections(txt){
+  var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
+  var sections=[], cur=null;
+  function start(path){
+    if(cur && cur.lines.length) sections.push(cur);
+    cur={path:path||"patch", lines:[], add:0, del:0, status:""};
+  }
+  lines.forEach(function(line){
+    if(line.indexOf("diff --git ")===0) start(nDiffGitPath(line));
+    if(!cur) start("patch");
+    cur.lines.push(line);
+    if(line.indexOf("+++ ")===0) nDiffSetSectionPath(cur, line.slice(4), true);
+    else if(line.indexOf("--- ")===0) nDiffSetSectionPath(cur, line.slice(4), false);
+    else if(line.indexOf("new file mode")===0) cur.status="added";
+    else if(line.indexOf("deleted file mode")===0) cur.status="deleted";
+    else if(line.indexOf("rename from ")===0 || line.indexOf("rename to ")===0) cur.status="renamed";
+    else if(line.indexOf("Binary files ")===0) cur.status="binary";
+    if(line.indexOf("+")===0 && line.indexOf("+++ ")!==0) cur.add++;
+    else if(line.indexOf("-")===0 && line.indexOf("--- ")!==0) cur.del++;
+  });
+  if(cur && cur.lines.length) sections.push(cur);
+  return sections;
 }
 function nDiffStats(txt){
   var lines=String(txt==null?"":txt).split(String.fromCharCode(10));
-  var files={seen:{}, list:[]}, add=0, del=0;
-  lines.forEach(function(line){
-    if(line.indexOf("diff --git ")===0){
-      var parts=line.split(" ");
-      nDiffAddFile(files, parts[3]||parts[2]||line);
-    }
-    else if(line.indexOf("+++ ")===0){ nDiffAddFile(files, line.slice(4)); }
-    else if(line.indexOf("--- ")===0){ nDiffAddFile(files, line.slice(4)); }
-    else if(line.indexOf("+")===0){ add++; }
-    else if(line.indexOf("-")===0 && line.indexOf("--- ")!==0){ del++; }
+  var seen={}, fileList=[], add=0, del=0;
+  nDiffFileSections(txt).forEach(function(sec){
+    add+=sec.add; del+=sec.del;
+    if(sec.path && !seen[sec.path]){ seen[sec.path]=true; fileList.push(sec.path); }
   });
-  return {lines:lines.length, files:files.list.length, add:add, del:del, fileList:files.list};
+  return {lines:lines.length, files:fileList.length, add:add, del:del, fileList:fileList};
 }
 function nLooksLikeDiff(txt){
   txt=String(txt==null?"":txt);
@@ -90,25 +110,51 @@ function nDiffLineClass(line){
   if(line.indexOf("-")===0) return "du-del";
   return "du-line";
 }
+function nDiffFileLabel(item){
+  if(typeof item==="string") return {path:item, add:null, del:null, status:""};
+  return {path:(item&&item.path)||"patch", add:item&&item.add, del:item&&item.del, status:(item&&item.status)||""};
+}
 function nDiffFileListHtml(files){
   files=Array.isArray(files)?files:[];
   if(!files.length) return "";
-  var max=8, shown=files.slice(0,max).map(function(path){
-    return '<span class="diff-file-chip">'+nEsc(path)+'</span>';
+  var max=8, shown=files.slice(0,max).map(function(item){
+    var f=nDiffFileLabel(item), stats=(f.add!=null||f.del!=null)?'<span class="diff-file-chip-stat">+'+(f.add||0)+' -'+(f.del||0)+'</span>':"";
+    var status=f.status?'<span class="diff-file-chip-status">'+nEsc(f.status)+'</span>':"";
+    return '<span class="diff-file-chip">'+nEsc(f.path)+stats+status+'</span>';
   }).join("");
   var more=files.length>max?'<span class="diff-file-more">+'+(files.length-max)+' more</span>':"";
   return '<div class="diff-file-list">'+shown+more+'</div>';
 }
-function nDiffResultHtml(txt){
-  txt=String(txt==null?"":txt);
-  var st=nDiffStats(txt), summary="Diff";
-  if(st.files) summary+=" · "+st.files+" file"+(st.files>1?"s":"");
-  summary+=" · +"+st.add+" -"+st.del+" · "+st.lines+" lines";
-  var isLarge=st.lines>220 || st.files>8;
-  var rows=txt.split(String.fromCharCode(10)).map(function(line){
+function nDiffPatchSummaryHtml(st, sections){
+  var largest=null;
+  sections.forEach(function(sec){ if(!largest || (sec.add+sec.del)>(largest.add+largest.del)) largest=sec; });
+  var bits=['<span>'+st.files+' file'+(st.files===1?'':'s')+'</span>','<span>+'+st.add+' -'+st.del+'</span>','<span>'+st.lines+' lines</span>'];
+  if(largest && st.files>1) bits.push('<span>largest: '+nEsc(largest.path)+' +'+largest.add+' -'+largest.del+'</span>');
+  return '<div class="diff-patch-summary">'+bits.join('')+'</div>';
+}
+function nDiffRowsHtml(lines){
+  return lines.map(function(line){
     return '<span class="du-line '+nDiffLineClass(line)+'">'+nEsc(line || " ")+'</span>';
   }).join("");
-  return '<details class="tres-det diff-det'+(isLarge?' diff-large':'')+'"'+(isLarge?'':' open')+'><summary>'+nEsc(summary)+'</summary>'+nDiffFileListHtml(st.fileList)+'<pre class="diff-unified">'+rows+'</pre></details>';
+}
+function nDiffBodyHtml(sections, isLarge){
+  if(sections.length<=1){
+    var only=sections[0]||{lines:[""]};
+    return '<pre class="diff-unified">'+nDiffRowsHtml(only.lines)+'</pre>';
+  }
+  return '<div class="diff-file-sections">'+sections.map(function(sec){
+    var stat='+'+sec.add+' -'+sec.del+(sec.status?' | '+sec.status:'');
+    var openAttr=(!isLarge && sec.lines.length<=120)?' open':'';
+    return '<details class="diff-file-section"'+openAttr+'><summary><span class="diff-file-title">'+nEsc(sec.path||"patch")+'</span><span class="diff-file-stat">'+nEsc(stat)+'</span></summary><pre class="diff-unified">'+nDiffRowsHtml(sec.lines)+'</pre></details>';
+  }).join("")+'</div>';
+}
+function nDiffResultHtml(txt){
+  txt=String(txt==null?"":txt);
+  var sections=nDiffFileSections(txt), st=nDiffStats(txt), summary="Diff";
+  if(st.files) summary+=" | "+st.files+" file"+(st.files>1?"s":"");
+  summary+=" | +"+st.add+" -"+st.del+" | "+st.lines+" lines";
+  var isLarge=st.lines>220 || st.files>8;
+  return '<details class="tres-det diff-det'+(isLarge?' diff-large':'')+'"'+(isLarge?'':' open')+'><summary>'+nEsc(summary)+'</summary>'+nDiffPatchSummaryHtml(st, sections)+nDiffFileListHtml(sections)+'<div class="diff-body">'+nDiffBodyHtml(sections, isLarge)+'</div></details>';
 }
 function nTryJson(txt){
   txt=String(txt==null?"":txt).trim();

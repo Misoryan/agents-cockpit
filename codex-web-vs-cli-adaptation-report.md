@@ -736,3 +736,10 @@ Immediate next commit candidate:
 - Added shared CSS for diff file chips and unified diff bodies in `index.html` so standalone result cards and tool-embedded results render the same summary affordance.
 - Updated frontend logic and static-contract tests to lock the new `fileList`, `diff-file-list`, `diff-file-chip`, and `diff-large` behavior.
 - This is the first Phase 4 file-change slice after command-result cards; deeper per-file navigation and richer patch summaries can build on this parser without touching replay semantics.
+
+## 53. 2026-07-17 Codex per-file diff section checkpoint
+
+- Extended diff parsing in `assets/native_tool_results.js` from a flat file list into per-file sections with per-file `+/-` counts and simple status labels for added/deleted/renamed/binary patches.
+- Diff result cards now show a patch summary row, file chips with per-file stats, and nested per-file sections; large multi-file diffs keep the outer card closed and also keep file sections collapsed until opened.
+- Updated `index.html` styling plus frontend logic/static tests so `diff-patch-summary`, `diff-file-sections`, and `diff-file-section` stay covered.
+- This advances the Phase 4 file-change work from "large blob with chips" toward CLI-like file-level navigation without changing backend replay events.

@@ -526,6 +526,13 @@ Immediate next commit candidate:
 - This upgrades Phase A evidence from protocol-only to rendered-browser evidence for the most important user-visible invariant: multi-client content stays synchronized and reconnect recovery appends missing content instead of repainting the whole conversation.
 - Added `tests/check_codex_browser_smoke_helpers.py` to keep the smoke's login, `showNativeSession`, forced `ws.close()`, `/api/nslash`, and DOM-preservation assertions present in the fast test bundle.
 
+## 22.1. 2026-07-17 narrow browser smoke checkpoint
+
+- Extended `tools/codex_browser_smoke.py` so the mirror tab defaults to a phone-like 390x844 viewport through Chrome DevTools `Emulation.setDeviceMetricsOverride` while the primary tab stays desktop-sized.
+- The rendered smoke now records viewport/layout evidence and fails if the narrow mirror cannot see the native composer, input, submit button, message stage, or expected mobile sidebar drawer positioning.
+- This does not replace real phone/manual background-foreground QA, but it closes the first repeatable headless narrow-screen evidence gap for reconnect-without-flicker and multi-client content sync.
+- Updated `tests/check_codex_browser_smoke_helpers.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so the narrow-layout contract remains visible in the fast checks and current plan.
+
 
 ## 23. 2026-07-17 terminal interaction smoke checkpoint
 

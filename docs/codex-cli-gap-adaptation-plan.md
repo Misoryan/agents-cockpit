@@ -124,11 +124,11 @@ Browser / Android WebView
 - 前端对 live/replay 使用统一去重 key，不清 DOM 恢复状态。
 - `state_snapshot` 能收敛 stale thinking/turn UI。
 - open-WS catch-up polling 能在 socket 显示 open 但漏事件时静默补增量。
-- `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层与 headless 双页层；browser smoke 会标记既有 DOM 节点并验证重连后未被清空重建。
+- `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层、headless 双页层与默认窄屏/mobile mirror；browser smoke 会标记既有 DOM 节点并验证重连后未被清空重建，同时检查窄屏 composer/input/submit 和移动抽屉布局仍可用。
 
 仍缺：
 
-- 手机真实浏览器、窄屏、长会话、后台/前台切换的 visual smoke 记录还需要补。
+- headless 窄屏/mobile mirror 已进入 browser smoke；真实手机浏览器、长会话、后台/前台切换的人工 visual smoke 记录还需要补。
 - WS 1006 根因不能假定已根治；当前策略是“降低概率 + 即使断线也不全量刷新/不重复”。
 - replay snapshot 与 timeline merge 的极端顺序仍需要 trace fixture。
 
@@ -200,7 +200,7 @@ Browser / Android WebView
 
 - 每次 Codex CLI 升级后运行 `python tools\app_server_protocol_matrix.py --out docs\app-server-protocol-matrix.md`。
 - 保留完整验证 bundle：`py_compile`、所有 `tests/check_*.py`、全部 JS `node --check`、`git diff --check`。
-- 行为 smoke 分层：WS 双客户端、MCP、browser 双页、terminalInteraction；手机/窄屏走 visual checklist。
+- 行为 smoke 分层：WS 双客户端、MCP、browser 双页 + 窄屏 mirror、terminalInteraction；真实手机走 visual checklist。
 
 验收：文档、矩阵、测试、smoke 口径一致；不再凭印象判断 CLI parity。
 

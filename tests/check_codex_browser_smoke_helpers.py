@@ -23,6 +23,13 @@ def main():
         "/api/login",
         "showNativeSession",
         "window.NATIVE_DEBUG = true",
+        "Emulation.setDeviceMetricsOverride",
+        "--primary-width",
+        "--mirror-width",
+        "primary_layout_ok",
+        "narrow_layout_ok",
+        "composerVisible",
+        "sidebarPosition",
         "/api/nslash",
         "ws.close()",
         "_mark_first_message_node",
@@ -33,6 +40,8 @@ def main():
         "after[\"childCount\"] >= before[\"childCount\"]",
         "second_name in after[\"text\"]",
         "second_name in primary[\"text\"]",
+        "_layout_ok(after, expected_mobile=not args.mirror_desktop)",
+        "_layout_ok(primary, expected_desktop=bool(primary_viewport))",
     ]
     missing = [token for token in required if token not in src]
     assert not missing, "browser smoke missing expected contracts: %r" % missing

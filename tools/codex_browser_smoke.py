@@ -4,9 +4,10 @@
 
 This complements the socket-level smoke by rendering the real web UI in two
 headless Chromium/Edge tabs. It verifies that two browser clients can attach to
-the same Codex session, receive the same backend-confirmed notice, and keep
-existing DOM content while one WebSocket is deliberately closed and recovered
-through the replay/catch-up path.
+the same Codex session, receive the same backend-confirmed notice, keep the
+mirror tab usable in a narrow/mobile viewport, and preserve existing DOM content
+while one WebSocket is deliberately closed and recovered through the
+replay/catch-up path.
 """
 import argparse
 import base64
@@ -320,11 +321,37 @@ def _attach_page(page, sid, title):
     _wait_eval(page, "!!(window.nativeWs && nativeWs[%s] && nativeWs[%s].readyState === 1)" % (escaped_sid, escaped_sid), True, timeout=12)
 
 
+def _set_viewport(page, width, height, mobile=False, device_scale_factor=1):
+    width = int(width or 0)
+    height = int(height or 0)
+    if width <= 0 or height <= 0:
+        return None
+    params = {
+        "width": width,
+        "height": height,
+        "deviceScaleFactor": float(device_scale_factor or 1),
+        "mobile": bool(mobile),
+    }
+    page.call("Emulation.setDeviceMetricsOverride", params)
+    return params
+
+
 def _page_summary(page, sid):
     escaped_sid = json.dumps(sid)
     return page.eval("""(function(){
       var st=(window.nativeStages||{})[%s];
       if(!st || !st.root) return null;
+      function visible(sel){
+        var el=document.querySelector(sel);
+        if(!el) return false;
+        var r=el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+      }
+      var stage=document.getElementById('nativemsgs');
+      var send=document.getElementById('nativesend');
+      var input=document.getElementById('nativeinput');
+      var sidebar=document.getElementById('sidebar');
+      var stageRect=stage ? stage.getBoundingClientRect() : null;
       return {
         sid: %s,
         lastSeq: st.lastSeq || 0,
@@ -333,9 +360,41 @@ def _page_summary(page, sid):
         text: st.root.innerText || "",
         firstNodeMarker: st.root.children[0] && st.root.children[0].dataset ? (st.root.children[0].dataset.smokeMarker || "") : "",
         planMode: !!st.planMode,
-        wsState: (window.nativeWs && nativeWs[%s]) ? nativeWs[%s].readyState : -1
+        wsState: (window.nativeWs && nativeWs[%s]) ? nativeWs[%s].readyState : -1,
+        viewport: {
+          width: window.innerWidth || 0,
+          height: window.innerHeight || 0,
+          dpr: window.devicePixelRatio || 1,
+          visualWidth: window.visualViewport ? window.visualViewport.width : 0,
+          visualHeight: window.visualViewport ? window.visualViewport.height : 0
+        },
+        mobileLayout: {
+          composerVisible: visible('#nativesend'),
+          inputVisible: visible('#nativeinput'),
+          submitVisible: visible('#nativesubmit'),
+          stageWidth: stageRect ? Math.round(stageRect.width) : 0,
+          stageHeight: stageRect ? Math.round(stageRect.height) : 0,
+          sidebarPosition: sidebar ? getComputedStyle(sidebar).position : '',
+          sendBottom: send ? Math.round(send.getBoundingClientRect().bottom) : 0,
+          inputTop: input ? Math.round(input.getBoundingClientRect().top) : 0
+        }
       };
     })()""" % (escaped_sid, escaped_sid, escaped_sid, escaped_sid))
+
+
+def _layout_ok(summary, expected_mobile=False, expected_desktop=False):
+    if not summary:
+        return False
+    layout = summary.get("mobileLayout") or {}
+    if not (layout.get("composerVisible") and layout.get("inputVisible") and layout.get("submitVisible")):
+        return False
+    if int(layout.get("stageWidth") or 0) <= 0 or int(layout.get("stageHeight") or 0) <= 0:
+        return False
+    if expected_mobile and layout.get("sidebarPosition") != "fixed":
+        return False
+    if expected_desktop and layout.get("sidebarPosition") == "fixed":
+        return False
+    return True
 
 
 def _mark_first_message_node(page, sid, marker):
@@ -376,6 +435,22 @@ def run_smoke(args):
         browser.start()
         page_a = browser.new_page("primary")
         page_b = browser.new_page("mirror")
+        primary_viewport = _set_viewport(
+            page_a,
+            args.primary_width,
+            args.primary_height,
+            mobile=False,
+            device_scale_factor=args.primary_dpr,
+        )
+        mirror_viewport = None
+        if not args.mirror_desktop:
+            mirror_viewport = _set_viewport(
+                page_b,
+                args.mirror_width,
+                args.mirror_height,
+                mobile=True,
+                device_scale_factor=args.mirror_dpr,
+            )
         _login_page(page_a, user, password)
         _login_page(page_b, user, password)
         _attach_page(page_a, sid, "Codex browser smoke")
@@ -403,6 +478,8 @@ def run_smoke(args):
         primary = _page_summary(page_a, sid)
         dom_preserved = bool(after and after.get("firstNodeMarker") == marker)
         text_preserved = bool(before_text and after and before_text in (after.get("text") or ""))
+        narrow_layout_ok = _layout_ok(after, expected_mobile=not args.mirror_desktop)
+        primary_layout_ok = _layout_ok(primary, expected_desktop=bool(primary_viewport))
 
         ok = bool(
             before
@@ -414,6 +491,8 @@ def run_smoke(args):
             and after["lastSeq"] >= before["lastSeq"]
             and dom_preserved
             and text_preserved
+            and narrow_layout_ok
+            and primary_layout_ok
         )
         return {
             "ok": ok,
@@ -421,6 +500,10 @@ def run_smoke(args):
             "user": user,
             "url": browser.url,
             "browser": browser.exe,
+            "primary_viewport": primary_viewport,
+            "primary_layout_ok": primary_layout_ok,
+            "mirror_viewport": mirror_viewport,
+            "narrow_layout_ok": narrow_layout_ok,
             "temporary_session": temp_sid or None,
             "dom_marker": marked,
             "dom_preserved_after_reconnect": dom_preserved,
@@ -443,6 +526,13 @@ def main(argv=None):
     parser.add_argument("--url", default="", help="Browser-facing web URL. Defaults to local picker port.")
     parser.add_argument("--browser", default="", help="Chrome/Edge executable path.")
     parser.add_argument("--password", default="", help="Web login password. Defaults to auth.txt for the selected user.")
+    parser.add_argument("--primary-width", type=int, default=1280, help="Primary tab desktop viewport width.")
+    parser.add_argument("--primary-height", type=int, default=900, help="Primary tab desktop viewport height.")
+    parser.add_argument("--primary-dpr", type=float, default=1.0, help="Primary tab device pixel ratio.")
+    parser.add_argument("--mirror-width", type=int, default=390, help="Mirror tab viewport width; defaults to a phone-like narrow viewport.")
+    parser.add_argument("--mirror-height", type=int, default=844, help="Mirror tab viewport height.")
+    parser.add_argument("--mirror-dpr", type=float, default=2.0, help="Mirror tab device pixel ratio.")
+    parser.add_argument("--mirror-desktop", action="store_true", help="Keep the mirror tab at the browser default desktop viewport.")
     args = parser.parse_args(argv)
     result = run_smoke(args)
     print(json.dumps(result, ensure_ascii=False, indent=2))

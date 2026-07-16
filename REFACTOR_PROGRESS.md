@@ -182,6 +182,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - The browser smoke now marks an existing rendered message node before forced
   WebSocket close and verifies the same DOM node survives reconnect, giving a
   concrete anti-flicker guard instead of only checking final text content.
+- The browser smoke now forces a desktop-sized primary tab and a narrow
+  phone-like mirror tab, then checks native composer/input/submit controls plus
+  mobile drawer layout, covering the first repeatable headless mobile-reflow
+  smoke before manual device QA.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

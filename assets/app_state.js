@@ -11,6 +11,7 @@ function setMainView(view){
 var currentSid=null;
 var nativeStages={}, nativeWs={}, nativeReconnectTimers={}, nativeReconnectState={}, nativePollTimers={}, nativePollBusy={};
 var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true;
+var lmCodexModel="", lmCodexSearch="", lmCodexSandbox="", lmCodexApproval="", lmCodexOptionsKey="";
 /* Preferences: cookie first, with localStorage fallback migrated into cookies. */
 (function(){
   var b = acPrefGetRaw("acBackend", "acBackend");
@@ -19,4 +20,8 @@ var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true;
   var y = acPrefGetRaw("acYolo", "acYolo");
   lmYolo = (y.val === "") ? true : (y.val !== "0");
   if(y.src === "none") acSetCookie("acYolo", lmYolo ? "1" : "0", 3650);
+  lmCodexModel = acPrefGetRaw("acCodexModel", "acCodexModel").val || "";
+  lmCodexSearch = acPrefGetRaw("acCodexSearch", "acCodexSearch").val || "";
+  lmCodexSandbox = acPrefGetRaw("acCodexSandbox", "acCodexSandbox").val || "";
+  lmCodexApproval = acPrefGetRaw("acCodexApproval", "acCodexApproval").val || "";
 })();

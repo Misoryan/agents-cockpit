@@ -60,6 +60,15 @@ claude_scan_cap = 6000
 idle_debounce = 8
 plan_threshold = 3
 
+[codex_dynamic_tools]
+# Optional `item/tool/call` passthrough allowlist.
+# Left side: dynamic tool key (`namespace.tool`, `namespace.*`, or `tool`).
+# Right side: MCP target (`mcp:<server>/<tool>`). `{tool}` is replaced by the
+# requested dynamic tool name for namespace wildcard mappings.
+# Example:
+# browser.* = mcp:browser/{tool}
+# docs.search = mcp:docs/search
+
 [notify]
 enabled = 0
 telegram_token =

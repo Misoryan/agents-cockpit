@@ -58,12 +58,19 @@ Common keys:
 | `[users] allow_unconfigured_paths` | `1` | Allow any local path; set `0` to restrict to workspace roots |
 | `[users] primary_user_uses_default_homes` | `1` | First `auth.txt` user keeps default Codex/Claude homes |
 | `[approval] auto_approve` | `1` | Pass `--dangerously-skip-permissions`; set `0` for web approval gates |
+| `[codex_dynamic_tools] <tool>` | empty | Explicitly map safe Codex dynamic tools to `mcp:<server>/<tool>` passthrough targets |
 | `[security] session_ttl` | `86400` | Login cookie lifetime in seconds |
 | `[security] cookie_secure` | `0` | Set `1` only behind HTTPS |
+
+`[codex_dynamic_tools]` is an allowlist, not a wildcard execution mode. Use
+keys like `namespace.tool`, `namespace.*`, or `tool`; unmapped dynamic tools
+fail visibly instead of being executed or reported as successful.
 
 ## Session Model
 
 - New conversation: choose a local directory and select Codex or Claude.
+- Codex conversations support image paste/file selection; images are stored in
+  the session upload directory and sent to Codex as `localImage` inputs.
 - Each login user has separate cockpit state under `.agent-cockpit/users/<uid>/` and may only browse or launch inside their configured workspace roots.
 - Claude history and config are per-user through `CLAUDE_CONFIG_DIR`; Codex app-server runs with per-user `CODEX_HOME` under the cockpit state directory.
 - For compatibility, the first `auth.txt` user keeps the normal Codex/Claude homes when `[users] primary_user_uses_default_homes = 1`.

@@ -55,6 +55,7 @@ def main():
         assert common.verify_session_token(tok) == "alice"
         assert common.verify_internal_auth(common.INTERNAL_AUTH)
         assert common.session_cookie_header("x", "y", max_age=1).startswith("x=y;")
+        assert common.codex_dynamic_tool_mappings() == {}
     finally:
         common.USERS = old_users
 

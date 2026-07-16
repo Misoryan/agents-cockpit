@@ -68,6 +68,7 @@ claude_scan_cap = 6000
 [detect]
 idle_debounce = 8
 plan_threshold = 3
+[codex_dynamic_tools]
 [notify]
 enabled = 0
 telegram_token =
@@ -345,6 +346,21 @@ def path_allowed_for_user(user, path):
 
 def workspace_overview(user):
     return common_users.workspace_overview(user, _user_settings())
+
+
+def codex_dynamic_tool_mappings():
+    """Return explicit dynamic-tool passthrough mappings from config.ini."""
+    try:
+        items = _CFG.items("codex_dynamic_tools")
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        return {}
+    out = {}
+    for key, value in items:
+        key = str(key or "").strip()
+        value = str(value or "").strip()
+        if key and value:
+            out[key] = value
+    return out
 
 
 # ---------- 登录失败限速(按 访客标识/IP,内存) ----------

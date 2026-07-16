@@ -54,9 +54,33 @@ class SendNative:
         self.plan_mode = False
         self.task_mode = False
         self.sent = []
+        self.prepared_images = []
+        self.slash = []
 
-    def send(self, prompt):
-        self.sent.append(prompt)
+    def send(self, prompt, image_inputs=None):
+        self.sent.append((prompt, image_inputs or []))
+
+    def prepare_image_inputs(self, images):
+        self.prepared_images.append(images)
+        return [{"type": "localImage", "path": "image.png", "name": "image.png"}] if images else []
+
+    def handle_slash_command(self, command):
+        self.slash.append(command)
+        if command.startswith("/steer"):
+            return {"ok": True, "command": "steer"}
+        return {"ok": True, "command": "model", "model": "gpt-5-codex"}
+
+    def search_files(self, query, limit=20):
+        return {"ok": True, "files": [{"insert": query + ".py", "name": query + ".py", "limit": limit}]}
+
+    def terminal_write(self, process_id, text="", close_stdin=False):
+        return {"ok": True, "process_id": process_id, "input": text, "closed": bool(close_stdin)}
+
+    def terminal_terminate(self, process_id):
+        return {"ok": True, "process_id": process_id, "terminated": True}
+
+    def terminal_resize(self, process_id, cols, rows):
+        return {"ok": True, "process_id": process_id, "cols": int(cols), "rows": int(rows)}
 
 
 def main():
@@ -99,14 +123,55 @@ def main():
 
     old_backends = common.BACKENDS
     old_path_allowed = common.path_allowed_for_user
+    old_codex_session = manager_user_api.CodexSession
     try:
         common.BACKENDS = {"codex_native": {"label": "Codex"}}
         common.path_allowed_for_user = lambda _user, _path: True
+
+        class FakeCodexSession:
+            @staticmethod
+            def launch_options(cwd="", user="", uid="", state_dir=None, codex_home=None):
+                assert cwd == "C:/repo"
+                assert user == "alice"
+                assert uid == "u1"
+                assert state_dir == "state"
+                assert codex_home == "home"
+                return {"models": [{"id": "gpt-5-codex"}], "error": ""}
+
+            @staticmethod
+            def history_action(thread_id, action, name="", objective="", status="",
+                               user="", uid="", state_dir=None, codex_home=None):
+                assert thread_id == "thread-1"
+                assert user == "alice"
+                assert uid == "u1"
+                assert state_dir == "state"
+                assert codex_home == "home"
+                if action == "rename":
+                    assert name == "Better"
+                    return {"ok": True, "action": "rename", "thread_id": thread_id, "name": name}
+                if action == "goal_set":
+                    assert objective == "Finish parity"
+                    return {"ok": True, "action": "goal_set", "thread_id": thread_id,
+                            "goal": {"objective": objective, "status": status or "active"}}
+                assert action == "fork"
+                return {"ok": True, "action": "fork", "thread_id": "thread-fork"}
+
+        manager_user_api.CodexSession = FakeCodexSession
 
         h = FakeHandler()
         manager_user_api.handle_get(h, "/api/backends", urllib.parse.urlparse("/api/backends"), {"user": "alice"},
                                     lambda _sid, _ctx: None)
         assert h.body == {"backends": ["codex_native"], "labels": {"codex_native": "Codex"}}
+
+        h = FakeHandler()
+        manager_user_api.handle_get(
+            h,
+            "/api/codex_options",
+            urllib.parse.urlparse("/api/codex_options?dir=C%3A%2Frepo"),
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            lambda _sid, _ctx: None,
+        )
+        assert h.body["models"][0]["id"] == "gpt-5-codex"
 
         h = FakeHandler()
         manager_user_api.handle_get(
@@ -117,6 +182,44 @@ def main():
             lambda sid, _ctx: {"native": ReplayNative()} if sid == "s1" else None,
         )
         assert h.body == {"ok": True, "after_seq": 4}
+
+        native = SendNative()
+        h = FakeHandler()
+        manager_user_api.handle_get(
+            h,
+            "/api/nfiles",
+            urllib.parse.urlparse("/api/nfiles?sid=s1&q=codex&limit=7"),
+            {"user": "alice"},
+            lambda sid, _ctx: {"native": native} if sid == "s1" else None,
+        )
+        assert h.body == {"ok": True, "files": [{"insert": "codex.py", "name": "codex.py", "limit": 7}]}
+
+        native = SendNative()
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nterminal",
+            {"sid": "s1", "process_id": "p1", "action": "write", "input": "hello", "close": True},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "process_id": "p1", "input": "hello", "closed": True}
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nterminal",
+            {"sid": "s1", "process_id": "p1", "action": "resize", "cols": 90, "rows": 20},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "process_id": "p1", "cols": 90, "rows": 20}
 
         native = SendNative()
         h = FakeHandler()
@@ -131,12 +234,134 @@ def main():
             lambda _sid: True,
         )
         assert h.body == {"ok": True}
-        assert native.sent == ["hello"]
+        assert native.sent == [("hello", [])]
         assert native.plan_mode is True
         assert native.task_mode is False
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nsend",
+            {"sid": "s1", "prompt": "", "images": [{"name": "shot.png", "data_url": "data:image/png;base64,aGVsbG8="}]},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True}
+        assert native.sent[-1][0] == ""
+        assert native.sent[-1][1][0]["path"] == "image.png"
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nslash",
+            {"sid": "s1", "command": "/model gpt-5-codex"},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "command": "model", "model": "gpt-5-codex"}
+        assert native.slash == ["/model gpt-5-codex"]
+
+        native._busy = True
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nslash",
+            {"sid": "s1", "command": "/model other"},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.status == 409
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/nslash",
+            {"sid": "s1", "command": "/steer keep going"},
+            {"user": "alice"},
+            lambda _data, _ctx: ("s1", {"native": native}, native),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "command": "steer"}
+        native._busy = False
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/codex_history_action",
+            {"thread_id": "thread-1", "backend": "codex_native", "action": "fork"},
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            lambda _data, _ctx: ("", None, None),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "action": "fork", "thread_id": "thread-fork"}
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/codex_history_action",
+            {"thread_id": "thread-1", "backend": "codex_native", "action": "rename", "name": "Better"},
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            lambda _data, _ctx: ("", None, None),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body == {"ok": True, "action": "rename", "thread_id": "thread-1", "name": "Better"}
+
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/codex_history_action",
+            {"thread_id": "thread-1", "backend": "codex_native", "action": "goal_set", "objective": "Finish parity"},
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            lambda _data, _ctx: ("", None, None),
+            lambda _sid, _ctx: None,
+            lambda *_args, **_kwargs: "unused",
+            lambda _sid: True,
+        )
+        assert h.body["goal"]["objective"] == "Finish parity"
+
+        captured = {}
+        launch_dir = str(Path(__file__).resolve().parents[1])
+        h = FakeHandler()
+        manager_user_api.handle_post(
+            h,
+            "/api/launch",
+            {"dir": launch_dir, "backend": "codex_native", "codex": {
+                "model": "gpt-5-codex",
+                "approvalPolicy": "on-request",
+                "sandbox": "workspace-write",
+                "webSearch": "live",
+            }},
+            {"user": "alice"},
+            lambda _data, _ctx: ("", None, None),
+            lambda _sid, _ctx: None,
+            lambda *args, **kwargs: captured.update(kwargs) or "s42",
+            lambda _sid: True,
+        )
+        assert h.body["sid"] == "s42"
+        assert captured["codex_config"] == {
+            "model": "gpt-5-codex",
+            "approval_policy": "on-request",
+            "sandbox": "workspace-write",
+            "web_search": "live",
+        }
     finally:
         common.BACKENDS = old_backends
         common.path_allowed_for_user = old_path_allowed
+        manager_user_api.CodexSession = old_codex_session
 
     print("manager api helper checks passed")
 

@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """Browser-facing manager API handlers."""
 import os
+import mimetypes
 import urllib.parse
 
 import common
+import codex_config
 import manager_sessions
 from codex_native import CodexSession
 
@@ -38,6 +40,67 @@ def handle_get(handler, path, pr, ctx, owned_session_fn):
         hist = [item for item in common.load_history(limit * 3, ctx=ctx, live_codex=live_codex)
                 if common.path_allowed_for_user(ctx.get("user"), item.get("cwd") or "")]
         handler._json({"history": hist[:limit]})
+    elif path == "/api/codex_options":
+        query = urllib.parse.parse_qs(pr.query)
+        directory = (query.get("dir", [""])[0] or "").strip().strip('"')
+        if directory and not common.path_allowed_for_user(ctx.get("user"), directory):
+            handler._json({"error": "directory is outside this user's workspaces: %r" % directory}, 403)
+            return
+        try:
+            options = CodexSession.launch_options(
+                directory, user=ctx.get("user", ""), uid=ctx.get("uid", ""),
+                state_dir=ctx.get("state_dir"), codex_home=ctx.get("codex_home"))
+        except Exception as exc:
+            options = codex_config.default_launch_options(error=str(exc))
+        handler._json(options)
+    elif path == "/api/nfiles":
+        query = urllib.parse.parse_qs(pr.query)
+        sid = (query.get("sid", [""])[0] or "").strip()
+        q = (query.get("q", [""])[0] or "").strip()
+        try:
+            limit = int(query.get("limit", ["20"])[0] or 20)
+        except Exception:
+            limit = 20
+        session = owned_session_fn(sid, ctx)
+        if not session or not session.get("native"):
+            handler._json({"ok": False, "error": "native session not found"}, 404)
+            return
+        native = session.get("native")
+        if not hasattr(native, "search_files"):
+            handler._json({"ok": False, "error": "file search is only supported for Codex sessions"}, 400)
+            return
+        try:
+            handler._json(native.search_files(q, limit=limit))
+        except Exception as exc:
+            handler._json({"ok": False, "error": str(exc), "files": []}, 500)
+    elif path == "/api/nimage":
+        query = urllib.parse.parse_qs(pr.query)
+        sid = (query.get("sid", [""])[0] or "").strip()
+        image_id = (query.get("id", [""])[0] or query.get("name", [""])[0] or "").strip()
+        session = owned_session_fn(sid, ctx)
+        if not session or not session.get("native"):
+            handler._json({"ok": False, "error": "native session not found"}, 404)
+            return
+        native = session.get("native")
+        if not hasattr(native, "image_file"):
+            handler._json({"ok": False, "error": "image attachments are not supported for this session"}, 400)
+            return
+        path = native.image_file(image_id)
+        if not path:
+            handler._json({"ok": False, "error": "image not found"}, 404)
+            return
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+            handler.send_response(200)
+            handler.send_header("Content-Type", ctype)
+            handler.send_header("Cache-Control", "private, max-age=3600")
+            handler.send_header("Content-Length", str(len(data)))
+            handler.end_headers()
+            handler.wfile.write(data)
+        except OSError as exc:
+            handler._json({"ok": False, "error": str(exc)}, 500)
     elif path == "/api/recent_dirs":
         query = urllib.parse.parse_qs(pr.query)
         limit = int(query.get("limit", ["30"])[0] or 30)
@@ -109,9 +172,11 @@ def handle_post(handler, path, data, ctx, native_from_payload_fn, owned_session_
             return
         auto_approve = common.AUTO_APPROVE if data.get("yolo") is None else bool(data.get("yolo"))
         backend = common.normalize_backend(data.get("backend"))
+        cfg = codex_config.normalize_launch_config(data.get("codex") or {})
         try:
             sid = launch_native_fn(directory, title=data.get("title") or "",
-                                   auto_approve=auto_approve, backend=backend, ctx=ctx)
+                                   auto_approve=auto_approve, backend=backend, ctx=ctx,
+                                   codex_config=cfg if common.is_codex_backend(backend) else None)
         except Exception as exc:
             handler._json({"error": str(exc)}, 500)
             return
@@ -134,21 +199,85 @@ def handle_post(handler, path, data, ctx, native_from_payload_fn, owned_session_
     elif path == "/api/nsend":
         _sid, _session, native = native_from_payload_fn(data, ctx)
         prompt = (data.get("prompt") or "").strip()
+        images = data.get("images") or []
         if not native:
             handler._json({"error": "native session not found"}, 404)
             return
-        if not prompt:
-            handler._json({"error": "missing prompt"}, 400)
-            return
         if getattr(native, "_busy", False) or getattr(native, "_pending", None):
             handler._json({"error": "session is busy"}, 409)
+            return
+        if images and not hasattr(native, "prepare_image_inputs"):
+            handler._json({"error": "image input is only supported for Codex sessions"}, 400)
+            return
+        try:
+            image_inputs = native.prepare_image_inputs(images) if images else []
+        except ValueError as exc:
+            handler._json({"error": str(exc)}, 400)
+            return
+        if not prompt and not image_inputs:
+            handler._json({"error": "missing prompt"}, 400)
             return
         if "plan" in data:
             native.plan_mode = bool(data["plan"])
         if "task" in data:
             native.task_mode = bool(data["task"])
-        native.send(prompt)
+        try:
+            native.send(prompt, image_inputs=image_inputs)
+        except TypeError:
+            native.send(prompt)
         handler._json({"ok": True})
+    elif path == "/api/nslash":
+        _sid, _session, native = native_from_payload_fn(data, ctx)
+        command = (data.get("command") or "").strip()
+        if not native:
+            handler._json({"error": "native session not found"}, 404)
+            return
+        if not command:
+            handler._json({"error": "missing command"}, 400)
+            return
+        is_steer = command.lower().startswith("/steer")
+        if getattr(native, "_pending", None) or (getattr(native, "_busy", False) and not is_steer):
+            handler._json({"error": "session is busy"}, 409)
+            return
+        if not hasattr(native, "handle_slash_command"):
+            handler._json({"error": "slash commands are only supported for Codex sessions"}, 400)
+            return
+        try:
+            result = native.handle_slash_command(command)
+        except Exception as exc:
+            handler._json({"error": str(exc)}, 500)
+            return
+        if not result.get("ok"):
+            handler._json(result, 400)
+            return
+        handler._json(result)
+    elif path == "/api/nterminal":
+        _sid, _session, native = native_from_payload_fn(data, ctx)
+        if not native:
+            handler._json({"error": "native session not found"}, 404)
+            return
+        process_id = (data.get("process_id") or data.get("processId") or "").strip()
+        action = (data.get("action") or "write").strip().lower()
+        try:
+            if action == "terminate":
+                result = native.terminal_terminate(process_id)
+            elif action == "resize":
+                result = native.terminal_resize(process_id, data.get("cols"), data.get("rows"))
+            elif action in ("write", "close"):
+                result = native.terminal_write(
+                    process_id,
+                    data.get("input") or "",
+                    close_stdin=bool(data.get("close") or action == "close"),
+                )
+            else:
+                result = {"ok": False, "error": "unsupported terminal action"}
+        except Exception as exc:
+            handler._json({"error": str(exc)}, 500)
+            return
+        if not result.get("ok"):
+            handler._json(result, 400)
+            return
+        handler._json(result)
     elif path == "/api/nmode":
         _sid, _session, native = native_from_payload_fn(data, ctx)
         if not native:
@@ -188,5 +317,33 @@ def handle_post(handler, path, data, ctx, native_from_payload_fn, owned_session_
             handler._json({"error": str(exc)}, 500)
             return
         handler._json({"ok": result["deleted"], "deleted": result["deleted"]})
+    elif path == "/api/codex_history_action":
+        thread_id = (data.get("thread_id") or data.get("session_id") or data.get("sid") or "").strip()
+        action = (data.get("action") or "").strip().lower()
+        backend = common.normalize_backend(data.get("backend") or "codex_native")
+        if not common.is_codex_backend(backend):
+            handler._json({"error": "history action is only supported for Codex threads"}, 400)
+            return
+        if not thread_id:
+            handler._json({"error": "missing thread_id"}, 400)
+            return
+        try:
+            if manager_sessions.history_belongs_to_other_user(thread_id, ctx.get("user")):
+                handler._json({"error": "history belongs to another user"}, 403)
+                return
+            result = CodexSession.history_action(
+                thread_id, action,
+                name=data.get("name") or "",
+                objective=data.get("objective") or "",
+                status=data.get("status") or "",
+                user=ctx.get("user", ""), uid=ctx.get("uid", ""),
+                state_dir=ctx.get("state_dir"), codex_home=ctx.get("codex_home"))
+        except Exception as exc:
+            handler._json({"error": str(exc)}, 500)
+            return
+        if not result.get("ok"):
+            handler._json(result, 400)
+            return
+        handler._json(result)
     else:
         handler._json({"error": "not found"}, 404)

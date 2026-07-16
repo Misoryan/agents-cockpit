@@ -6,6 +6,35 @@ function nAddHumanRow(st, text){
   nAddRow(st,"user",nEsc(text));
   st.lastWasHumanUser=true; st.lastHumanText=text;
 }
+function nImageLabel(img){
+  var name=img.name||img.file_name||"";
+  if(!name && img.path){ name=String(img.path).split(/[\\\\/]/).pop(); }
+  if(!name && img.url){ name="image"; }
+  return name||"image";
+}
+function nImageUrl(sid, img){
+  if(img.url) return img.url;
+  if(img.display_url) return img.display_url;
+  if(img.image_id) return "/api/nimage?sid="+encodeURIComponent(sid)+"&id="+encodeURIComponent(img.image_id);
+  return "";
+}
+function nAddHumanContent(st, text, images, sid){
+  text=String(text==null?"":text).trim();
+  images=images||[];
+  var key=text+"|"+images.map(nImageLabel).join(",");
+  if(!text && !images.length) return;
+  if(st.lastWasHumanUser && st.lastHumanText===key) return;
+  var html=text?nEsc(text):"";
+  if(images.length){
+    html+='<div class="nimggrid">'+images.map(function(img){
+      var url=nImageUrl(sid||currentSid, img), label=nImageLabel(img);
+      var thumb=url?'<img alt="'+nEscAttr(label)+'" src="'+nEscAttr(url)+'">':'';
+      return '<div class="nimgcard">'+thumb+'<div class="nimgcap">'+nEsc(label)+'</div></div>';
+    }).join("")+'</div>';
+  }
+  nAddRow(st,"user",html);
+  st.lastWasHumanUser=true; st.lastHumanText=key;
+}
 function nAskQuestions(obj){
   var qs=Array.isArray(obj.questions)?obj.questions:[];
   return qs.filter(function(q){ return q && (q.question || q.header || q.id); });

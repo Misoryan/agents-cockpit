@@ -26,9 +26,12 @@ function nativeConnect(sid, opts){
   if(existing){ try{ existing.close(); }catch(e){} }
   var st=nativeStage(sid);
   if(st){
-    nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null;
+    var hasContent=nStageHasReplayContent(st);
+    if(!hasContent){
+      nStopThinking(st); st.curTxt=null; st.curThink=null; st.turnCard=null;
+    }
     nReplayProgressCancel(st);
-    if(currentSid===sid && !nStageHasReplayContent(st)){
+    if(currentSid===sid && !hasContent){
       st.replayWaiting=true;
       st.replayWaitTimer=setTimeout(function(){
         if(currentSid!==sid || st.replayActive || nStageHasReplayContent(st)) return;

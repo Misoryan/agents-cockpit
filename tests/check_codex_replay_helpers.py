@@ -69,6 +69,18 @@ def main():
     assert session.timeline[-1] is stream_1
     assert session.timeline[-1]["event"]["delta"]["text"] == "hello world"
     assert session.timeline[-1]["merged_seq"] == 3
+    assert session.timeline[-1]["_stream_chunks"] == [
+        {"seq": 2, "text": "hello"},
+        {"seq": 3, "text": " world"},
+    ]
+    inc_stream = codex_replay.events_after_seq(session, 2)
+    assert inc_stream == [{
+        "type": "stream_event",
+        "event": {"delta": {"type": "text_delta", "text": " world"}},
+        "seq": 3,
+        "event_id": "s1-000002-stream_event-after-2",
+        "merged_seq": 3,
+    }]
 
     tool_1 = codex_replay.record_timeline(session, _tool_result("tool-1", "old"), 10, 100)
     tool_2 = codex_replay.record_timeline(session, _tool_result("tool-1", "new"), 10, 100)
@@ -87,11 +99,19 @@ def main():
     codex_replay.adopt_history_replay(other, [{"type": "assistant"}, {"type": "result"}], 1)
     assert len(other.timeline) == 1
     assert other.timeline[0]["type"] == "result"
+    assert other.timeline[0]["seq"] == 2
     assert len(other.events) == 2
+    assert other.events[0]["seq"] == 1
+    assert other._next_seq == 3
 
     assert codex_replay.event_after_seq({"seq": 2}, 1)
     assert codex_replay.event_after_seq({"seq": 1, "merged_seq": 3}, 2)
     assert not codex_replay.event_after_seq({"seq": 1}, 2)
+    assert codex_replay.trim_stream_event_after(
+        {"type": "stream_event", "seq": 1, "merged_seq": 3,
+         "event": {"delta": {"type": "text_delta", "text": "old new"}}},
+        2,
+    ) is None
     session.poll_events = [{"seq": 99, "type": "assistant"}]
     assert codex_replay.events_after_seq(session, 10) == [{"seq": 99, "type": "assistant"}]
 

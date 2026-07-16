@@ -158,7 +158,7 @@ def _session_class(backend):
 
 
 def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
-                  events=None, backend=None, ctx=None):
+                  events=None, backend=None, ctx=None, codex_config=None):
     """Create one web-rendered agent session."""
     ctx = ctx or {}
     user = ctx.get("user", "")
@@ -181,13 +181,18 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
             kwargs["claude_home"] = claude_home
         else:
             kwargs["codex_home"] = codex_home
+        if provider == "codex":
+            kwargs["cfg"] = codex_config or {}
         native = cls(sid, cwd, yolo=bool(auto_approve), **kwargs)
         if provider == "claude" and session_id:
             native.claude_sid = session_id
         elif provider == "codex" and session_id:
             native.thread_id = session_id
         if events:
-            native.events = list(events)
+            if provider == "codex" and hasattr(native, "_adopt_history_replay"):
+                native._adopt_history_replay(events)
+            else:
+                native.events = list(events)
         if provider == "codex" and not session_id:
             native._persist()
         elif provider == "codex" and getattr(native, "thread_id", None):
@@ -206,6 +211,7 @@ def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
             "state_dir": state_dir,
             "claude_home": claude_home,
             "codex_home": codex_home,
+            "codex_config": codex_config or {},
             "native": native,
         }
         snap = dict(sessions[sid])

@@ -66,6 +66,25 @@ def handle_updated_event(session, method, params):
         codex_notice(session, "Codex status updated", method, params, level="debug", silent=True)
 
 
+def goal_summary(goal):
+    if not isinstance(goal, dict) or not goal:
+        return ""
+    objective = str(goal.get("objective") or "").strip()
+    status = str(goal.get("status") or "").strip()
+    tokens_used = goal.get("tokensUsed")
+    token_budget = goal.get("tokenBudget")
+    parts = []
+    if status:
+        parts.append(status)
+    if tokens_used is not None or token_budget is not None:
+        if token_budget:
+            parts.append("tokens %s/%s" % (tokens_used or 0, token_budget))
+        elif tokens_used is not None:
+            parts.append("tokens %s" % tokens_used)
+    prefix = ("[%s] " % ", ".join(parts)) if parts else ""
+    return prefix + (objective or "no objective")
+
+
 def handle_notification(session, method, params):
     if not method:
         return
@@ -130,7 +149,22 @@ def handle_notification(session, method, params):
         session._last_usage = usage_for_meta(usage)
         session._broadcast({"type": "codex_usage", "usage": usage})
     elif method == "thread/compacted":
+        if getattr(session, "_compact_in_progress", False):
+            session._compact_in_progress = False
+            session._busy = False
+            session.current_turn_started_at = None
         session._record_and_broadcast({"type": "compacted"})
+    elif method == "thread/unarchived":
+        codex_notice(session, "Thread unarchived in Codex history", method, params)
+    elif method == "thread/goal/updated":
+        goal = params.get("goal") or {}
+        message = "Goal updated"
+        summary = goal_summary(goal)
+        if summary:
+            message += ": " + summary
+        codex_notice(session, message, method, params)
+    elif method == "thread/goal/cleared":
+        codex_notice(session, "Goal cleared", method, params)
     elif method in ("warning", "guardianWarning", "configWarning", "deprecationNotice"):
         message = params.get("message") or params.get("text") or codex_text.json_text(params)
         session._broadcast({"type": "codex_notice", "message": message})
@@ -139,7 +173,11 @@ def handle_notification(session, method, params):
         if text:
             session._broadcast({"type": "stream_event", "event": {"delta": {"type": "thinking_delta", "thinking": text}}})
     elif method == "item/commandExecution/terminalInteraction":
-        codex_notice(session, "Command requires terminal interaction; continue in CLI if input is required.", method, params)
+        event = session.terminal_interaction_event(params) if hasattr(session, "terminal_interaction_event") else None
+        if event:
+            session._record_and_broadcast(event)
+        else:
+            codex_notice(session, "Command requires terminal interaction; continue in CLI if input is required.", method, params)
     elif method == "item/fileChange/outputDelta":
         session._append_tool_output(params.get("itemId"), params.get("delta") or codex_text.extract_text(params) or "")
     elif method == "item/plan/delta":
@@ -197,8 +235,8 @@ def on_item_completed(session, item):
         if text:
             if codex_text.extract_proposed_plan(text):
                 session._awaiting_plan_decision = True
-                session._push("plan", "馃搵 Plan 寰呯‘璁?路 " + os.path.basename(session.cwd),
-                              session.cwd + " 路 鐐瑰嚮鏌ョ湅璁″垝")
+                session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
+                              session.cwd + " - tap to review the plan")
             session._record_and_broadcast({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     elif typ == "reasoning":
         content = "\n".join((item.get("summary") or []) + (item.get("content") or []))
@@ -211,8 +249,8 @@ def on_item_completed(session, item):
         event = codex_text.plan_text_event(text)
         if event:
             session._awaiting_plan_decision = True
-            session._push("plan", "馃搵 Plan 寰呯‘璁?路 " + os.path.basename(session.cwd),
-                          session.cwd + " 路 鐐瑰嚮鏌ョ湅璁″垝")
+            session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
+                          session.cwd + " - tap to review the plan")
             session._record_and_broadcast(event)
     else:
         result = session._tool_result_from_item(item)
@@ -229,8 +267,8 @@ def flush_pending_plan_items(session):
         event = codex_text.plan_text_event(text)
         if event:
             session._awaiting_plan_decision = True
-            session._push("plan", "馃搵 Plan 寰呯‘璁?路 " + os.path.basename(session.cwd),
-                          session.cwd + " 路 鐐瑰嚮鏌ョ湅璁″垝")
+            session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
+                          session.cwd + " - tap to review the plan")
             session._record_and_broadcast(event)
 
 

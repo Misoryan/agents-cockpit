@@ -24,6 +24,16 @@ class CaptureSocket:
         self.sent += data
 
 
+class SlottedSocket:
+    __slots__ = ("sent",)
+
+    def __init__(self):
+        self.sent = bytearray()
+
+    def sendall(self, data):
+        self.sent += data
+
+
 def _masked_frame(opcode, payload, mask=b"\x01\x02\x03\x04"):
     return bytes([0x80 | opcode, 0x80 | len(payload)]) + mask + bytes(
         payload[i] ^ mask[i % 4] for i in range(len(payload))
@@ -39,6 +49,10 @@ def main():
     out = CaptureSocket()
     ws_send(out, b"hi", opcode=0x1)
     assert bytes(out.sent) == b"\x81\x02hi"
+
+    slotted = SlottedSocket()
+    ws_send(slotted, b"ok", opcode=0x1)
+    assert bytes(slotted.sent) == b"\x81\x02ok"
 
     inc = CaptureSocket(_masked_frame(0x1, b"hi"))
     op, payload = ws_recv(inc)

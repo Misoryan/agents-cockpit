@@ -9,8 +9,8 @@ import codex_text
 
 
 DYNAMIC_TOOL_REJECTION = (
-    "Agents Cockpit cannot execute Codex dynamic tool calls yet. "
-    "Continue in Codex CLI or wire this tool through an MCP passthrough."
+    "Agents Cockpit has no enabled MCP passthrough mapping for this dynamic tool. "
+    "Add it under [codex_dynamic_tools] in config.ini if it is safe to run."
 )
 
 
@@ -135,9 +135,10 @@ def reject_dynamic_tool_call(session, req_id, method, params):
     call_id = params.get("callId") or req_id
     name = ("%s.%s" % (namespace, tool)) if namespace else str(tool)
     args = params.get("arguments")
+    display_args = args if args is not None else {}
     session._record_and_broadcast({
         "type": "assistant",
-        "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": args or {}}]},
+        "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": display_args}]},
     })
     session._record_and_broadcast({
         "type": "user",
@@ -146,6 +147,131 @@ def reject_dynamic_tool_call(session, req_id, method, params):
     })
     session._codex_notice("Dynamic tool call was rejected by the Web adapter", method, params)
     return {"success": False, "contentItems": [{"type": "inputText", "text": DYNAMIC_TOOL_REJECTION}]}
+
+
+def _dynamic_tool_name(params):
+    tool = str(params.get("tool") or "tool").strip() or "tool"
+    namespace = str(params.get("namespace") or "").strip()
+    return namespace, tool, ("%s.%s" % (namespace, tool)) if namespace else tool
+
+
+def _dynamic_mapping_candidates(namespace, tool):
+    if namespace:
+        return [
+            "%s.%s" % (namespace, tool),
+            "%s/%s" % (namespace, tool),
+            "%s.*" % namespace,
+            "%s/*" % namespace,
+        ]
+    return [tool]
+
+
+def dynamic_tool_target(params, mappings):
+    """Return (server, tool) for an explicitly allowlisted dynamic tool."""
+    if not isinstance(mappings, dict):
+        return None
+    namespace, tool, _name = _dynamic_tool_name(params)
+    by_key = {str(key).strip().lower(): str(value).strip()
+              for key, value in mappings.items() if str(key).strip() and str(value).strip()}
+    target = ""
+    for key in _dynamic_mapping_candidates(namespace, tool):
+        target = by_key.get(key.lower())
+        if target:
+            break
+    if not target:
+        return None
+    if target.lower().startswith("mcp:"):
+        target = target[4:].strip()
+    target = target.replace("{tool}", tool)
+    for sep in ("/", ".", ":"):
+        if sep in target:
+            server, mcp_tool = target.split(sep, 1)
+            server, mcp_tool = server.strip(), mcp_tool.strip()
+            if server and mcp_tool:
+                return server, mcp_tool
+            return None
+    return None
+
+
+def _content_text_from_mcp(result):
+    if not isinstance(result, dict):
+        return codex_text.compact_json(result, 5000)
+    parts = []
+    for item in result.get("content") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text" and item.get("text") is not None:
+            parts.append(str(item.get("text")))
+        elif item.get("type") == "image":
+            parts.append("[image]")
+        else:
+            parts.append(codex_text.compact_json(item, 1000))
+    if parts:
+        return "\n".join(parts)
+    return codex_text.compact_json(result or {}, 5000)
+
+
+def dynamic_content_items_from_mcp(result):
+    """Convert an MCP tool result into DynamicToolCallResponse content items."""
+    items = []
+    if isinstance(result, dict):
+        for item in result.get("content") or []:
+            if not isinstance(item, dict):
+                continue
+            typ = item.get("type")
+            if typ == "text" and item.get("text") is not None:
+                items.append({"type": "inputText", "text": str(item.get("text"))})
+            elif typ == "image":
+                image_url = item.get("imageUrl") or item.get("url")
+                if not image_url and item.get("data"):
+                    mime = item.get("mimeType") or "image/png"
+                    image_url = "data:%s;base64,%s" % (mime, item.get("data"))
+                if image_url:
+                    items.append({"type": "inputImage", "imageUrl": str(image_url)})
+                else:
+                    items.append({"type": "inputText", "text": codex_text.compact_json(item, 1000)})
+            else:
+                items.append({"type": "inputText", "text": codex_text.compact_json(item, 1000)})
+    if not items:
+        items.append({"type": "inputText", "text": _content_text_from_mcp(result)})
+    return items
+
+
+def handle_dynamic_tool_call(session, req_id, method, params, mappings):
+    target = dynamic_tool_target(params, mappings)
+    if not target:
+        return reject_dynamic_tool_call(session, req_id, method, params)
+
+    _namespace, _tool, name = _dynamic_tool_name(params)
+    call_id = params.get("callId") or req_id
+    args = params.get("arguments")
+    display_args = args if args is not None else {}
+    session._record_and_broadcast({
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": display_args}]},
+    })
+
+    server, mcp_tool = target
+    thread_id = params.get("threadId") or getattr(session, "thread_id", None)
+    mcp_params = {"server": server, "tool": mcp_tool, "threadId": thread_id, "arguments": display_args}
+    try:
+        result = session._call_mcp_tool_for_dynamic(mcp_params)
+        success = not bool(result.get("isError")) if isinstance(result, dict) else True
+        content_items = dynamic_content_items_from_mcp(result)
+        content_text = _content_text_from_mcp(result)
+    except Exception as exc:
+        success = False
+        content_text = "MCP passthrough failed: %s" % exc
+        content_items = [{"type": "inputText", "text": content_text}]
+        result = {"error": content_text}
+
+    session._record_and_broadcast({
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": call_id, "content": content_text}]},
+    })
+    notice = "Dynamic tool %s passed through to MCP %s.%s" % (name, server, mcp_tool)
+    session._codex_notice(notice, "mcpServer/tool/call", result, silent=True)
+    return {"success": success, "contentItems": content_items}
 
 
 def handle_server_request(session, req_id, method, params, app_error_cls):
@@ -164,7 +290,7 @@ def handle_server_request(session, req_id, method, params, app_error_cls):
             return session._await_form_input(req_id, method, params)
         return session._await_user_input(req_id, method, params)
     if method == "item/tool/call":
-        return session._reject_dynamic_tool_call(req_id, method, params)
+        return session._handle_dynamic_tool_call(req_id, method, params)
     if method == "attestation/generate":
         session._codex_notice(
             "Codex requested client attestation; Agents Cockpit cannot generate it yet.",

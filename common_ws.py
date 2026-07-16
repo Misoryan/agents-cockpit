@@ -3,8 +3,33 @@
 import base64
 import hashlib
 import os
+import threading
+import weakref
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_SEND_LOCKS = weakref.WeakKeyDictionary()
+_SEND_LOCKS_BY_ID = {}
+_SEND_LOCKS_GUARD = threading.Lock()
+
+
+def _send_lock(sock):
+    """One lock per socket prevents ping frames and data frames interleaving."""
+    with _SEND_LOCKS_GUARD:
+        try:
+            lock = _SEND_LOCKS.get(sock)
+        except TypeError:
+            lock = _SEND_LOCKS_BY_ID.get(id(sock))
+            if lock is None:
+                lock = threading.Lock()
+                _SEND_LOCKS_BY_ID[id(sock)] = lock
+            return lock
+        if lock is None:
+            lock = threading.Lock()
+            try:
+                _SEND_LOCKS[sock] = lock
+            except TypeError:
+                _SEND_LOCKS_BY_ID[id(sock)] = lock
+        return lock
 
 
 def _recv_exact(sock, n):
@@ -42,23 +67,24 @@ def ws_recv(sock):
 
 
 def ws_send(sock, payload, opcode=0x2, mask=False):
-    out = bytearray([0x80 | opcode])
-    length = len(payload)
-    mflag = 0x80 if mask else 0x00
-    if length < 126:
-        out.append(mflag | length)
-    elif length < 65536:
-        out.append(mflag | 126)
-        out += length.to_bytes(2, "big")
-    else:
-        out.append(mflag | 127)
-        out += length.to_bytes(8, "big")
-    if mask:
-        m = os.urandom(4)
-        out += m
-        payload = bytes(payload[i] ^ m[i % 4] for i in range(len(payload)))
-    out += payload
-    sock.sendall(bytes(out))
+    with _send_lock(sock):
+        out = bytearray([0x80 | opcode])
+        length = len(payload)
+        mflag = 0x80 if mask else 0x00
+        if length < 126:
+            out.append(mflag | length)
+        elif length < 65536:
+            out.append(mflag | 126)
+            out += length.to_bytes(2, "big")
+        else:
+            out.append(mflag | 127)
+            out += length.to_bytes(8, "big")
+        if mask:
+            m = os.urandom(4)
+            out += m
+            payload = bytes(payload[i] ^ m[i % 4] for i in range(len(payload)))
+        out += payload
+        sock.sendall(bytes(out))
 
 
 def ws_accept_key(key):

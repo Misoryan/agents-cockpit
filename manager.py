@@ -70,9 +70,10 @@ def _backend_available(backend):
 
 
 def launch_native(cwd, title="", auto_approve=None, mode="new", session_id=None,
-                  events=None, backend=None, ctx=None):
+                  events=None, backend=None, ctx=None, codex_config=None):
     return manager_sessions.launch_native(cwd, title=title, auto_approve=auto_approve, mode=mode,
-                                          session_id=session_id, events=events, backend=backend, ctx=ctx)
+                                          session_id=session_id, events=events, backend=backend, ctx=ctx,
+                                          codex_config=codex_config)
 
 
 def reattach_sessions():

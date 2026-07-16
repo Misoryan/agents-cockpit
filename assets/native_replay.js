@@ -25,12 +25,14 @@ function nEvSigPart(e){
 function nSigFromParts(parts){ return parts.length+"#"+parts.join(","); }
 function nMarkRendered(st,obj){
   if(!obj || obj.type==="replay_batch" || obj.type==="state_snapshot") return true;
-  var id=obj.event_id || (obj.seq!=null ? ("seq:"+obj.seq) : "");
+  var id=nReplayEventKey(obj);
   if(!id) return true;
   st.renderedEvents=st.renderedEvents||{};
-  if(st.renderedEvents[id] && !obj.replay) return false;
+  if(st.renderedEvents[id]) return false;
   st.renderedEvents[id]=true;
-  if(obj.seq!=null){ st.lastSeq=Math.max(st.lastSeq||0, Number(obj.seq)||0); }
+  if(obj.seq!=null || obj.merged_seq!=null){
+    st.lastSeq=Math.max(st.lastSeq||0, Number(obj.seq)||0, Number(obj.merged_seq)||0);
+  }
   return true;
 }
 function nResetReplayState(st){
@@ -67,10 +69,13 @@ function nReplayEventKey(e){
   return "";
 }
 function nReplayUnseenEvents(st, events){
-  var seen=st.renderedEvents||{};
+  var seen=Object.assign({}, st.renderedEvents||{});
   return (events||[]).filter(function(e){
     var key=nReplayEventKey(e);
-    return !key || !seen[key];
+    if(!key) return true;
+    if(seen[key]) return false;
+    seen[key]=true;
+    return true;
   });
 }
 function nReplayProgressCancel(st){
@@ -118,7 +123,7 @@ function nReplayProgressWait(st){
 }
 function nReplayBatchAsync(sid, st, events, opts){
   opts=opts||{};
-  var renderEvents=nReplayRenderableEvents(events), total=renderEvents.length, idx=0, chunk=18;
+  var renderEvents=nReplayUnseenEvents(st, nReplayRenderableEvents(events)), total=renderEvents.length, idx=0, chunk=18;
   st.replayActive=true; st.replayPending=[];
   if(!opts.silent) nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
   function pump(){

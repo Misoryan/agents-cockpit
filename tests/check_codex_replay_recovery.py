@@ -25,8 +25,9 @@ def main():
 
     ns._adopt_history_replay(history_events)
 
-    assert ns.events == history_events
-    assert ns.timeline == history_events
+    assert [event["type"] for event in ns.events] == ["user", "assistant", "result"]
+    assert [event["seq"] for event in ns.events] == [1, 2, 3]
+    assert ns.timeline == ns.events
     assert CodexSession._replay_content_score(ns.timeline) == 3
     assert CodexSession._drop_recover_noise([
         {"type": "result", "error": "Codex app-server exited. It will be restarted on the next send."},

@@ -29,6 +29,9 @@ class FakeSession:
         self.approval_calls = []
         self.ask_calls = []
         self.form_calls = []
+        self.dynamic_mappings = {}
+        self.mcp_calls = []
+        self.mcp_result = {"content": [{"type": "text", "text": "mcp ok"}], "isError": False}
 
     def _is_dangerous(self, text):
         return "rm -rf" in str(text)
@@ -55,8 +58,8 @@ class FakeSession:
         self.records.append(event)
         self._broadcast(event)
 
-    def _codex_notice(self, message, method=None, params=None):
-        self.notices.append((message, method, params))
+    def _codex_notice(self, message, method=None, params=None, silent=False):
+        self.notices.append((message, method, params, silent))
 
     def _await_approval(self, req_id, method, params, name, preview):
         self.approval_calls.append((req_id, method, params, name, preview))
@@ -72,6 +75,14 @@ class FakeSession:
 
     def _reject_dynamic_tool_call(self, req_id, method, params):
         return codex_requests.reject_dynamic_tool_call(self, req_id, method, params)
+
+    def _handle_dynamic_tool_call(self, req_id, method, params):
+        return codex_requests.handle_dynamic_tool_call(
+            self, req_id, method, params, self.dynamic_mappings)
+
+    def _call_mcp_tool_for_dynamic(self, params):
+        self.mcp_calls.append(params)
+        return self.mcp_result
 
 
 def main():
@@ -144,6 +155,26 @@ def main():
     assert session.notices[0][0] == "Dynamic tool call was rejected by the Web adapter"
 
     session = FakeSession()
+    session.dynamic_mappings = {"ns.do": "mcp:docs/search"}
+    result = codex_requests.handle_dynamic_tool_call(
+        session, "req-1", "item/tool/call",
+        {"namespace": "ns", "tool": "do", "callId": "call-1", "threadId": "thread-1",
+         "arguments": {"q": "codex"}},
+        session.dynamic_mappings)
+    assert result == {"success": True, "contentItems": [{"type": "inputText", "text": "mcp ok"}]}
+    assert session.mcp_calls == [{
+        "server": "docs",
+        "tool": "search",
+        "threadId": "thread-1",
+        "arguments": {"q": "codex"},
+    }]
+    assert session.records[0]["message"]["content"][0]["name"] == "ns.do"
+    assert session.records[1]["message"]["content"][0]["content"] == "mcp ok"
+
+    assert codex_requests.dynamic_tool_target(
+        {"namespace": "ns", "tool": "read"}, {"ns.*": "mcp:docs/{tool}"}) == ("docs", "read")
+
+    session = FakeSession()
     assert codex_requests.handle_server_request(
         session, "req-2", "item/fileChange/requestApproval", {"reason": "why"}, AppError
     ) == {"approved": "FileChange"}
@@ -154,6 +185,15 @@ def main():
     assert codex_requests.handle_server_request(
         session, "req-4", "currentTime/read", {}, AppError
     )["utcTimestampMs"] > 0
+    session.dynamic_mappings = {"ns.do": "mcp:docs/search"}
+    result = codex_requests.handle_server_request(
+        session, "req-4b", "item/tool/call",
+        {"namespace": "ns", "tool": "do", "callId": "call-4b", "threadId": "thread-4",
+         "arguments": {"q": "via handler"}},
+        AppError,
+    )
+    assert result["success"] is True
+    assert session.mcp_calls[-1]["server"] == "docs"
     try:
         codex_requests.handle_server_request(session, "req-5", "unknown/method", {}, AppError)
         raise AssertionError("expected AppError")

@@ -48,13 +48,20 @@ def _local_script_text(src):
 def main():
     html = INDEX.read_text(encoding="utf-8")
     assert 'href="/assets/app.css"' in html
+    assert "cdn.jsdelivr.net" not in html
+    assert 'href="/assets/vendor/atom-one-light.min.css"' in html
     assert 'id="lm-args"' not in html
     assert 'id="set-args"' not in html
+    assert 'id="lm-codex-field"' in html
+    assert 'id="slashmenu"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
     local_scripts = [src for src in parser.srcs if src.startswith("/assets/")]
     assert local_scripts == [
+        "/assets/vendor/marked.min.js",
+        "/assets/vendor/purify.min.js",
+        "/assets/vendor/highlight.min.js",
         "/assets/app_core.js",
         "/assets/app_sidebar.js",
         "/assets/app_state.js",
@@ -87,13 +94,55 @@ def main():
         "function nReplayRenderableEvents(events)",
         "function nStageHasReplayContent(st)",
         "function nReplayUnseenEvents(st, events)",
+        "if(st.renderedEvents[id]) return false",
+        "Object.assign({}, st.renderedEvents||{})",
+        "nReplayUnseenEvents(st, nReplayRenderableEvents(events))",
         "function nReplayProgressCancel(st)",
         "/api/history?limit=200&live_codex=1",
         "function nativeScheduleReconnect(sid, delay)",
         "function nativeReconnectDelay(sid, baseDelay)",
         "if(existing && (existing.readyState===0 || existing.readyState===1) && !opts.force) return existing",
         "if(nativeReconnectTimers[sid]) return",
+        "var hasContent=nStageHasReplayContent(st)",
+        "if(!hasContent){",
+        "Number(obj.merged_seq)||0",
         "function nativeStartPolling(sid, immediate)",
+        "function nativeSlashCommand(command, st)",
+        "var nativeSlashCommands=[",
+        "function nRenderSlashMenu()",
+        'postJSON("/api/nslash"',
+        'if(p.charAt(0)==="/" && !images.length)',
+        "function nAddImageFile(file)",
+        'postJSON("/api/nsend", {sid:currentSid, prompt:p, images:images',
+        '"/approval on-request"',
+        '"/sandbox workspace-write"',
+        '"/search live"',
+        '"/rename "',
+        '"/archive"',
+        '"/unarchive"',
+        '"/fork"',
+        "function openForkedCodexThread(threadId, title, cwd)",
+        'if(t==="thread_forked")',
+        "openForkedCodexThread(fid, ftitle, obj.cwd||\"\")",
+        '"/rollback 1"',
+        '"/goal get"',
+        '"/mcp-resource "',
+        '"/mcp-tool "',
+        '"/steer "',
+        "function nSlashMove(delta)",
+        "function nSlashPickActive()",
+        "function nRenderFileMentionMenu()",
+        "function nInsertMention(path)",
+        '"/api/nfiles?sid="+encodeURIComponent(currentSid)',
+        "function nRenderInputAssist()",
+        "function nPostTerminal(processId, action, input, closeStdin, cols, rows, card)",
+        'postJSON("/api/nterminal"',
+        'if(t==="terminal_interaction")',
+        'if(t==="terminal_closed")',
+        'e.key==="ArrowDown"',
+        'if(_nGenerating && p.indexOf("/steer ")!==0',
+        'if(t==="replay_replace")',
+        "nResetReplayState(st)",
         "\"/api/nreplay?sid=\"+encodeURIComponent(sid)+\"&after=\"+encodeURIComponent(after)",
         "\"?after=\"+encodeURIComponent(String(after))",
         "\"retry=\"+nativeReconnectDelay(sid,1500)+\"ms\"",
@@ -106,8 +155,24 @@ def main():
         "var _unseen=nReplayUnseenEvents(st,_evs)",
         "st.replaySigParts=_parts",
         "nReplayBatchAsync(sid, st, _unseen, {silent:true})",
+        "else if(!obj.running && (st.thinking || st.thinkBubble || st.curThink))",
         "window.NATIVE_DEBUG",
         "if(st.replayWaiting && !st.replayActive)",
+        "function codexLaunchConfig(backend)",
+        "/api/codex_options?dir=",
+        "approvalPolicy:lmCodexApproval",
+        "webSearch:lmCodexSearch",
+        "function appendCodexRunActions(el, s)",
+        'postJSON("/api/nslash", {sid:sid, command:command})',
+        '{label:"Fork", title:"Fork this Codex thread", command:"/fork"}',
+        '{label:"Rollback", title:"Rollback one Codex turn", command:"/rollback 1"}',
+        '{label:"Rename", title:"Rename this Codex thread"',
+        '{label:"Goal", title:"Set this Codex thread goal"',
+        "function appendCodexHistoryActions(el, h)",
+        'postJSON("/api/codex_history_action"',
+        '{label:"Fork", title:"Fork this Codex history thread", action:"fork"}',
+        '{label:"Rename", title:"Rename this Codex history thread", action:"rename"',
+        '{label:"Goal", title:"Set this Codex history thread goal", action:"goal_set"',
     ]
     missing = [token for token in required if token not in js]
     assert not missing, "missing replay loading contracts: %r" % missing

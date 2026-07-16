@@ -7,15 +7,8 @@ import codex_history
 import codex_text
 
 
-def history_snapshot(thread_id, user="", uid="", state_dir=None, codex_home=None,
-                     get_client_fn=None):
-    client = get_client_fn(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home)
-    response = client.request(
-        "thread/read",
-        {"threadId": thread_id, "includeTurns": True},
-        timeout=30,
-    )
-    thread = (response or {}).get("thread") or {}
+def events_from_thread(thread):
+    thread = thread or {}
     cwd = thread.get("cwd") or os.path.expanduser("~")
     events = []
     if thread.get("cliVersion") or thread.get("modelProvider"):
@@ -57,12 +50,29 @@ def history_snapshot(thread_id, user="", uid="", state_dir=None, codex_home=None
                 result_event["error"] = codex_text.compact_json(turn.get("error") or "Codex turn failed")
                 result_event["is_error"] = True
             events.append(result_event)
+    return events
+
+
+def snapshot_from_thread(thread):
+    thread = thread or {}
     return {
         "thread": thread,
-        "events": events[-200:],
-        "cwd": cwd,
+        "events": events_from_thread(thread)[-200:],
+        "cwd": thread.get("cwd") or os.path.expanduser("~"),
         "title": codex_history.thread_title(thread),
     }
+
+
+def history_snapshot(thread_id, user="", uid="", state_dir=None, codex_home=None,
+                     get_client_fn=None):
+    client = get_client_fn(user=user, uid=uid, state_dir=state_dir, codex_home=codex_home)
+    response = client.request(
+        "thread/read",
+        {"threadId": thread_id, "includeTurns": True},
+        timeout=30,
+    )
+    thread = (response or {}).get("thread") or {}
+    return snapshot_from_thread(thread)
 
 
 def list_thread_history(limit=60, archived=False, search=None, user="", uid="", state_dir=None,

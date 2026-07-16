@@ -174,6 +174,11 @@ checkout. It is intentionally concise so future changes can stay incremental.
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and
   local internal-auth control calls are allowed; hardened deployments can reject
   missing Origin/Referer with `csrf_allow_missing_origin = 0`.
+- `tools/check_hardened_profile.py` now makes the recommended tunnel/shared-use
+  profile verifiable: localhost bind or explicit override, HTTPS or trusted
+  proxy flag, no extra HTTP listener, web approvals, workspace-root restriction,
+  per-user homes, Secure cookies, Origin checks, missing-Origin rejection, and a
+  bounded session TTL.
 
 ## Optional Follow-ups
 
@@ -186,7 +191,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 Run this bundle after behavior changes:
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

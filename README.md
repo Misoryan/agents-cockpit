@@ -120,6 +120,14 @@ session_ttl = 28800
 When exposing through a tunnel or reverse proxy, terminate HTTPS before the
 browser reaches Agents Cockpit and keep the manager port private.
 
+Validate a hardened deployment profile before exposing it:
+
+```powershell
+python tools\check_hardened_profile.py --config config.ini
+# If HTTPS terminates at a trusted reverse proxy in front of Agents Cockpit:
+python tools\check_hardened_profile.py --config config.ini --behind-https-proxy
+```
+
 For password hashes:
 
 ```bash

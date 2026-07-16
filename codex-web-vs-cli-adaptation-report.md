@@ -541,3 +541,11 @@ Immediate next commit candidate:
 - Added `[security] csrf_origin_check`, `csrf_allow_missing_origin`, and `allowed_origins` config knobs. Defaults keep compatibility for clients that omit Origin/Referer while still rejecting explicit cross-origin browser requests; hardened deployments should set `csrf_allow_missing_origin = 0`.
 - The check accepts same Host or `X-Forwarded-Host`, plus configured extra origins for reverse proxy/tunnel deployments.
 - Added helper coverage in `tests/check_common_auth_helpers.py` and `tests/check_web_security_helpers.py`, and updated README/config guidance so the hardened profile is now executable rather than only conceptual.
+
+
+## 25. 2026-07-17 hardened profile verifier checkpoint
+
+- Added `tools/check_hardened_profile.py`, a standalone verifier for the recommended shared/tunnel deployment profile. It checks localhost binding or explicit override, HTTPS or trusted proxy termination, no extra HTTP listener, web approval gates, workspace-root restrictions, per-user Codex/Claude homes, Secure cookies, Origin checks, missing-Origin rejection, and bounded session TTL.
+- The verifier supports text output for humans and `--json` for scripts, plus `--behind-https-proxy` for reverse-proxy deployments where Agents Cockpit itself receives local HTTP behind TLS.
+- Added `tests/check_hardened_profile_tool.py` with passing, proxy, and weak-config fixtures so the hardened profile no longer exists only as README prose.
+- Updated README, `REFACTOR_PROGRESS.md`, and the CLI adaptation plan validation bundle to include the hardened-profile check.

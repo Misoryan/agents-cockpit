@@ -673,3 +673,10 @@ Immediate next commit candidate:
 - `nHandle()` now dispatches `terminal_interaction`, `terminal_input_sent`, and `terminal_closed` to dedicated terminal-card helpers, keeping replay/live event routing unchanged while isolating terminal UI behavior.
 - Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so the current structure map and static frontend contracts include the new renderer.
 - This leaves `assets/native_events.js` more focused on event routing; the next frontend seams are stage text/thinking helpers, sidebar lifecycle action rendering, or push/notification boundaries.
+
+## 44. 2026-07-17 native text/thinking renderer extraction checkpoint
+
+- Added `assets/native_text_cards.js` and moved assistant text bubbles, stream text/thinking handling, replayed thinking blocks, and proposed-plan text rendering out of `assets/native_stage.js` / `assets/native_events.js`.
+- `nHandle()` now delegates `stream_event` to `nHandleStreamEvent()` and assistant thinking blocks to `nRenderAssistantThinkingBlock()`, keeping live/replay routing unchanged while isolating text/thinking UI behavior.
+- Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so the current structure map and static frontend contracts include the new text renderer.
+- This leaves the next low-risk frontend seams as sidebar lifecycle actions, tool-body helper placement, or push/notification boundaries rather than adding more markup to the central event dispatcher.

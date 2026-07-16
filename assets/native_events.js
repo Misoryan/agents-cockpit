@@ -78,32 +78,8 @@ function nHandle(sid, obj){
     if(currentSid===sid) nSetGen(true);
     return;
   }
-  if(t==="stream_event"){ if(currentSid===sid) nSetGen(true);
-    var dl=(obj.event||{}).delta||{};
-    if(dl.type==="text_delta" && dl.text){
-      st.lastToolGroup=null;
-      nFinalizeThinking(st);
-      nStopThinking(st);
-      if(!st.curTxt) nNewTextBubble(st);
-      st.curTxt.appendChild(document.createTextNode(dl.text));
-      nScrollBottom();
-    } else if(dl.type==="thinking_delta" && dl.thinking){
-      st.lastToolGroup=null;
-      if(st.thinkBubble) nStopThinking(st);
-      if(!st.curThink){
-        nSetThinkingStart(st, obj);
-        var _thd=document.createElement("details"); _thd.open=false;
-        var _sum=document.createElement("summary"); _sum.innerHTML=_I('message-circle')+' '+nThinkingLabel(st);
-        var _pre=document.createElement("pre");
-        _thd.appendChild(_sum); _thd.appendChild(_pre);
-        nTurnCard(st).appendChild(_thd);
-        st.curThink=_pre; st.thinkBox=_thd; st.thinkSum=_sum;
-        if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
-        st.thinkTimer=setInterval(function(){ nUpdateThinkingLabel(st); },1000);
-      }
-      st.curThink.appendChild(document.createTextNode(dl.thinking));
-      nScrollBottom();
-    }
+  if(t==="stream_event"){
+    nHandleStreamEvent(sid, st, obj);
     return;
   }
   if(t==="assistant"){
@@ -117,12 +93,7 @@ function nHandle(sid, obj){
       } else if(b.type==="tool_use"){
         nRenderToolUseBlock(sid, st, b);
       } else if(b.type==="thinking"){
-        st.lastToolGroup=null;
-        if(obj.replay){
-          var _th=document.createElement("details");
-          _th.innerHTML='<summary>'+_I('message-circle')+' 思考</summary><pre>'+nEsc(b.thinking||"")+'</pre>';
-          nTurnCard(st).appendChild(_th); nScrollBottom();
-        }
+        nRenderAssistantThinkingBlock(sid, st, obj, b);
       }
     });
     st.curThink=null; st.curTxt=null;

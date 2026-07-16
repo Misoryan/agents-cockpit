@@ -73,6 +73,7 @@ def main():
         "/assets/app_state.js",
         "/assets/native_utils.js",
         "/assets/native_stage.js",
+        "/assets/native_text_cards.js",
         "/assets/native_tool_results.js",
         "/assets/native_replay.js",
         "/assets/native_forms.js",
@@ -103,6 +104,9 @@ def main():
     required = [
         "function nReplayRenderableEvents(events)",
         "function nStageHasReplayContent(st)",
+        "function nHandleStreamEvent(sid, st, obj)",
+        "function nRenderAssistantText(sid, st, text)",
+        "function nRenderAssistantThinkingBlock(sid, st, obj, block)",
         "function nReplayUnseenEvents(st, events)",
         "if(st.renderedEvents[id]) return false",
         "Object.assign({}, st.renderedEvents||{})",

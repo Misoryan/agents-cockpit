@@ -76,6 +76,25 @@ function codexStatusFirst(cfg, keys){
   }
   return "";
 }
+function codexMaskEmail(email){
+  email=String(email||"");
+  var at=email.indexOf("@");
+  if(at<=1) return email;
+  return email.slice(0,1)+"…"+email.slice(Math.max(1,at-1));
+}
+function codexAccountStatusText(account){
+  account=account||{};
+  if(!Object.keys(account).length) return "account=unknown";
+  if(account.signed_in){
+    var parts=[account.type||"signed-in"];
+    if(account.plan_type) parts.push(account.plan_type);
+    if(account.credential_source) parts.push(account.credential_source);
+    if(account.email) parts.push(codexMaskEmail(account.email));
+    return "account="+parts.join("/");
+  }
+  if(account.requires_openai_auth) return "account=login required";
+  return "account=not signed in";
+}
 function codexStatusText(r){
   if(!r) return "";
   var cfg=r.config||{}, rows=[
@@ -98,7 +117,7 @@ function codexStatusText(r){
   if(Array.isArray(r.models)) meta.push("models="+r.models.length);
   if(Array.isArray(r.permission_profiles)) meta.push("permission profiles="+r.permission_profiles.length);
   var body=parts.length?parts.join(" · "):"未返回高频字段";
-  return "只读 Codex config/read: "+body+(meta.length?" · "+meta.join(" · "):"");
+  return "Read-only Codex status: config("+body+") · "+codexAccountStatusText(r.account)+(meta.length?" · "+meta.join(" · "):"");
 }
 function renderCodexStatus(r){
   var box=$("lm-codex-status"); if(!box) return;

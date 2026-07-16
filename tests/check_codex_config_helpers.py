@@ -51,6 +51,46 @@ def main():
         "type": "workspaceWrite",
         "writableRoots": [os.path.abspath("C:/repo"), os.path.abspath("C:/repo/extras")],
     }
+    assert codex_config.account_status({
+        "requiresOpenaiAuth": False,
+        "account": {"type": "chatgpt", "email": "user@example.com", "planType": "plus"},
+    }) == {
+        "signed_in": True,
+        "requires_openai_auth": False,
+        "type": "chatgpt",
+        "email": "user@example.com",
+        "plan_type": "plus",
+        "credential_source": "",
+    }
+
+    class LaunchOptionsClient:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, params, timeout=0):
+            self.calls.append((method, params, timeout))
+            if method == "model/list":
+                return {"data": [{"id": "gpt-5-codex"}]}
+            if method == "permissionProfile/list":
+                return {"data": [{"id": "workspace-write"}]}
+            if method == "config/read":
+                return {"config": {"model": "gpt-5-codex", "approval_policy": "on-request"}}
+            if method == "account/read":
+                return {"requiresOpenaiAuth": False, "account": {
+                    "type": "chatgpt",
+                    "email": "user@example.com",
+                    "planType": "pro",
+                }}
+            return {}
+
+    launch_client = LaunchOptionsClient()
+    launch_options = codex_config.load_launch_options(launch_client, cwd="C:/repo")
+    assert launch_options["models"] == [{"id": "gpt-5-codex"}]
+    assert launch_options["permission_profiles"] == [{"id": "workspace-write"}]
+    assert launch_options["config"]["approval_policy"] == "on-request"
+    assert launch_options["account"]["type"] == "chatgpt"
+    assert launch_options["account"]["plan_type"] == "pro"
+    assert ("account/read", {"refreshToken": False}, 8) in launch_client.calls
 
     with tempfile.TemporaryDirectory() as td:
         Path(td, "README.md").write_text("hello", encoding="utf-8")

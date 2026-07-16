@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; not_integrated=60, supported=27
+- Total: 87; not_integrated=59, supported=28
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ plus static Agents Cockpit coverage labels.
 | `account/logout` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/rateLimitResetCredit/consume` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/rateLimits/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `account/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `account/read` | `supported` | Read-only account status is shown in the Codex launch modal; login/logout are not integrated. |
 | `account/sendAddCreditsNudgeEmail` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/usage/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/workspaceMessages/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |

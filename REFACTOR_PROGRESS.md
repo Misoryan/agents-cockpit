@@ -249,6 +249,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - The Codex launch modal now shows a read-only `config/read` status line with
   high-frequency fields plus model/profile counts, making it clearer which
   Codex defaults the Web session will inherit when launch overrides are blank.
+- The Codex launch modal now also reads `account/read` and displays a
+  sanitized account summary next to inherited config defaults, keeping account
+  visibility read-only without adding login/logout or token flows.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

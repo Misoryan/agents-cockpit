@@ -155,11 +155,28 @@ def default_launch_options(error=""):
         "models": [],
         "permission_profiles": [],
         "config": {},
+        "account": {},
         "approval_policies": list(APPROVAL_POLICIES),
         "sandbox_modes": list(SANDBOX_MODES),
         "web_search_modes": ["default"] + list(WEB_SEARCH_MODES),
         "reasoning_summaries": ["default"] + list(REASONING_SUMMARIES),
         "error": error or "",
+    }
+
+
+def account_status(response):
+    """Return a small, non-token account status summary for browser display."""
+    response = response or {}
+    account = response.get("account") if isinstance(response, dict) else None
+    if not isinstance(account, dict):
+        account = {}
+    return {
+        "signed_in": bool(account),
+        "requires_openai_auth": bool(response.get("requiresOpenaiAuth")) if isinstance(response, dict) else False,
+        "type": _clean_text(account.get("type")),
+        "email": _clean_text(account.get("email")),
+        "plan_type": _clean_text(account.get("planType")),
+        "credential_source": _clean_text(account.get("credentialSource")),
     }
 
 
@@ -208,5 +225,11 @@ def load_launch_options(client, cwd=""):
             out["config"] = res.get("config") or {}
     except Exception as exc:
         errors.append("config/read: %s" % exc)
+    try:
+        res = client.request("account/read", {"refreshToken": False}, timeout=8)
+        if isinstance(res, dict):
+            out["account"] = account_status(res)
+    except Exception as exc:
+        errors.append("account/read: %s" % exc)
     out["error"] = "; ".join(errors)
     return out

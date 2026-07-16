@@ -82,6 +82,7 @@ SUPPORT = {
     "client_requests": {
         "supported": {
             "initialize",
+            "account/read",
             "thread/start",
             "thread/resume",
             "turn/start",
@@ -126,6 +127,8 @@ NOTES = {
 METHOD_NOTES = {
     ("server_requests", "item/tool/call"):
         "Allowlisted MCP passthrough is implemented; unmapped tools fail visibly.",
+    ("client_requests", "account/read"):
+        "Read-only account status is shown in the Codex launch modal; login/logout are not integrated.",
 }
 
 

@@ -715,3 +715,10 @@ Immediate next commit candidate:
 - `CodexSession.history_action()` remains as the compatibility wrapper used by `/api/codex_history_action`, preserving sidebar/history behavior while reducing session-core logic.
 - Extended `tests/check_codex_history_helpers.py` to cover direct fork/archive/unarchive/rename/goal history actions, missing-input errors, unsupported actions, and app-server request mapping.
 - Re-ran targeted history/config checks so the existing launch/slash/lifecycle behavior remains unchanged before wider validation.
+
+## 50. 2026-07-17 Codex launch account status checkpoint
+
+- Extended `codex_config.load_launch_options()` to call app-server `account/read` with `refreshToken=false` and return a sanitized, non-token account summary for the launch modal.
+- Updated `assets/app_launch.js` so the Codex launch status line combines inherited `config/read` defaults, model/profile counts, and masked account/plan/auth status instead of only showing config fields.
+- Marked `account/read` as supported in `docs/app-server-protocol-matrix.md` with a read-only note; login/logout/token refresh remain intentionally outside this slice.
+- Added config/frontend/protocol tests covering account status shaping, UI helper entrypoints, and matrix classification.

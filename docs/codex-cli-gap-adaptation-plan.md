@@ -2,9 +2,9 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 Codex thread history action facade checkpoint）
+当前基线：`main`（截至 2026-07-17 Codex launch account status checkpoint）
 Codex CLI：`codex-cli 0.142.4`
-协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=27/not_integrated=60。
+协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=28/not_integrated=59。
 
 ## 1. 总体判断
 

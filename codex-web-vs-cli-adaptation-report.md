@@ -579,3 +579,9 @@ Immediate next commit candidate:
 - The first slice is behavior-preserving: `CodexSession` still exposes `_is_dangerous`, `_record_timeline_locked`, `_merge_timeline_event_locked`, `_adopt_history_replay`, `_events_after_seq`, and `replay_payload`, but event identity, timeline recording/merging, history replay adoption, incremental event lookup, and replay payload generation now sit behind the facade.
 - Added `tests/check_codex_replay_facade_helpers.py` so the new facade has direct coverage for dangerous command detection, event identity, broadcast decoration, incremental replay payloads, history replay adoption, scoring, and recovery-noise filtering.
 - Updated `REFACTOR_PROGRESS.md` and `docs/codex-cli-gap-adaptation-plan.md` to record the facade as Phase 1's first completed structural slice and to include `codex_replay_facade.py` in the validation bundle.
+
+## 30. 2026-07-17 replay facade poll/persist checkpoint
+
+- Moved the next replay/broadcast seam into `CodexReplayFacade`: broadcast preparation now decorates timeline events and records trimmed `poll_events` in one place.
+- Persistence throttling also moved behind the facade. `CodexSession._persist_if_due()` remains as a compatibility wrapper, but important-event detection and the 1.5s non-important-event throttle now live with replay/broadcast coordination.
+- Extended `tests/check_codex_replay_facade_helpers.py` to cover poll-event exclusion for snapshots/usage-style events, incremental replay after polled broadcasts, important-event persistence, and throttled non-important persistence.

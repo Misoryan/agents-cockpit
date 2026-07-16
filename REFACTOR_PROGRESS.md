@@ -178,8 +178,8 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Codex replay/timeline coordination has a first facade slice in
   `codex_replay_facade.py`; `CodexSession` keeps compatibility wrappers while
   event identity, timeline recording/merging, history replay adoption,
-  incremental replay payloads, and replay static helpers are routed through the
-  facade.
+  broadcast poll-event recording, persistence throttling, incremental replay
+  payloads, and replay static helpers are routed through the facade.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

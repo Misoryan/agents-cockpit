@@ -1288,12 +1288,7 @@ class CodexSession:
         return self._replay.decorate_for_broadcast(obj)
 
     def _broadcast(self, obj):
-        obj = self._decorate_for_broadcast(obj)
-        if obj.get("type") not in ("replay_batch", "state_snapshot", "codex_usage"):
-            with self._lock:
-                self.poll_events.append(dict(obj))
-                if len(self.poll_events) > _REPLAY_MAX_EVENTS:
-                    self.poll_events = self.poll_events[-_REPLAY_MAX_EVENTS:]
+        obj = self._replay.prepare_broadcast(obj)
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         with self.clients_lock:
             clients = list(self.clients)
@@ -1310,12 +1305,7 @@ class CodexSession:
         self._persist_if_due(obj)
 
     def _persist_if_due(self, obj):
-        typ = obj.get("type") if isinstance(obj, dict) else ""
-        now = time.time()
-        important = typ in ("assistant", "user", "result", "pending_approval", "pending_ask", "pending_form", "interrupted")
-        if important or now - self._last_persist >= 1.5:
-            self._last_persist = now
-            self._persist()
+        return self._replay.persist_if_due(obj)
 
     def _send_one(self, sock, obj):
         try:

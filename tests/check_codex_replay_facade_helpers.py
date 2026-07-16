@@ -20,6 +20,8 @@ class FakeSession:
         self.timeline = []
         self.events = []
         self.poll_events = []
+        self._last_persist = 0.0
+        self.persisted = []
         self._busy = False
         self.plan_mode = False
         self.task_mode = False
@@ -39,6 +41,9 @@ class FakeSession:
     def _pending_events_snapshot(self):
         return []
 
+    def _persist(self):
+        self.persisted.append(self._last_persist)
+
 
 def main():
     assert CodexReplayFacade.is_dangerous("rm -rf /tmp/x")
@@ -50,11 +55,14 @@ def main():
     assert event_id == "facade-000001-assistant"
 
     session = FakeSession()
-    first = session.facade.decorate_for_broadcast({"type": "assistant"})
+    first = session.facade.prepare_broadcast({"type": "assistant"})
     assert first["seq"] == 1
     assert first["event_id"] == "facade-000001-assistant"
+    assert session.poll_events == [first]
+    assert session.facade.prepare_broadcast({"type": "state_snapshot"})["type"] == "state_snapshot"
+    assert [event["type"] for event in session.poll_events] == ["assistant"]
 
-    second = session.facade.record_timeline_locked({"type": "result"})
+    second = session.facade.prepare_broadcast({"type": "result"})
     assert second["seq"] == 2
     assert [event["seq"] for event in session.facade.events_after_seq(1)] == [2]
     assert CodexReplayFacade.event_after_seq(second, 1)
@@ -63,6 +71,13 @@ def main():
     assert payload["ok"] is True
     assert [event["seq"] for event in payload["events"]] == [2]
     assert payload["snapshot"]["type"] == "state_snapshot"
+
+    assert session.facade.persist_if_due({"type": "mode_state"}, now_fn=lambda: 1.0) is False
+    assert session.persisted == []
+    assert session.facade.persist_if_due({"type": "mode_state"}, now_fn=lambda: 2.0) is True
+    assert session.persisted == [2.0]
+    assert session.facade.persist_if_due({"type": "assistant"}, now_fn=lambda: 2.1) is True
+    assert session.persisted == [2.0, 2.1]
 
     history = [{"type": "user"}, {"type": "assistant"}, {"type": "result"}]
     session.facade.adopt_history_replay(history)

@@ -604,3 +604,9 @@ Immediate next commit candidate:
 - Added `codex_notifications.py` with `CodexNotificationAdapter`, starting the notification-adapter slice without changing the existing `codex_session_events.py` helper implementation.
 - `CodexSession` still exposes `_remember_codex_debug_notice`, `_remember_route_debug`, `_codex_notice`, `_handle_updated_event`, `handle_notification`, `_on_turn_completed`, `_on_item_started`, `_on_item_completed`, `_flush_pending_plan_items`, `_on_plan_updated`, `_on_thread_settings_updated`, and `_usage_for_meta`; those wrappers now delegate through the adapter.
 - Added `tests/check_codex_notifications_helpers.py` to cover visible/silent notices, updated-event message extraction, compacted-thread notification handling, and usage meta passthrough through the adapter.
+
+## 34. 2026-07-17 notification implementation migration checkpoint
+
+- Moved the Codex notification helper implementation into `codex_notifications.py` so `CodexNotificationAdapter` now owns the notification/notice behavior rather than only wrapping `codex_session_events.py`.
+- Kept `codex_session_events.py` as a compatibility import layer for existing helper tests and any older imports, preserving the public helper function names while making the adapter module the implementation home.
+- Re-ran targeted notification/session-event tests to confirm visible notices, silent debug notices, compacted-thread handling, pending plan flushing, goal notifications, terminal interaction events, and usage metadata still behave the same.

@@ -185,10 +185,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   thread/start params, turn/start params, collaboration mode sync, thread
   response adoption, thread resume, and turn start/error handling now sit behind
   `CodexTurnRunner` while `CodexSession` keeps compatibility wrappers.
-- Codex notification handling has a first adapter slice in
-  `codex_notifications.py`: Codex event/notice wrappers now go through
-  `CodexNotificationAdapter`, leaving the existing `codex_session_events.py`
-  helper implementation and public `CodexSession` wrappers behavior-compatible.
+- Codex notification handling now lives behind `codex_notifications.py`:
+  Codex event/notice wrappers go through `CodexNotificationAdapter`, while
+  `codex_session_events.py` remains as a compatibility import layer for older
+  helper callers.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and

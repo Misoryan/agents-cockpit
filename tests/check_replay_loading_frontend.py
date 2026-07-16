@@ -167,6 +167,8 @@ def main():
         "openForkedCodexThread(fid, ftitle, obj.cwd||\"\")",
         '"/rollback 1"',
         '"/goal get"',
+        '"/mcp-status full"',
+        '"/mcp-resources "',
         '"/mcp-resource "',
         '"/mcp-tool "',
         '"/steer "',

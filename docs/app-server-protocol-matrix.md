@@ -7,7 +7,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Server Notifications
 
-- Total: 68; degraded=8, generic_visible=30, supported=30
+- Total: 68; degraded=9, generic_visible=29, supported=30
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -41,8 +41,8 @@ plus static Agents Cockpit coverage labels.
 | `item/reasoning/summaryTextDelta` | `supported` | Implemented in current adapter path. |
 | `item/reasoning/textDelta` | `supported` | Implemented in current adapter path. |
 | `item/started` | `supported` | Implemented in current adapter path. |
-| `mcpServer/oauthLogin/completed` | `generic_visible` | Generic notice/error path only. |
-| `mcpServer/startupStatus/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
+| `mcpServer/oauthLogin/completed` | `degraded` | Shown as visible OAuth success/failure notice; Web does not own token flows. |
+| `mcpServer/startupStatus/updated` | `degraded` | Shown as visible MCP startup/ready/failed notices; resource browser is manual. |
 | `model/rerouted` | `supported` | Implemented in current adapter path. |
 | `model/safetyBuffering/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
 | `model/verification` | `generic_visible` | Generic notice/error path only. |
@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; degraded=1, not_integrated=58, supported=28
+- Total: 87; degraded=1, not_integrated=57, supported=29
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -146,7 +146,7 @@ plus static Agents Cockpit coverage labels.
 | `mcpServer/oauth/login` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `mcpServer/resource/read` | `supported` | Implemented in current adapter path. |
 | `mcpServer/tool/call` | `supported` | Implemented in current adapter path. |
-| `mcpServerStatus/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `mcpServerStatus/list` | `supported` | Exposed through /mcp-status and /mcp-resources for manual MCP inventory browsing. |
 | `model/list` | `supported` | Implemented in current adapter path. |
 | `modelProvider/capabilities/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `permissionProfile/list` | `supported` | Implemented in current adapter path. |

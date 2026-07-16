@@ -27,6 +27,8 @@ var nativeSlashCommands=[
   {cmd:"/fork", fill:"/fork", desc:"Fork this Codex thread into a new history entry"},
   {cmd:"/rollback", fill:"/rollback 1", desc:"Drop the latest Codex turn from this thread"},
   {cmd:"/goal", fill:"/goal get", desc:"Read or update the thread goal: get, set, clear, status"},
+  {cmd:"/mcp-status", fill:"/mcp-status full", desc:"List MCP servers with auth, tools, resources, and templates"},
+  {cmd:"/mcp-resources", fill:"/mcp-resources ", desc:"Browse one MCP server's resources and tools"},
   {cmd:"/mcp-resource", fill:"/mcp-resource ", desc:"Read an MCP resource: server uri"},
   {cmd:"/mcp-tool", fill:"/mcp-tool ", desc:"Call an MCP tool: server tool {json}"},
   {cmd:"/steer", fill:"/steer ", desc:"Send guidance to the currently running Codex turn"}

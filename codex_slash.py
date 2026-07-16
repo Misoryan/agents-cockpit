@@ -5,6 +5,7 @@ import shlex
 import time
 
 import codex_config
+import codex_mcp_status
 import codex_text
 import common
 
@@ -63,6 +64,10 @@ class CodexSlashAdapter:
             return self.goal_command(arg)
         if name == "/mcp-resource":
             return self.read_mcp_resource(arg)
+        if name == "/mcp-status":
+            return self.list_mcp_status(arg)
+        if name == "/mcp-resources":
+            return self.list_mcp_resources(arg)
         if name == "/mcp-tool":
             return self.call_mcp_tool(arg)
         return {"ok": False, "error": "unsupported Codex slash command: %s" % name}
@@ -421,6 +426,12 @@ class CodexSlashAdapter:
         call_id = "mcp-resource-%s-%d" % (server, int(time.time() * 1000))
         self._mcp_result_events(call_id, "mcpServer.resource/read", params, result, "mcpServer/resource/read")
         return {"ok": True, "command": "mcp-resource", "server": server, "uri": uri}
+
+    def list_mcp_status(self, arg):
+        return codex_mcp_status.list_mcp_status(self.session, arg)
+
+    def list_mcp_resources(self, arg):
+        return codex_mcp_status.list_mcp_resources(self.session, arg)
 
     def call_mcp_tool(self, arg):
         parts = str(arg or "").split(None, 2)

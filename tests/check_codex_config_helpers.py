@@ -237,6 +237,14 @@ def main():
                     return {"contents": [{"uri": params.get("uri"), "text": "resource text"}]}
                 if method == "mcpServer/tool/call":
                     return {"content": [{"type": "text", "text": "tool result"}], "isError": False}
+                if method == "mcpServerStatus/list":
+                    return {"data": [{
+                        "name": "docs",
+                        "authStatus": "unsupported",
+                        "resources": [{"name": "Guide", "uri": "file://guide.md"}],
+                        "resourceTemplates": [{"name": "Guide Template", "uriTemplate": "file://{name}"}],
+                        "tools": {"search": {"name": "search", "inputSchema": {"type": "object"}}},
+                    }]}
                 if method == "thread/rollback":
                     return {"thread": {
                         "id": "thread-4",
@@ -382,6 +390,23 @@ def main():
             "arguments": {"q": "codex"},
         }
         assert lifecycle.handle_slash_command("/mcp-tool docs search []")["ok"] is False
+        assert lifecycle.handle_slash_command("/mcp-status full") == {
+            "ok": True,
+            "command": "mcp-status",
+            "detail": "full",
+            "servers": 1,
+            "next_cursor": None,
+        }
+        mcp_status_calls = [call for call in fake2.calls if call[0] == "mcpServerStatus/list"]
+        assert mcp_status_calls[-1][1]["detail"] == "full"
+        assert lifecycle.handle_slash_command("/mcp-resources docs") == {
+            "ok": True,
+            "command": "mcp-resources",
+            "server": "docs",
+            "resources": 1,
+            "resource_templates": 1,
+            "tools": 1,
+        }
 
         steer = CodexSession("s5", td, state_dir=td)
         steer.thread_id = "thread-5"

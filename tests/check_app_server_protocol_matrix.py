@@ -40,6 +40,8 @@ def main():
     assert matrix.classify("client_requests", "fuzzyFileSearch") == "supported"
     assert matrix.classify("client_requests", "mcpServer/resource/read") == "supported"
     assert matrix.classify("client_requests", "mcpServer/tool/call") == "supported"
+    assert matrix.classify("client_requests", "mcpServerStatus/list") == "supported"
+    assert matrix.classify("server_notifications", "mcpServer/oauthLogin/completed") == "degraded"
     assert matrix.classify("client_requests", "turn/steer") == "supported"
     assert matrix.classify("client_requests", "command/exec") == "degraded"
     assert matrix.classify("server_notifications", "command/exec/outputDelta") == "degraded"
@@ -52,7 +54,10 @@ def main():
         (root / "ServerRequest.json").write_text(
             json.dumps(_schema("item/tool/call")), encoding="utf-8")
         (root / "ClientRequest.json").write_text(
-            json.dumps(_schema("thread/start", "thread/fork", "account/read", "command/exec")), encoding="utf-8")
+            json.dumps(_schema(
+                "thread/start", "thread/fork", "account/read", "command/exec", "mcpServerStatus/list"
+            )),
+            encoding="utf-8")
         methods = matrix.load_methods(root)
         doc = matrix.render_markdown(methods, "codex-cli test")
         assert "Codex CLI: `codex-cli test`" in doc
@@ -65,6 +70,8 @@ def main():
         assert "Read-only account status is shown" in doc
         assert "| `command/exec` | `degraded` |" in doc
         assert "Live smoke and connection-scoped output handling" in doc
+        assert "| `mcpServerStatus/list` | `supported` |" in doc
+        assert "manual MCP inventory browsing" in doc
 
     print("app-server protocol matrix checks passed")
 

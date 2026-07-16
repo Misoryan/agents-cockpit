@@ -18,6 +18,14 @@ class FakeClient:
         self.calls.append((method, params, timeout))
         if method == "thread/goal/get":
             return {"goal": {"objective": "Keep parity smooth", "status": "active"}}
+        if method == "mcpServerStatus/list":
+            return {"data": [{
+                "name": "docs",
+                "authStatus": "unsupported",
+                "resources": [{"name": "Guide", "uri": "file://guide.md"}],
+                "resourceTemplates": [],
+                "tools": {"search": {"name": "search", "inputSchema": {}}},
+            }]}
         return {}
 
 
@@ -102,6 +110,22 @@ def main():
     assert slash.handle_slash_command('/mcp-tool srv tool ["bad"]') == {
         "ok": False,
         "error": "json-args must be an object",
+    }
+    assert slash.handle_slash_command("/mcp-status tools") == {
+        "ok": True,
+        "command": "mcp-status",
+        "detail": "toolsAndAuthOnly",
+        "servers": 1,
+        "next_cursor": None,
+    }
+    assert session.client.calls[-1][0] == "mcpServerStatus/list"
+    assert slash.handle_slash_command("/mcp-resources docs") == {
+        "ok": True,
+        "command": "mcp-resources",
+        "server": "docs",
+        "resources": 1,
+        "resource_templates": 0,
+        "tools": 1,
     }
 
     print("codex slash helper checks passed")

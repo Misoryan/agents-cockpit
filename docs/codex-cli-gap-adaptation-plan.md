@@ -2,9 +2,9 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 Codex command/exec live smoke checkpoint）
+当前基线：`main`（截至 2026-07-17 Codex MCP status visibility checkpoint）
 Codex CLI：`codex-cli 0.142.4`
-协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=8/generic_visible=30；server requests supported=5/degraded=3/generic_visible=2；client requests supported=28/degraded=1/not_integrated=58。
+协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=9/generic_visible=29；server requests supported=5/degraded=3/generic_visible=2；client requests supported=29/degraded=1/not_integrated=57。
 
 ## 1. 总体判断
 
@@ -17,7 +17,7 @@ Codex CLI：`codex-cli 0.142.4`
 | 远程可用 Codex agent 会话 | 88-90% | 对话、流式、Plan、审批/ask/form、历史恢复、图片、`@` 文件、MCP、terminalInteraction、双端 smoke 已有真实路径。 |
 | Codex CLI TUI 高频替代 | 72-78% | 高频会话能力覆盖较好；profile/config layer、插件/skills、账号闭环、非交互命令仍明显缺失。 |
 | 多访问源同步与重连体验 | 82-86% | `seq/event_id`、`after=<lastSeq>`、去重、state snapshot、open-WS catch-up、headless 双页 smoke 已完成；手机/窄屏/长会话手工记录仍缺。 |
-| app-server 协议高价值覆盖 | 65-70% | 会话核心 request/notification 覆盖较好；完整 schema 数量上仍有大量 account/config/plugin/windows sandbox/remote-control 能力未集成。 |
+| app-server 协议高价值覆盖 | 66-72% | 会话核心 request/notification 覆盖较好；完整 schema 数量上仍有大量 account/config/plugin/windows sandbox/remote-control 能力未集成；MCP status/resource 浏览已有第一刀。 |
 | 代码可维护性 | 75-77% | manager/common/native/frontend 已多轮拆分；工具卡、结果卡、pending 卡、terminalInteraction 卡、text/thinking、tool helper、sidebar renderers 和 Codex broadcast/push helper + thread history action facade 已拆出；`CodexSession`、web 入口和协议路由仍是复杂热点。 |
 | 共享/公网暴露硬化 | 65-70% | 多用户、workspace root、Origin/Referer、内部 gate auth、hardened verifier 已有；默认配置仍偏本地兼容，public profile 需要继续收紧和验收。 |
 
@@ -47,7 +47,7 @@ Browser / Android WebView
 - 多用户路径已有：web login、per-user state/workspace/Codex home、session ownership、内部 gate auth。
 - Codex replay 已有稳定 `seq/event_id`、`after=<lastSeq>`、前端 live/replay 统一去重、state snapshot 收敛、open-WS catch-up。
 - Codex 启动/turn 配置覆盖 model、approval、sandbox、web search、reasoning effort/summary、service tier、workspace-write extra writable roots。
-- Slash 和 UI 覆盖 `/model`、`/compact`、`/approval`、`/sandbox`、`/search`、`/reasoning`、`/summary`、`/service-tier`、`/add-dir`、`/rename`、`/archive`、`/unarchive`、`/fork`、`/rollback`、`/goal`、`/steer`、`/mcp-resource`、`/mcp-tool`。
+- Slash 和 UI 覆盖 `/model`、`/compact`、`/approval`、`/sandbox`、`/search`、`/reasoning`、`/summary`、`/service-tier`、`/add-dir`、`/rename`、`/archive`、`/unarchive`、`/fork`、`/rollback`、`/goal`、`/steer`、`/mcp-status`、`/mcp-resources`、`/mcp-resource`、`/mcp-tool`。
 - `@` 文件提及走 app-server `fuzzyFileSearch`；图片输入发送为 `localImage`；terminalInteraction 走 `command/exec/write|resize|terminate`。
 - 动态 MCP 只通过 `[codex_dynamic_tools]` allowlist 透传，未映射工具显式失败，不伪造成功。
 
@@ -90,15 +90,16 @@ Browser / Android WebView
 
 - command/file/MCP/dynamic/webSearch 等 item 可见；diff-like 结果有 unified diff card；JSON-shaped result 有结构化 card。
 - sleep/contextCompaction/imageGeneration/imageView 有专用 compact card。
-- MCP 手动调用和 dynamic allowlist passthrough 有真实 E2E smoke。
+- MCP 手动调用、status/resource 浏览和 dynamic allowlist passthrough 有真实或 helper 级验证路径。
 - terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。
+- `mcpServer/startupStatus/updated` 和 `mcpServer/oauthLogin/completed` 已变成可见 notice；`/mcp-status [full|tools]` 和 `/mcp-resources <server>` 可用 `mcpServerStatus/list` 浏览服务器、auth、tools、resources 和 templates。
 
 仍缺：
 
 - command execution card 还不如 CLI 清晰：cwd、duration、stdout/stderr 分区、exit code、长输出折叠、失败摘要仍可加强。
 - 多文件/大 diff 缺文件级导航、折叠、定位和 patch summary。
 - terminalInteraction 仍缺真实 Codex 长时间命令、多轮 stdin、断线恢复、移动端输入的完整 E2E。
-- MCP startup status、resource browser、OAuth/login 降级提示仍偏泛化。
+- MCP 已有 status/resource browser 第一刀；仍缺真正的 OAuth/login 闭环、资源点击读取 UI、分页/搜索和 richer MCP admin 面板。
 
 ### 3.4 会话生命周期与历史
 
@@ -225,7 +226,7 @@ Browser / Android WebView
 - 抽 `CodexNotificationAdapter`：`handle_notification`、item started/completed、plan/diff/usage/thread settings。（第一刀已落地：`CodexSession` notification/notice wrapper 已委托到 `codex_notifications.py`；第二刀已落地：notification helper 实现已迁入 `codex_notifications.py`，`codex_session_events.py` 仅保留兼容导入。）
 - 抽 `CodexSessionState`：thread/model/cfg/service tier/current turn timing/persist/recover 数据对象。（第一刀已落地：`codex_state.py` 负责 state path、payload、JSON persist、startup recover 和本地 register；后续再评估 current-turn timing、upload/image state 是否继续迁入。）
 - 抽 `CodexInputAdapter`：cwd-bounded file mention、`fuzzyFileSearch` 结果整形、image upload、`localImage` turn input、用户消息图片 replay block。（第一刀已落地：`codex_input.py` 负责上述输入链路，`CodexSession` 保留兼容 wrapper。）
-- 抽 `CodexSlashAdapter`：slash dispatch、session config tuning、thread lifecycle、goal、steer、manual MCP resource/tool 调用。（第一刀已落地：`codex_slash.py` 负责上述命令链路，`CodexSession` 保留兼容 wrapper。）
+- 抽 `CodexSlashAdapter`：slash dispatch、session config tuning、thread lifecycle、goal、steer、manual MCP status/resource/tool 调用。（第一刀已落地：`codex_slash.py` 负责上述命令链路，`CodexSession` 保留兼容 wrapper；MCP status/resource browser 由 `codex_mcp_status.py` 承接。）
 - 收口 `CodexRequestAdapter`：tool event/result、tool output append、approval/ask/form wait、dynamic MCP passthrough/reject、unsupported account/attestation recovery、approve/answer。（第一刀已落地：`codex_requests.py` 负责上述 server request 链路，`CodexSession` 保留兼容 wrapper。）
 - 前端 renderer 继续收口：tool-use、tool-result、tool helpers、pending cards、terminalInteraction cards、text/thinking helpers、sidebar Codex action helpers、sidebar rows 已拆出；后端 broadcast/push helper + thread history action facade 已拆出；下一刀优先评估 notification adapter cleanup 或 backend session core seams。
 - 保持兼容 wrapper，避免一次修改所有调用点。
@@ -253,7 +254,7 @@ Browser / Android WebView
 - command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区和大成功输出折叠。）
 - file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠。）
 - terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke，以及 standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。）
-- MCP 增加 startup status、resource browser、OAuth/login 降级提示。
+- MCP 增加 startup status、resource browser、OAuth/login 降级提示。（第一刀已落地：startup/OAuth notification 可见，`/mcp-status` 与 `/mcp-resources` 调用 `mcpServerStatus/list` 展示 auth/tools/resources/templates；真正 OAuth/login 闭环、分页/搜索和资源点击读取仍待做。）
 
 验收：用户能从 Web 卡片判断工具做了什么、成功/失败原因和下一步，而不是只能读原始事件。
 
@@ -303,7 +304,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_notifications.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_config.py codex_input.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

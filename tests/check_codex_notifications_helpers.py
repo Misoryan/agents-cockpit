@@ -40,6 +40,21 @@ def main():
 
     assert CodexNotificationAdapter.updated_event_notice_message({"message": "changed"}) == "changed"
 
+    adapter.handle_notification("mcpServer/startupStatus/updated", {
+        "name": "docs",
+        "status": "failed",
+        "error": "boom",
+    })
+    assert session.broadcasts[-1]["message"] == "MCP docs: failed (boom)"
+    assert session.broadcasts[-1]["method"] == "mcpServer/startupStatus/updated"
+
+    adapter.handle_notification("mcpServer/oauthLogin/completed", {
+        "name": "docs",
+        "success": False,
+        "error": "denied",
+    })
+    assert "MCP OAuth login failed for docs" in session.broadcasts[-1]["message"]
+
     session._compact_in_progress = True
     session._busy = True
     session.current_turn_started_at = 1.0

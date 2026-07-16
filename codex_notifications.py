@@ -4,6 +4,7 @@ import os
 import time
 
 from codex_client import CodexAppServerClient
+import codex_mcp_status
 import codex_text
 import common
 
@@ -189,8 +190,12 @@ def handle_notification(session, method, params):
             session._broadcast({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": text}}})
     elif method == "model/rerouted":
         codex_notice(session, "Model rerouted", method, params)
+    elif method in ("mcpServer/startupStatus/updated", "mcpServerStatus/updated"):
+        codex_notice(session, codex_mcp_status.startup_status_message(params), method, params)
+    elif method == "mcpServer/oauthLogin/completed":
+        codex_notice(session, codex_mcp_status.oauth_login_message(params), method, params)
     elif method in ("model/safetyBuffering/updated", "account/rateLimits/updated",
-                    "mcpServer/startupStatus/updated", "turn/moderationMetadata"):
+                    "turn/moderationMetadata"):
         handle_updated_event(session, method, params)
     elif method == "error":
         session._record_and_broadcast({"type": "result", "error": params.get("message") or codex_text.json_text(params)})

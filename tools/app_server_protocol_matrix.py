@@ -63,6 +63,7 @@ SUPPORT = {
             "model/safetyBuffering/updated",
             "account/rateLimits/updated",
             "mcpServer/startupStatus/updated",
+            "mcpServer/oauthLogin/completed",
             "turn/moderationMetadata",
         },
     },
@@ -110,6 +111,7 @@ SUPPORT = {
             "command/exec/terminate",
             "mcpServer/tool/call",
             "mcpServer/resource/read",
+            "mcpServerStatus/list",
             "turn/steer",
         },
         "degraded": {
@@ -137,6 +139,12 @@ METHOD_NOTES = {
         "Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet.",
     ("server_notifications", "command/exec/outputDelta"):
         "Handled for registered standalone command/exec streams; no generic browser UI yet.",
+    ("server_notifications", "mcpServer/startupStatus/updated"):
+        "Shown as visible MCP startup/ready/failed notices; resource browser is manual.",
+    ("server_notifications", "mcpServer/oauthLogin/completed"):
+        "Shown as visible OAuth success/failure notice; Web does not own token flows.",
+    ("client_requests", "mcpServerStatus/list"):
+        "Exposed through /mcp-status and /mcp-resources for manual MCP inventory browsing.",
 }
 
 

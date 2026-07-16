@@ -764,3 +764,10 @@ Immediate next commit candidate:
 - Added `tools/codex_command_exec_smoke.py`, a real app-server smoke covering buffered `command/exec`, streamed stdout/stderr, streamed stdin via `command/exec/write`, and termination via `command/exec/terminate`.
 - Updated the protocol matrix so `command/exec` is no longer `not_integrated`; it is marked `degraded` because live smoke and output routing exist, but no browser/admin workflow is productized yet.
 - This advances the Phase 4 terminalInteraction E2E requirement while keeping the user-facing session path unchanged until a safe product surface is designed.
+
+## 57. 2026-07-17 Codex MCP status visibility checkpoint
+
+- Added `codex_mcp_status.py` so MCP status/resource browsing is kept out of the main `CodexSession` body while still using the existing slash adapter wrapper pattern.
+- Added `/mcp-status [full|tools]` and `/mcp-resources <server>`; both call app-server `mcpServerStatus/list` and surface visible replayable notices with auth status, tool counts, resources, templates, and detail JSON.
+- `mcpServer/startupStatus/updated` and `mcpServer/oauthLogin/completed` now produce explicit visible notices instead of generic status updates; OAuth remains a degraded notice path, not a Web-owned token/login flow.
+- Updated the slash palette, protocol matrix, helper tests, frontend static contract, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so Phase 4 MCP gaps are tracked as first-slice complete with richer UI/admin work still open.

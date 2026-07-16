@@ -160,6 +160,11 @@ checkout. It is intentionally concise so future changes can stay incremental.
   include close code, retry delay, `lastSeq`, replay `after`, content presence,
   visibility state, catch-up URL, event counts, snapshot presence, and pending
   counts, making visual smoke failures easier to diagnose.
+- `tools/codex_browser_smoke.py` now launches two headless Chromium/Edge pages
+  against the real web UI, logs in through `/api/login`, attaches both pages to
+  one temporary Codex session, verifies a backend-confirmed rename notice reaches
+  both DOMs, forcibly closes one page's WebSocket, then verifies replay/catch-up
+  adds the missed notice without clearing existing content.
 
 ## Optional Follow-ups
 
@@ -172,7 +177,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 Run this bundle after behavior changes:
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check
@@ -191,4 +196,5 @@ session open:
 python tools\codex_ws_smoke.py --seconds 2
 python tools\codex_ws_smoke.py --clients 2 --seconds 2 --launch-temp --cwd .
 python tools\codex_mcp_smoke.py --cwd .
+python tools\codex_browser_smoke.py --cwd .
 ```

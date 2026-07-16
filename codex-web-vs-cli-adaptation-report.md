@@ -517,3 +517,11 @@ Immediate next commit candidate:
 - Expanded `window.NATIVE_DEBUG` logs for WebSocket close and replay catch-up paths so visual smoke runs can capture close code, retry delay, replay cursor, content presence, visibility state, catch-up URL, event count, snapshot state, and pending count without exposing raw conversation data.
 - Added `tests/check_codex_visual_smoke_report.py` so the checklist and template stay aligned with the current Phase A stability requirements.
 - This still does not claim that a real browser/mobile smoke has been executed in this checkpoint; it makes that user-visible gate explicit and repeatable before the next browser automation or manual QA pass.
+
+
+## 22. 2026-07-17 headless browser smoke checkpoint
+
+- Added `tools/codex_browser_smoke.py`, which starts two real headless Chromium/Edge tabs through the Chrome DevTools Protocol, logs in to the web UI, attaches both tabs to one temporary Codex session, and verifies a backend-confirmed `/rename` notice reaches both rendered DOMs.
+- The same smoke deliberately closes the mirror tab's WebSocket, sends another backend-confirmed notice while that tab is disconnected, and verifies the mirror tab recovers the missed notice through replay/catch-up without clearing the existing DOM content.
+- This upgrades Phase A evidence from protocol-only to rendered-browser evidence for the most important user-visible invariant: multi-client content stays synchronized and reconnect recovery appends missing content instead of repainting the whole conversation.
+- Added `tests/check_codex_browser_smoke_helpers.py` to keep the smoke's login, `showNativeSession`, forced `ws.close()`, `/api/nslash`, and DOM-preservation assertions present in the fast test bundle.

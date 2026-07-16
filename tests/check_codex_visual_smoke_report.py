@@ -23,6 +23,7 @@ def main():
         "对话窗口不频繁闪烁",
         "python tools\\codex_ws_smoke.py --clients 2 --seconds 2 --launch-temp --cwd .",
         "python tools\\codex_mcp_smoke.py --cwd .",
+        "python tools\\codex_browser_smoke.py --cwd .",
         "V01",
         "V10",
         "WebSocket 1006",
@@ -41,6 +42,7 @@ def main():
         "Codex CLI",
         "Session id",
         "PASS / FAIL / SKIP",
+        "Browser smoke",
         "Console close code / last seq / catch-up URL",
     ] + ids:
         assert token in text, "visual smoke report missing %r" % token

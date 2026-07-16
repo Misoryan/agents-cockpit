@@ -23,6 +23,12 @@ python tools\codex_ws_smoke.py --clients 2 --seconds 2 --launch-temp --cwd .
 python tools\codex_mcp_smoke.py --cwd .
 ```
 
+- 可先跑 headless 浏览器自动化 smoke，验证真实 DOM 的双端同步和断线后不清空内容：
+
+```powershell
+python tools\codex_browser_smoke.py --cwd .
+```
+
 ## 2. 必验场景
 
 | ID | 场景 | 操作 | 通过标准 | 记录证据 |
@@ -61,5 +67,6 @@ python tools\codex_mcp_smoke.py --cwd .
 ## 5. 与自动化 smoke 的边界
 
 - `tools/codex_ws_smoke.py` 证明协议层双客户端 replay/reconnect/live broadcast 不重复。
+- `tools/codex_browser_smoke.py` 证明两个真实 Chromium/Edge 页面能打开同一 Codex 会话，收到同一后端确认事件，并在其中一个 WebSocket 关闭后通过 replay/catch-up 补齐内容且不清空已有 DOM。
 - `tests/check_native_replay_frontend_logic.py` 证明前端去重、silent catch-up、diff/JSON/MCP card 分支仍存在。
 - 本 checklist 证明用户感知层：加载、闪烁、scroll、pending 卡可见性、移动端布局和真实浏览器行为。

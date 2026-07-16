@@ -171,10 +171,14 @@ def main():
             h,
             "/api/codex_options",
             urllib.parse.urlparse("/api/codex_options?dir=C%3A%2Frepo"),
-            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home"},
+            {"user": "alice", "uid": "u1", "state_dir": "state", "codex_home": "home",
+             "workspace_roots": ["C:/repo"], "uses_default_homes": False},
             lambda _sid, _ctx: None,
         )
         assert h.body["models"][0]["id"] == "gpt-5-codex"
+        assert h.body["diagnostics"]["user"] == "alice"
+        assert h.body["diagnostics"]["codex_home"] == "home"
+        assert h.body["diagnostics"]["workspace_roots"][0].endswith("repo")
 
         hist_kwargs = {}
         common.load_history = lambda limit, ctx=None, live_codex=False, archived=False: (

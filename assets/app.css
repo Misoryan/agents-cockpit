@@ -225,6 +225,11 @@ body.sb-collapsed #sidebar{display:none}
 .modal .margs{width:100%;padding:10px;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius-sm);color:var(--ink);font:13px var(--mono);resize:vertical;min-height:44px}
 .modal .margs:focus{outline:0;border-color:var(--faint)}
 .modal .mhint{font-size:11px;color:var(--faint);margin:6px 2px 0;line-height:1.45}
+.modal .codex-diag{margin-top:8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-soft);color:var(--muted)}
+.modal .codex-diag>summary{cursor:pointer;padding:7px 9px;font-weight:700;color:var(--ink)}
+.modal .codex-diag .diag-grid{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 10px;padding:0 9px 9px}
+.modal .codex-diag b{font-weight:600;color:var(--muted)}
+.modal .codex-diag pre{margin:0;white-space:pre-wrap;word-break:break-word;color:var(--ink);font:11px/1.45 var(--mono)}
 .modal .macts{display:flex;gap:8px;margin-top:6px}
 .modal .macts button{flex:1;padding:12px;font-size:14px}
 .modal .mauthor{font-size:11px;color:var(--faint);text-align:center;margin-top:16px}

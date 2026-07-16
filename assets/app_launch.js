@@ -80,7 +80,7 @@ function codexMaskEmail(email){
   email=String(email||"");
   var at=email.indexOf("@");
   if(at<=1) return email;
-  return email.slice(0,1)+"…"+email.slice(Math.max(1,at-1));
+  return email.slice(0,1)+"***"+email.slice(Math.max(1,at-1));
 }
 function codexAccountStatusText(account){
   account=account||{};
@@ -116,12 +116,40 @@ function codexStatusText(r){
   var meta=[];
   if(Array.isArray(r.models)) meta.push("models="+r.models.length);
   if(Array.isArray(r.permission_profiles)) meta.push("permission profiles="+r.permission_profiles.length);
-  var body=parts.length?parts.join(" · "):"未返回高频字段";
-  return "Read-only Codex status: config("+body+") · "+codexAccountStatusText(r.account)+(meta.length?" · "+meta.join(" · "):"");
+  if(Array.isArray(r.config_layers)) meta.push("layers="+r.config_layers.length);
+  var body=parts.length?parts.join(" | "):"no high-frequency fields";
+  return "Read-only Codex status: config("+body+") | "+codexAccountStatusText(r.account)+(meta.length?" | "+meta.join(" | "):"");
+}
+function codexDiagValue(v){
+  if(Array.isArray(v)) return v.length?v.join("\n"):"(none)";
+  if(v && typeof v==="object") return JSON.stringify(v);
+  return String(v==null||v===""?"(default)":v);
+}
+function codexDiagnosticRows(r){
+  if(!r || !r.diagnostics) return [];
+  var d=r.diagnostics, inherited=d.inherited||{};
+  return [
+    ["cwd", d.cwd||lmDir||""],
+    ["codex home", d.codex_home||"default CODEX_HOME"],
+    ["state dir", d.state_dir||""],
+    ["workspace roots", d.workspace_roots||[]],
+    ["inherited config", inherited],
+    ["capabilities", "models="+(d.models||0)+", permission_profiles="+(d.permission_profiles||0)+", layers="+(d.config_layers||0)],
+    ["account", codexAccountStatusText(r.account).replace(/^account=/, "")],
+    ["errors", d.error||r.error||""]
+  ];
+}
+function renderCodexDiagnostics(r){
+  var box=$("lm-codex-diagnostics"); if(!box) return;
+  var rows=codexDiagnosticRows(r);
+  if(!rows.length){ box.innerHTML=""; return; }
+  box.innerHTML='<details class="codex-diag"><summary>Codex diagnostics</summary><div class="diag-grid">'+rows.map(function(row){
+    return '<b>'+esc(row[0])+'</b><pre>'+esc(codexDiagValue(row[1]))+'</pre>';
+  }).join("")+'</div></details>';
 }
 function renderCodexStatus(r){
-  var box=$("lm-codex-status"); if(!box) return;
-  box.textContent=codexStatusText(r);
+  var box=$("lm-codex-status"); if(box) box.textContent=codexStatusText(r);
+  renderCodexDiagnostics(r);
 }
 function loadCodexOptions(){
   if(!isCodexBackend(lmBackend) || !lmDir) return;

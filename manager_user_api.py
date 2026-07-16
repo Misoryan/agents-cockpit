@@ -54,6 +54,7 @@ def handle_get(handler, path, pr, ctx, owned_session_fn):
                 state_dir=ctx.get("state_dir"), codex_home=ctx.get("codex_home"))
         except Exception as exc:
             options = codex_config.default_launch_options(error=str(exc))
+        options["diagnostics"] = codex_config.launch_diagnostics(options, directory, ctx)
         handler._json(options)
     elif path == "/api/nfiles":
         query = urllib.parse.parse_qs(pr.query)

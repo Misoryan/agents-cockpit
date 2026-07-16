@@ -74,7 +74,8 @@ def main():
             if method == "permissionProfile/list":
                 return {"data": [{"id": "workspace-write"}]}
             if method == "config/read":
-                return {"config": {"model": "gpt-5-codex", "approval_policy": "on-request"}}
+                return {"config": {"model": "gpt-5-codex", "approval_policy": "on-request"},
+                        "layers": [{"name": "profile:default"}]}
             if method == "account/read":
                 return {"requiresOpenaiAuth": False, "account": {
                     "type": "chatgpt",
@@ -88,9 +89,33 @@ def main():
     assert launch_options["models"] == [{"id": "gpt-5-codex"}]
     assert launch_options["permission_profiles"] == [{"id": "workspace-write"}]
     assert launch_options["config"]["approval_policy"] == "on-request"
+    assert launch_options["config_layers"] == [{"name": "profile:default"}]
     assert launch_options["account"]["type"] == "chatgpt"
     assert launch_options["account"]["plan_type"] == "pro"
+    assert ("config/read", {"cwd": "C:/repo", "includeLayers": True}, 12) in launch_client.calls
     assert ("account/read", {"refreshToken": False}, 8) in launch_client.calls
+    diag = codex_config.launch_diagnostics(
+        launch_options,
+        cwd="C:/repo",
+        ctx={"user": "alice", "uid": "u1", "state_dir": "state",
+             "codex_home": "home", "workspace_roots": ["C:/repo"]},
+    )
+    assert diag["cwd"].endswith(os.path.normpath("C:/repo"))
+    assert diag["codex_home"] == "home"
+    assert diag["workspace_roots"][0].endswith(os.path.normpath("C:/repo"))
+    assert diag["inherited"]["model"] == "gpt-5-codex"
+    assert diag["config_layers"] == 1
+
+    class LayerFallbackClient(LaunchOptionsClient):
+        def request(self, method, params, timeout=0):
+            if method == "config/read" and params.get("includeLayers"):
+                self.calls.append((method, params, timeout))
+                raise RuntimeError("layers unsupported")
+            return super().request(method, params, timeout)
+
+    fallback_options = codex_config.load_launch_options(LayerFallbackClient(), cwd="C:/repo")
+    assert fallback_options["config"]["model"] == "gpt-5-codex"
+    assert "config/read layers: layers unsupported" in fallback_options["error"]
 
     with tempfile.TemporaryDirectory() as td:
         Path(td, "README.md").write_text("hello", encoding="utf-8")

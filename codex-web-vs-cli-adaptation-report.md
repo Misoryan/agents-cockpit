@@ -750,3 +750,10 @@ Immediate next commit candidate:
 - Added terminal card CSS in `index.html` so replayed/live terminalInteraction events render as first-class cards instead of unstyled blocks.
 - Extended frontend logic/static tests to cover the terminal card helper, resize button, and status element while preserving the existing `/api/nterminal` backend contract.
 - This improves the Phase 4 terminalInteraction UX; a future slice still needs real app-server `command/exec` launch coverage once that workflow is productized.
+
+## 55. 2026-07-17 Codex launch diagnostics checkpoint
+
+- Extended `/api/codex_options` with a read-only `diagnostics` block that summarizes cwd, user, Codex home, state dir, workspace roots, inherited high-frequency config, model/profile counts, config layer count, and capability-read errors.
+- Changed `config/read` discovery to request `includeLayers=true` and preserve returned layer metadata when available, without adding any profile/config write UI.
+- Added a collapsible `Codex diagnostics` section in the launch modal and cleaned the status rendering path so inherited defaults, account state, and local path boundaries are visible before launch.
+- Added backend and static frontend tests for the diagnostics payload and UI contracts, keeping the read-only-first CLI parity strategy intact.

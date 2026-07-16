@@ -255,6 +255,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - The Codex launch modal now also reads `account/read` and displays a
   sanitized account summary next to inherited config defaults, keeping account
   visibility read-only without adding login/logout or token flows.
+- The Codex launch modal now includes a read-only diagnostics foldout fed by
+  `/api/codex_options`, covering cwd, Codex home, state dir, workspace roots,
+  inherited config, config layer count, account summary, and discovery errors.
 - Codex command result cards now parse command exit status and duration,
   preserve future stdout/stderr metadata as separate sections, and collapse very
   large successful output by default while keeping small or failed output open.

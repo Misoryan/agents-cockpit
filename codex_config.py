@@ -155,7 +155,9 @@ def default_launch_options(error=""):
         "models": [],
         "permission_profiles": [],
         "config": {},
+        "config_layers": [],
         "account": {},
+        "diagnostics": {},
         "approval_policies": list(APPROVAL_POLICIES),
         "sandbox_modes": list(SANDBOX_MODES),
         "web_search_modes": ["default"] + list(WEB_SEARCH_MODES),
@@ -200,6 +202,44 @@ def _page_request(client, method, params, key="data", limit=100, timeout=10):
     return out
 
 
+def launch_diagnostics(options, cwd="", ctx=None):
+    """Build a read-only browser diagnostic summary for Codex launch state."""
+    options = options if isinstance(options, dict) else {}
+    ctx = ctx if isinstance(ctx, dict) else {}
+    cfg = options.get("config") if isinstance(options.get("config"), dict) else {}
+    key_map = {
+        "model": ("model",),
+        "approval": ("approval_policy",),
+        "sandbox": ("sandbox_mode", "sandbox"),
+        "web_search": ("web_search",),
+        "reasoning_effort": ("model_reasoning_effort", "reasoning_effort"),
+        "reasoning_summary": ("model_reasoning_summary", "reasoning_summary"),
+        "service_tier": ("service_tier",),
+    }
+    inherited = {}
+    for label, keys in key_map.items():
+        for key in keys:
+            val = cfg.get(key)
+            if val not in (None, ""):
+                inherited[label] = val
+                break
+    roots = ctx.get("workspace_roots") or []
+    return {
+        "cwd": os.path.abspath(cwd) if cwd else "",
+        "user": _clean_text(ctx.get("user")),
+        "uid": _clean_text(ctx.get("uid")),
+        "state_dir": _clean_text(ctx.get("state_dir")),
+        "codex_home": _clean_text(ctx.get("codex_home")) or "default CODEX_HOME",
+        "uses_default_homes": bool(ctx.get("uses_default_homes")),
+        "workspace_roots": [os.path.abspath(x) for x in roots if x],
+        "inherited": inherited,
+        "models": len(options.get("models") or []),
+        "permission_profiles": len(options.get("permission_profiles") or []),
+        "config_layers": len(options.get("config_layers") or []),
+        "error": _clean_text(options.get("error")),
+    }
+
+
 def load_launch_options(client, cwd=""):
     """Read live Codex capabilities for the launch modal.
 
@@ -219,10 +259,18 @@ def load_launch_options(client, cwd=""):
     except Exception as exc:
         errors.append("permissionProfile/list: %s" % exc)
     try:
-        res = client.request(
-            "config/read", {"cwd": cwd or None, "includeLayers": False}, timeout=12)
+        try:
+            res = client.request(
+                "config/read", {"cwd": cwd or None, "includeLayers": True}, timeout=12)
+        except Exception as layer_exc:
+            errors.append("config/read layers: %s" % layer_exc)
+            res = client.request(
+                "config/read", {"cwd": cwd or None, "includeLayers": False}, timeout=12)
         if isinstance(res, dict):
             out["config"] = res.get("config") or {}
+            layers = res.get("layers") or res.get("configLayers") or []
+            if isinstance(layers, list):
+                out["config_layers"] = layers
     except Exception as exc:
         errors.append("config/read: %s" % exc)
     try:

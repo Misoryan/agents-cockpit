@@ -103,6 +103,17 @@ def main():
         assert session.notifications == [("item/updated", {"threadId": "thread-1", "itemId": "item-1"})]
         assert client.item_sessions["item-1"] is session
 
+        command_chunks = []
+        command_handler = command_chunks.append
+        assert client.add_command_exec_output_handler("proc-1", command_handler) is True
+        client._dispatch({"method": "command/exec/outputDelta", "params": {
+            "processId": "proc-1", "stream": "stdout", "deltaBase64": "b2s=", "capReached": False}})
+        assert command_chunks[-1]["processId"] == "proc-1"
+        client.remove_command_exec_output_handler("proc-1", command_handler)
+        client._dispatch({"method": "command/exec/outputDelta", "params": {
+            "processId": "proc-1", "stream": "stdout", "deltaBase64": "bGF0ZQ==", "capReached": False}})
+        assert len(command_chunks) == 1
+
         busy = FakeSession(thread_id="busy-thread", busy=True)
         client.sessions = {"busy-thread": busy}
         client._dispatch({"method": "global/event", "params": {}})

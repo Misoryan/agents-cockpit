@@ -7,7 +7,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Server Notifications
 
-- Total: 68; degraded=7, generic_visible=31, supported=30
+- Total: 68; degraded=8, generic_visible=30, supported=30
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ plus static Agents Cockpit coverage labels.
 | `account/rateLimits/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
 | `account/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
 | `app/list/updated` | `degraded` | Visible in UI, but not full CLI parity yet. |
-| `command/exec/outputDelta` | `generic_visible` | Generic notice/error path only. |
+| `command/exec/outputDelta` | `degraded` | Handled for registered standalone command/exec streams; no generic browser UI yet. |
 | `configWarning` | `supported` | Implemented in current adapter path. |
 | `deprecationNotice` | `supported` | Implemented in current adapter path. |
 | `error` | `supported` | Implemented in current adapter path. |
@@ -99,7 +99,7 @@ plus static Agents Cockpit coverage labels.
 
 ## Client Requests
 
-- Total: 87; not_integrated=59, supported=28
+- Total: 87; degraded=1, not_integrated=58, supported=28
 
 | Method | Status | Notes |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ plus static Agents Cockpit coverage labels.
 | `account/usage/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `account/workspaceMessages/read` | `not_integrated` | Not integrated in Agents Cockpit yet. |
 | `app/list` | `not_integrated` | Not integrated in Agents Cockpit yet. |
-| `command/exec` | `not_integrated` | Not integrated in Agents Cockpit yet. |
+| `command/exec` | `degraded` | Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet. |
 | `command/exec/resize` | `supported` | Implemented in current adapter path. |
 | `command/exec/terminate` | `supported` | Implemented in current adapter path. |
 | `command/exec/write` | `supported` | Implemented in current adapter path. |

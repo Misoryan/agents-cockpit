@@ -2,9 +2,9 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 Codex per-file diff section checkpoint）
+当前基线：`main`（截至 2026-07-17 Codex command/exec live smoke checkpoint）
 Codex CLI：`codex-cli 0.142.4`
-协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=7/generic_visible=31；server requests supported=5/degraded=3/generic_visible=2；client requests supported=28/not_integrated=59。
+协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=8/generic_visible=30；server requests supported=5/degraded=3/generic_visible=2；client requests supported=28/degraded=1/not_integrated=58。
 
 ## 1. 总体判断
 
@@ -91,7 +91,7 @@ Browser / Android WebView
 - command/file/MCP/dynamic/webSearch 等 item 可见；diff-like 结果有 unified diff card；JSON-shaped result 有结构化 card。
 - sleep/contextCompaction/imageGeneration/imageView 有专用 compact card。
 - MCP 手动调用和 dynamic allowlist passthrough 有真实 E2E smoke。
-- terminalInteraction 有 Web stdin/resize/terminate 路径和 adapter smoke。
+- terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。
 
 仍缺：
 
@@ -252,7 +252,7 @@ Browser / Android WebView
 
 - command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区和大成功输出折叠。）
 - file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠。）
-- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（前端交互第二刀已落地：修复终端输入卡片乱码/HTML 损坏，补 resize UI、状态回显和可测渲染 helper；真实 command/exec launch 仍未产品化。）
+- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke，以及 standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke；浏览器 workflow 仍未产品化。）
 - MCP 增加 startup status、resource browser、OAuth/login 降级提示。
 
 验收：用户能从 Web 卡片判断工具做了什么、成功/失败原因和下一步，而不是只能读原始事件。

@@ -757,3 +757,10 @@ Immediate next commit candidate:
 - Changed `config/read` discovery to request `includeLayers=true` and preserve returned layer metadata when available, without adding any profile/config write UI.
 - Added a collapsible `Codex diagnostics` section in the launch modal and cleaned the status rendering path so inherited defaults, account state, and local path boundaries are visible before launch.
 - Added backend and static frontend tests for the diagnostics payload and UI contracts, keeping the read-only-first CLI parity strategy intact.
+
+## 56. 2026-07-17 Codex command/exec live smoke checkpoint
+
+- Added connection-scoped `command/exec/outputDelta` handlers to `CodexAppServerClient`, so standalone streamed `command/exec` output can be routed without relying on thread/turn ids.
+- Added `tools/codex_command_exec_smoke.py`, a real app-server smoke covering buffered `command/exec`, streamed stdout/stderr, streamed stdin via `command/exec/write`, and termination via `command/exec/terminate`.
+- Updated the protocol matrix so `command/exec` is no longer `not_integrated`; it is marked `degraded` because live smoke and output routing exist, but no browser/admin workflow is productized yet.
+- This advances the Phase 4 terminalInteraction E2E requirement while keeping the user-facing session path unchanged until a safe product surface is designed.

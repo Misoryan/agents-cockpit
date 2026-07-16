@@ -41,6 +41,8 @@ def main():
     assert matrix.classify("client_requests", "mcpServer/resource/read") == "supported"
     assert matrix.classify("client_requests", "mcpServer/tool/call") == "supported"
     assert matrix.classify("client_requests", "turn/steer") == "supported"
+    assert matrix.classify("client_requests", "command/exec") == "degraded"
+    assert matrix.classify("server_notifications", "command/exec/outputDelta") == "degraded"
     assert matrix.classify("client_requests", "plugin/list") == "not_integrated"
 
     with tempfile.TemporaryDirectory() as td:
@@ -50,7 +52,7 @@ def main():
         (root / "ServerRequest.json").write_text(
             json.dumps(_schema("item/tool/call")), encoding="utf-8")
         (root / "ClientRequest.json").write_text(
-            json.dumps(_schema("thread/start", "thread/fork", "account/read")), encoding="utf-8")
+            json.dumps(_schema("thread/start", "thread/fork", "account/read", "command/exec")), encoding="utf-8")
         methods = matrix.load_methods(root)
         doc = matrix.render_markdown(methods, "codex-cli test")
         assert "Codex CLI: `codex-cli test`" in doc
@@ -61,6 +63,8 @@ def main():
         assert "| `thread/fork` | `supported` |" in doc
         assert "| `account/read` | `supported` |" in doc
         assert "Read-only account status is shown" in doc
+        assert "| `command/exec` | `degraded` |" in doc
+        assert "Live smoke and connection-scoped output handling" in doc
 
     print("app-server protocol matrix checks passed")
 

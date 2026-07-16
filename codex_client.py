@@ -36,6 +36,7 @@ class CodexAppServerClient:
         self.sessions = {}
         self.turn_sessions = {}
         self.item_sessions = {}
+        self.command_exec_output_handlers = {}
         self.unrouted_events = []
         self.stderr_tail = []
         self.initialized = False
@@ -182,6 +183,8 @@ class CodexAppServerClient:
             return
         method = msg.get("method")
         params = msg.get("params") or {}
+        if method == "command/exec/outputDelta" and self._handle_command_exec_output(params):
+            return
         session = self._session_from_params(params)
         if session:
             self._remember_item_route(params, session)
@@ -263,6 +266,36 @@ class CodexAppServerClient:
                 self.item_sessions[eitem] = session
             session._remember_route_debug("drained buffered event", entry.get("method"), params)
             session.handle_notification(entry.get("method"), params)
+
+    def add_command_exec_output_handler(self, process_id, handler):
+        process_id = str(process_id or "").strip()
+        if not process_id or not callable(handler):
+            return False
+        with self.lock:
+            self.command_exec_output_handlers[process_id] = handler
+        return True
+
+    def remove_command_exec_output_handler(self, process_id, handler=None):
+        process_id = str(process_id or "").strip()
+        if not process_id:
+            return
+        with self.lock:
+            if handler is None or self.command_exec_output_handlers.get(process_id) is handler:
+                self.command_exec_output_handlers.pop(process_id, None)
+
+    def _handle_command_exec_output(self, params):
+        process_id = str((params or {}).get("processId") or "").strip()
+        if not process_id:
+            return False
+        with self.lock:
+            handler = self.command_exec_output_handlers.get(process_id)
+        if not handler:
+            return False
+        try:
+            handler(params or {})
+        except Exception as exc:
+            self._log_tail("command/exec output handler failed: %s" % exc)
+        return True
 
     def _handle_server_request(self, msg):
         req_id = msg.get("id")
@@ -353,6 +386,7 @@ class CodexAppServerClient:
                 self._expected_exit_procs.add(id(proc))
             pending = list(self.pending.values())
             self.pending.clear()
+            self.command_exec_output_handlers.clear()
         for waiter in pending:
             waiter["error"] = "Codex app-server stopped"
             waiter["event"].set()

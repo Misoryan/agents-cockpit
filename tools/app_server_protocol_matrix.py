@@ -58,6 +58,7 @@ SUPPORT = {
             "model/rerouted",
         },
         "degraded": {
+            "command/exec/outputDelta",
             "item/commandExecution/terminalInteraction",
             "model/safetyBuffering/updated",
             "account/rateLimits/updated",
@@ -111,6 +112,9 @@ SUPPORT = {
             "mcpServer/resource/read",
             "turn/steer",
         },
+        "degraded": {
+            "command/exec",
+        },
         "planned_high_value": set(),
     },
 }
@@ -129,6 +133,10 @@ METHOD_NOTES = {
         "Allowlisted MCP passthrough is implemented; unmapped tools fail visibly.",
     ("client_requests", "account/read"):
         "Read-only account status is shown in the Codex launch modal; login/logout are not integrated.",
+    ("client_requests", "command/exec"):
+        "Live smoke and connection-scoped output handling are implemented; browser workflow is not productized yet.",
+    ("server_notifications", "command/exec/outputDelta"):
+        "Handled for registered standalone command/exec streams; no generic browser UI yet.",
 }
 
 

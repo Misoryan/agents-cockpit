@@ -112,6 +112,7 @@ def main():
     assert session.notices[-1][4] is True
 
     stream = FakeSession()
+    stream.cfg = {"sandbox": "danger-full-access", "approval_policy": "never"}
     stream.client = FakeStreamClient()
     streamed = codex_command_exec.run_stream_command_exec(stream, "echo ready")
     assert streamed["ok"] is True
@@ -133,6 +134,11 @@ def main():
         if obj.get("type") == "user"
     )
     assert stream.records[-1]["type"] == "result"
+    blocked = FakeSession()
+    if os.name == "nt":
+        denied = codex_command_exec.run_stream_command_exec(blocked, "echo nope")
+        assert denied["ok"] is False
+        assert "danger-full-access" in denied["error"]
 
     yolo = FakeSession()
     yolo.yolo = True

@@ -4,10 +4,10 @@
 
 This complements the socket-level smoke by rendering the real web UI in two
 headless Chromium/Edge tabs. It verifies that two browser clients can attach to
-the same Codex session, receive the same backend-confirmed notice, keep the
-mirror tab usable in a narrow/mobile viewport, and preserve existing DOM content
-while one WebSocket is deliberately closed and recovered through the
-replay/catch-up path.
+the same Codex session, receive the same backend-confirmed notice, share a
+streamed /exec command with stdin, keep the mirror tab usable in a narrow/mobile
+viewport, and preserve existing DOM content while one WebSocket is deliberately
+closed and recovered through the replay/catch-up path.
 """
 import argparse
 import base64
@@ -80,6 +80,7 @@ def _launch_temp_session(user, cwd):
         "title": "Codex browser smoke",
         "backend": "codex_native",
         "yolo": False,
+        "codex": {"sandbox": "danger-full-access", "approvalPolicy": "never"},
     })
     sid = result.get("sid")
     if not sid:
@@ -358,6 +359,7 @@ def _page_summary(page, sid):
         childCount: st.root.children.length,
         hasContent: !!(window.nStageHasReplayContent && nStageHasReplayContent(st)),
         text: st.root.innerText || "",
+        domText: st.root.textContent || "",
         firstNodeMarker: st.root.children[0] && st.root.children[0].dataset ? (st.root.children[0].dataset.smokeMarker || "") : "",
         planMode: !!st.planMode,
         wsState: (window.nativeWs && nativeWs[%s]) ? nativeWs[%s].readyState : -1,
@@ -425,6 +427,33 @@ def _wait_text(page, sid, text, timeout=10):
     )
 
 
+def _wait_dom_text(page, sid, text, timeout=10):
+    escaped_sid = json.dumps(sid)
+    escaped_text = json.dumps(text)
+    return _wait_eval(
+        page,
+        """(function(){
+          var st=(window.nativeStages||{})[%s];
+          return !!(st && st.root && (st.root.textContent||"").indexOf(%s) >= 0);
+        })()""" % (escaped_sid, escaped_text),
+        True,
+        timeout=timeout,
+    )
+
+
+def _shell_exec_stdin_command(token):
+    py = sys.executable
+    code = (
+        "import sys; "
+        "print(%r, flush=True); "
+        "data=sys.stdin.read(); "
+        "print(%r + data.strip(), flush=True)"
+    ) % ("%s ready" % token, "%s stdin:" % token)
+    if os.name == "nt":
+        return '& "%s" -u -c "%s"' % (py, code)
+    return "'%s' -u -c \"%s\"" % (py.replace("'", "'\\''"), code)
+
+
 def _force_reconnect(page, sid, timeout=15):
     escaped_sid = json.dumps(sid)
     page.eval("""(function(){
@@ -476,6 +505,28 @@ def run_smoke(args):
         _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + first_name})
         _wait_text(page_a, sid, first_name)
         _wait_text(page_b, sid, first_name)
+
+        exec_token = "exec-stream-smoke-%d" % int(time.time() * 1000)
+        exec_started = _api_post_json("/api/nslash", user, {
+            "sid": sid,
+            "command": "/exec-stream " + _shell_exec_stdin_command(exec_token),
+        })
+        exec_process_id = exec_started.get("process_id") or ""
+        if not exec_process_id:
+            raise RuntimeError("/exec-stream did not return process_id: %s" % exec_started)
+        _wait_dom_text(page_a, sid, exec_token + " ready", timeout=20)
+        _wait_dom_text(page_b, sid, exec_token + " ready", timeout=20)
+        _api_post_json("/api/nterminal", user, {
+            "sid": sid,
+            "process_id": exec_process_id,
+            "action": "write",
+            "input": "from-browser-smoke\n",
+            "close": True,
+        })
+        exec_final = exec_token + " stdin:from-browser-smoke"
+        _wait_dom_text(page_a, sid, exec_final, timeout=20)
+        _wait_dom_text(page_b, sid, exec_final, timeout=20)
+
         marker = "keep-dom-%d" % int(time.time() * 1000)
         marked = _mark_first_message_node(page_b, sid, marker)
         before = _page_summary(page_b, sid)
@@ -516,6 +567,8 @@ def run_smoke(args):
             and second_name in after_catchup["text"]
             and third_name in after["text"]
             and third_name in primary["text"]
+            and exec_final in (after.get("domText") or "")
+            and exec_final in (primary.get("domText") or "")
             and after_catchup["lastSeq"] >= before["lastSeq"]
             and after["lastSeq"] >= after_catchup["lastSeq"]
             and catchup_dom_preserved
@@ -536,6 +589,13 @@ def run_smoke(args):
             "mirror_viewport": mirror_viewport,
             "narrow_layout_ok": narrow_layout_ok,
             "temporary_session": temp_sid or None,
+            "exec_stream": {
+                "process_id": exec_process_id,
+                "ready_text": exec_token + " ready",
+                "final_text": exec_final,
+                "seen_primary": exec_final in (primary.get("domText") or "") if primary else False,
+                "seen_mirror": exec_final in (after.get("domText") or "") if after else False,
+            },
             "dom_marker": marked,
             "dom_preserved_after_catchup": catchup_dom_preserved,
             "text_preserved_after_catchup": catchup_text_preserved,

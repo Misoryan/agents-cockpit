@@ -833,3 +833,10 @@ Immediate next commit candidate:
 - Streaming stdout/stderr updates the same replayable Bash/PowerShell result card in place, so second clients and reconnect replay see the latest command output without raw JSON.
 - The workflow reuses the existing terminalInteraction browser card for stdin, close-stdin, resize, and terminate controls, while keeping the command scoped to the current Codex session and sandbox/approval settings.
 - Extended the live command exec smoke so it validates the new browser-helper path against real app-server streaming output and stdin close, not only direct low-level `command/exec` calls.
+
+## 63. 2026-07-17 browser smoke /exec-stream multi-client checkpoint
+
+- Extended `tools/codex_browser_smoke.py` so the real headless two-tab browser path now runs `/exec-stream <command>` in the temporary Codex session.
+- The smoke waits for streamed output in both the desktop primary tab and phone-like narrow mirror tab, sends stdin through `/api/nterminal`, then verifies the final stdout appears in both DOMs before forcing disconnect/catch-up and explicit reconnect.
+- Temporary browser-smoke sessions now launch with Codex `sandbox=danger-full-access` and `approvalPolicy=never` so Windows app-server streaming is exercised intentionally without changing existing user sessions.
+- This turns the new command/exec streaming workflow into part of the multi-access anti-flicker gate instead of only a low-level app-server smoke.

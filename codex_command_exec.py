@@ -231,6 +231,21 @@ def _has_active_stream_exec(session):
         return any(str(pid).startswith("command-exec-") for pid in session._terminal_processes)
 
 
+def _streaming_allowed(session):
+    if os.name != "nt":
+        return True, ""
+    if getattr(session, "yolo", False):
+        return True, ""
+    cfg = getattr(session, "cfg", {}) or {}
+    if cfg.get("sandbox") == "danger-full-access":
+        return True, ""
+    return (
+        False,
+        "streamed command/exec requires danger-full-access on Windows; use /exec for buffered output "
+        "or set /sandbox danger-full-access before /exec-stream",
+    )
+
+
 def _mark_stream_terminal(session, process_id, call_id):
     event = codex_terminal.terminal_interaction_event(
         session,
@@ -351,6 +366,9 @@ def run_stream_command_exec(session, arg):
     command = str(arg or "").strip()
     if not command:
         return {"ok": False, "error": "usage: /exec-stream <shell command>"}
+    allowed, reason = _streaming_allowed(session)
+    if not allowed:
+        return {"ok": False, "error": reason}
     if _has_active_stream_exec(session):
         return {"ok": False, "error": "another /exec-stream command is already running in this session"}
     process_id = _stream_process_id(session)

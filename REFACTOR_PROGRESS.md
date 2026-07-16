@@ -189,6 +189,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - The same smoke now separates disconnected catch-up from an actual forced
   `nativeConnect(..., {force:true})` WebSocket reconnect, verifying the marked
   DOM node survives both phases before another backend-confirmed notice lands.
+- The browser smoke now also runs a streamed `/exec-stream` command in the
+  temporary Codex session, sends stdin through `/api/nterminal`, and verifies
+  both desktop and narrow mirror DOMs contain the final command output before
+  the reconnect/DOM-preservation phases.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

@@ -28,17 +28,13 @@ import codex_session_events
 import codex_terminal
 import codex_text
 import codex_thread_history
+import codex_turn
 import common
 from common import ws_send, ws_recv, STATE_DIR
 
 
 _CLIENT_LOCK = threading.Lock()
 _CLIENTS = {}
-
-_TASK_SYSTEM = (
-    "Task mode: for multi-step work, keep a concise todo list and update it as "
-    "you make progress so the user can follow the task state."
-)
 
 _REPLAY_MAX_EVENTS = 400
 _REPLAY_STREAM_MAX_CHARS = 24000
@@ -241,6 +237,7 @@ class CodexSession:
         self.poll_events = []
         self._replay = codex_replay_facade.CodexReplayFacade(
             self, _REPLAY_MAX_EVENTS, _REPLAY_STREAM_MAX_CHARS)
+        self._turn = codex_turn.CodexTurnRunner(self)
         self._next_seq = 1
         self._last_usage = None
         self.plan_mode = False
@@ -972,140 +969,25 @@ class CodexSession:
         self._broadcast_transient(self._state_snapshot())
 
     def _thread_params(self):
-        params = {"cwd": self.cwd}
-        if self.cfg.get("model"):
-            params["model"] = self.cfg["model"]
-        if self.cfg.get("approval_policy"):
-            params["approvalPolicy"] = self.cfg["approval_policy"]
-        if self.cfg.get("sandbox"):
-            params["sandbox"] = self.cfg["sandbox"]
-        if self.cfg.get("service_tier"):
-            params["serviceTier"] = self.cfg["service_tier"]
-        config = codex_config.thread_config(self.cfg)
-        if config:
-            params["config"] = config
-        if self.yolo:
-            params["approvalPolicy"] = "never"
-            params["sandbox"] = "danger-full-access"
-        return params
+        return self._turn.thread_params()
 
     def _turn_params(self, prompt, image_inputs=None):
-        text = prompt
-        if self.task_mode:
-            text = _TASK_SYSTEM + "\n\n" + text
-        params = {
-            "threadId": self.thread_id,
-            "cwd": self.cwd,
-            "input": self._user_input_items(text, image_inputs=image_inputs),
-            "collaborationMode": self._collaboration_mode(),
-        }
-        if self.cfg.get("model"):
-            params["model"] = self.cfg["model"]
-        if self.cfg.get("service_tier"):
-            params["serviceTier"] = self.cfg["service_tier"]
-        if self.cfg.get("reasoning_effort"):
-            params["effort"] = self.cfg["reasoning_effort"]
-        if self.cfg.get("reasoning_summary"):
-            params["summary"] = self.cfg["reasoning_summary"]
-        if self.yolo:
-            params["approvalPolicy"] = "never"
-            params["sandboxPolicy"] = {"type": "dangerFullAccess"}
-        else:
-            if self.cfg.get("approval_policy"):
-                params["approvalPolicy"] = self.cfg["approval_policy"]
-            sandbox = codex_config.sandbox_policy(
-                self.cfg.get("sandbox"), self.cwd, self.cfg.get("writable_roots"))
-            if sandbox:
-                params["sandboxPolicy"] = sandbox
-        return params
+        return self._turn.turn_params(prompt, image_inputs=image_inputs)
 
     def _collaboration_mode(self):
-        return {
-            "mode": "plan" if self.plan_mode else "default",
-            "settings": {
-                "model": self.model or self.cfg.get("model") or "",
-                "reasoning_effort": self.cfg.get("reasoning_effort") or None,
-                "developer_instructions": None,
-            },
-        }
+        return self._turn.collaboration_mode()
 
     def _sync_collaboration_mode(self):
-        if not self.thread_id:
-            return
-        try:
-            self._client().request(
-                "thread/settings/update",
-                {"threadId": self.thread_id, "collaborationMode": self._collaboration_mode()},
-                timeout=15,
-            )
-        except Exception as e:
-            self._codex_notice(
-                "Failed to update Codex Plan mode",
-                "thread/settings/update",
-                {"mode": "plan" if self.plan_mode else "default", "error": str(e)},
-            )
+        return self._turn.sync_collaboration_mode()
 
     def _apply_thread_response(self, res):
-        if not isinstance(res, dict):
-            return
-        thread = res.get("thread") or {}
-        new_thread_id = thread.get("id") or thread.get("sessionId")
-        if self.thread_id and new_thread_id and new_thread_id != self.thread_id:
-            self._codex_notice(
-                "Ignored Codex thread update for a different thread",
-                "thread/started",
-                {"currentThreadId": self.thread_id, "incomingThreadId": new_thread_id},
-                level="debug",
-                silent=True,
-            )
-            return
-        self.thread_id = new_thread_id or self.thread_id
-        self.model = res.get("model") or self.model or self.cfg.get("model") or ""
-        self.model_provider = res.get("modelProvider") or self.model_provider
-        self.service_tier = res.get("serviceTier") or self.service_tier
-        if self.thread_id:
-            self._client().register(self.thread_id, self)
-        if self.model:
-            self._record_and_broadcast({"type": "system", "model": self.model, "version": thread.get("cliVersion")})
+        return self._turn.apply_thread_response(res)
 
     def _ensure_thread(self):
-        client = self._client()
-        client.ensure()
-        if self.thread_id:
-            client.register(self.thread_id, self)
-        if self._thread_ready:
-            return
-        if self.thread_id:
-            res = client.request(
-                "thread/resume",
-                {"threadId": self.thread_id, "cwd": self.cwd, "excludeTurns": True},
-                timeout=30,
-            )
-            self._apply_thread_response(res)
-            self._thread_ready = True
-        else:
-            self.start()
+        return self._turn.ensure_thread()
 
     def _run_turn(self, prompt, image_inputs=None):
-        self._busy = True
-        if not self.current_turn_started_at:
-            self.current_turn_started_at = time.time()
-        self.last_activity = time.time()
-        try:
-            self._ensure_thread()
-            self._sync_collaboration_mode()
-            res = self._client().request(
-                "turn/start", self._turn_params(prompt, image_inputs=image_inputs), timeout=30)
-            turn = (res or {}).get("turn") or {}
-            self.last_turn_id = turn.get("id") or self.last_turn_id
-            if self.last_turn_id:
-                self._client().register_turn(self.last_turn_id, self)
-            self._persist()
-        except Exception as e:
-            self._busy = False
-            self.current_turn_started_at = None
-            self._record_and_broadcast({"type": "result", "error": "Codex turn failed: %s" % e})
-            self._persist()
+        return self._turn.run_turn(prompt, image_inputs=image_inputs)
 
     def _remember_codex_debug_notice(self, message, method=None, params=None):
         return codex_session_events.remember_codex_debug_notice(self, message, method=method, params=params)

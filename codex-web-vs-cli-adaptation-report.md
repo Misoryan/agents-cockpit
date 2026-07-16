@@ -591,3 +591,10 @@ Immediate next commit candidate:
 - Moved `CodexSession.add_client()` internals behind `CodexReplayFacade.add_client()` while keeping the public `CodexSession.add_client(sock, after_seq=0)` entrypoint unchanged for manager/WebSocket callers.
 - The facade now owns the client attach replay sequence: optional `replay_batch`, `state_snapshot`, pending approval/ask/form events, client registration, keepalive ping loop, WebSocket recv loop, client discard, and socket close cleanup.
 - Extended `tests/check_codex_replay_facade_helpers.py` with a fake socket/thread path so initial replay ordering, pending-card replay on attach, close/discard cleanup, and keepalive thread startup are covered without opening a real socket.
+
+## 32. 2026-07-17 turn runner extraction checkpoint
+
+- Added `codex_turn.py` with `CodexTurnRunner`, starting Phase 2 by moving Codex thread/turn lifecycle coordination out of the main `CodexSession` body.
+- `CodexSession` still exposes `_thread_params`, `_turn_params`, `_collaboration_mode`, `_sync_collaboration_mode`, `_apply_thread_response`, `_ensure_thread`, and `_run_turn`, but those compatibility wrappers now delegate to the runner.
+- The runner now owns thread/start params, turn/start params, task-mode prompt prefixing, collaboration mode sync, thread response adoption, thread resume, turn/start request handling, turn registration, and turn-start failure cleanup.
+- Added `tests/check_codex_turn_helpers.py` to cover thread params, task-mode turn params, collaboration settings, thread resume adoption, successful turn start registration, and failed turn cleanup.

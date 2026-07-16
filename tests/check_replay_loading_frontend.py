@@ -74,6 +74,7 @@ def main():
         "/assets/app_state.js",
         "/assets/native_utils.js",
         "/assets/native_stage.js",
+        "/assets/native_tool_helpers.js",
         "/assets/native_text_cards.js",
         "/assets/native_tool_results.js",
         "/assets/native_replay.js",

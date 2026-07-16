@@ -15,6 +15,7 @@ let ctx = {console, setTimeout, clearTimeout, window: {}, _I: () => ""};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_tool_helpers.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
 const {

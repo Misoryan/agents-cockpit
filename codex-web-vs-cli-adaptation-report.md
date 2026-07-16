@@ -687,3 +687,10 @@ Immediate next commit candidate:
 - The sidebar still calls `appendCodexRunActions()` and `appendCodexHistoryActions()` from conversation rows, but `/api/nslash` and `/api/codex_history_action` posting plus action-button construction now live in the dedicated Codex action module.
 - Updated `index.html`, `REFACTOR_PROGRESS.md`, `docs/codex-cli-gap-adaptation-plan.md`, and `tests/check_replay_loading_frontend.py` so script order and static contracts include the new sidebar action module.
 - This keeps sidebar list rendering separate from CLI-parity lifecycle actions, making future Fork/Rollback/Goal/Archive UX work safer for multi-client session list refreshes.
+
+## 46. 2026-07-17 native tool-helper extraction checkpoint
+
+- Added `assets/native_tool_helpers.js` and moved special tool body rendering, structured MCP/dynamic tool previews, and shell tool grouping helpers out of `assets/native_stage.js`.
+- `assets/native_stage.js` now stays focused on session stage containers plus shared row/meta helpers, while `assets/native_tool_cards.js` consumes the dedicated helper module for tool-specific markup.
+- Updated `index.html`, `tests/check_replay_loading_frontend.py`, `tests/check_native_replay_frontend_logic.py`, `REFACTOR_PROGRESS.md`, and `docs/codex-cli-gap-adaptation-plan.md` so script order and helper coverage include the new module.
+- This reduces the risk that future CLI-parity tool card work touches session/replay stage lifecycle code.

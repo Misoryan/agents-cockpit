@@ -743,3 +743,10 @@ Immediate next commit candidate:
 - Diff result cards now show a patch summary row, file chips with per-file stats, and nested per-file sections; large multi-file diffs keep the outer card closed and also keep file sections collapsed until opened.
 - Updated `index.html` styling plus frontend logic/static tests so `diff-patch-summary`, `diff-file-sections`, and `diff-file-section` stay covered.
 - This advances the Phase 4 file-change work from "large blob with chips" toward CLI-like file-level navigation without changing backend replay events.
+
+## 54. 2026-07-17 Codex terminal interaction card UX checkpoint
+
+- Rebuilt `assets/native_terminal_cards.js` terminalInteraction markup around a pure `nTerminalCardHtml()` helper, replacing mojibake/broken labels with clear stdin, send, close-stdin, terminate, status, and resize controls.
+- Added terminal card CSS in `index.html` so replayed/live terminalInteraction events render as first-class cards instead of unstyled blocks.
+- Extended frontend logic/static tests to cover the terminal card helper, resize button, and status element while preserving the existing `/api/nterminal` backend contract.
+- This improves the Phase 4 terminalInteraction UX; a future slice still needs real app-server `command/exec` launch coverage once that workflow is productized.

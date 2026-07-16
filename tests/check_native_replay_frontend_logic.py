@@ -17,6 +17,7 @@ vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_helpers.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_terminal_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
 const {
   nMarkRendered,
@@ -30,6 +31,7 @@ const {
   nDiffStats,
   nToolResultMarkup,
   nJsonResultHtml,
+  nTerminalCardHtml,
   nSpecialToolBody,
   nStructuredToolBody
 } = ctx;
@@ -101,6 +103,13 @@ assert.ok(multiHtml.includes("largest: src/file0.js +1 -1"));
 assert.ok(multiHtml.includes("+2 more"));
 assert.ok(nDiffFileListHtml(multiSections).includes("src/file7.js"));
 assert.ok(nDiffPatchSummaryHtml(multiStats, multiSections).includes("10 files"));
+const termHtml = nTerminalCardHtml("proc-1", {stdin: "password:"});
+assert.ok(termHtml.includes("Command needs terminal input"));
+assert.ok(termHtml.includes("Type text to send to stdin"));
+assert.ok(termHtml.includes("class=\"tresize\""));
+assert.ok(termHtml.includes("terminal-status"));
+assert.ok(termHtml.includes("proc-1"));
+assert.ok(termHtml.includes("password:"));
 assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("Command"));
 assert.ok(nToolResultMarkup("cmd-1", "out\nexit code: 2", "Bash").includes("exit 2"));

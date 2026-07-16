@@ -223,6 +223,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Frontend terminalInteraction rendering moved from `assets/native_events.js`
   into `assets/native_terminal_cards.js`, including `/api/nterminal` posting,
   stdin card rendering, input-sent cleanup, and close/terminate summaries.
+- Codex terminalInteraction cards now use clean, testable markup with stdin,
+  send, close-stdin, terminate, resize, and inline status controls instead of
+  mojibake labels or unstyled terminal blocks.
 - Frontend assistant text, stream text/thinking, and proposed-plan text rendering
   moved from `assets/native_stage.js` / `assets/native_events.js` into
   `assets/native_text_cards.js`, reducing the remaining stage module to session

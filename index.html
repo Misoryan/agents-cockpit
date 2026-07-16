@@ -211,6 +211,21 @@
         .nmsg.ask .qlabel{display:block;font-weight:700}
         .nmsg.ask .qdesc{display:block;color:var(--muted);font-size:12px;line-height:1.4;margin-top:3px}
         .nmsg.ask .qfree{margin-top:7px}
+        .nmsg.terminal{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12.5px;padding:11px 13px}
+        .nmsg.terminal .terminal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+        .nmsg.terminal .terminal-title{color:var(--ink);font-weight:700;font-size:13px}
+        .nmsg.terminal .terminal-pid{color:var(--muted);font:11px var(--mono);word-break:break-all}
+        .nmsg.terminal .terminal-prompt{margin:0 0 8px;background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:7px 9px;white-space:pre-wrap;word-break:break-word}
+        .nmsg.terminal .terminal-input{width:100%;background:#fff;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);padding:8px 10px;font:13px var(--mono);resize:vertical}
+        .nmsg.terminal .terminal-input:focus{outline:0;border-color:var(--faint)}
+        .nmsg.terminal .terminal-size{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font:11px var(--mono)}
+        .nmsg.terminal .terminal-size input{width:70px;border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;font:12px var(--mono);color:var(--ink)}
+        .nmsg.terminal .terminal-actions{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+        .nmsg.terminal button{padding:7px 13px;border-radius:6px;border:1px solid var(--line-strong);cursor:pointer;background:#fff;font:600 12px/1 var(--sans)}
+        .nmsg.terminal .tsend{background:var(--ink);color:white;border-color:var(--ink)}
+        .nmsg.terminal .tkill{color:var(--red);border-color:rgba(220,38,38,.28)}
+        .nmsg.terminal .terminal-status{min-height:16px;margin-top:7px;color:var(--muted);font:11px var(--mono)}
+        .nmsg.terminal .terminal-status.error{color:var(--red)}
         .nmsg.form{align-self:flex-start;max-width:94%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 13px}
         .nmsg.form .fhead{font:700 13px/1.3 var(--sans);color:var(--ink);margin-bottom:5px}
         .nmsg.form .fmsg{font-size:13px;color:var(--ink);margin-bottom:9px;line-height:1.55}

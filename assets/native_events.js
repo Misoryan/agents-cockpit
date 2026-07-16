@@ -129,6 +129,7 @@ function nHandle(sid, obj){
         nRenderAssistantText(sid, st, b.text);
       } else if(b.type==="tool_use"){
         var _tu=document.createElement("div"); _tu.className="nmsg tool"; _tu.dataset.tuid=b.id||"";
+        _tu.dataset.tname=b.name||"";
         var _inp=b.input||{};
         var _n=(b.name||"").toLowerCase();
         if(_n==="mcp__cockpit__ask_user"){ return; }

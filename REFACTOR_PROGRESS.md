@@ -142,6 +142,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Standalone Codex diff results now render as update-in-place diff cards instead
   of generic result blobs, so repeated `turn/diff/updated` snapshots replace the
   same card and keep long coding turns closer to the CLI diff experience.
+- JSON-shaped tool results now render as structured result cards with a short
+  preview and pretty JSON body, improving MCP/dynamic/tool result readability
+  without changing the replay event contract.
 
 ## Optional Follow-ups
 

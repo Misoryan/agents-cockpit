@@ -109,8 +109,47 @@ function nDiffResultHtml(txt){
   }).join("");
   return '<details class="tres-det diff-det" open><summary>'+nEsc(summary)+'</summary><pre class="diff-unified">'+rows+'</pre></details>';
 }
-function nToolResultMarkup(toolId, txt){
-  return (toolId==="turn-diff" || nLooksLikeDiff(txt)) ? nDiffResultHtml(txt) : nToolResultHtml(txt);
+function nTryJson(txt){
+  txt=String(txt==null?"":txt).trim();
+  if(!txt || ("[{".indexOf(txt.charAt(0))<0)) return null;
+  try{ return JSON.parse(txt); }catch(e){ return null; }
+}
+function nJsonResultSummary(obj, toolName){
+  var label=toolName?("JSON · "+toolName):"JSON result";
+  if(Array.isArray(obj)) return label+" · "+obj.length+" items";
+  if(obj && typeof obj==="object"){
+    var n=0; Object.keys(obj).forEach(function(){ n++; });
+    if(obj.isError || obj.error) label+=" · error";
+    else if(Array.isArray(obj.content)) label+=" · "+obj.content.length+" content";
+    else if(Array.isArray(obj.contents)) label+=" · "+obj.contents.length+" resource";
+    else label+=" · "+n+" fields";
+  }
+  return label;
+}
+function nJsonResultPreview(obj){
+  var items=[];
+  function addText(t){ t=String(t||"").trim(); if(t) items.push(t.slice(0,240)); }
+  if(Array.isArray(obj)){ obj.slice(0,3).forEach(function(x){ addText(typeof x==="string"?x:JSON.stringify(x)); }); }
+  else if(obj && typeof obj==="object"){
+    var arr=Array.isArray(obj.content)?obj.content:(Array.isArray(obj.contents)?obj.contents:[]);
+    arr.slice(0,3).forEach(function(x){ addText((x&&x.text) || (x&&x.uri) || (x&&x.name) || JSON.stringify(x)); });
+    if(!items.length && obj.error) addText(obj.error);
+  }
+  if(!items.length) return "";
+  return '<div class="json-preview">'+items.map(function(t){ return '<div>'+nEsc(t)+'</div>'; }).join("")+'</div>';
+}
+function nJsonResultHtml(txt, toolName){
+  var obj=nTryJson(txt);
+  if(obj==null) return "";
+  var pretty;
+  try{ pretty=JSON.stringify(obj,null,2); }catch(e){ pretty=txt; }
+  var summary=nJsonResultSummary(obj, toolName);
+  return '<details class="tres-det json-det" open><summary>'+nEsc(summary)+'</summary>'+nJsonResultPreview(obj)+'<pre class="json-result">'+nEsc(pretty)+'</pre></details>';
+}
+function nToolResultMarkup(toolId, txt, toolName){
+  if(toolId==="turn-diff" || nLooksLikeDiff(txt)) return nDiffResultHtml(txt);
+  var json=nJsonResultHtml(txt, toolName);
+  return json || nToolResultHtml(txt);
 }
 function nShellGroupKey(name){
   name=String(name||"").toLowerCase();
@@ -131,6 +170,7 @@ function nAppendShellGroupEntry(st, b, summaryHtml, bodyHtml){
   var entry=document.createElement("div");
   entry.className="tool-entry";
   entry.dataset.tuid=b.id||"";
+  entry.dataset.tname=b.name||"";
   entry.innerHTML='<div class="tool-entry-idx">#'+g.count+'</div>'+bodyHtml+'<div class="tres">Running...</div>';
   g.body.appendChild(entry);
   st.curTxt=null; nScrollBottom();
@@ -147,8 +187,9 @@ function nFindStandaloneResultHost(st, tuid){
   return null;
 }
 function nRenderToolResult(st, tuid, txt){
-  var html=nToolResultMarkup(tuid, txt);
   var tu=nFindToolResultHost(st, tuid);
+  var toolName=tu&&tu.dataset?tu.dataset.tname:"";
+  var html=nToolResultMarkup(tuid, txt, toolName);
   if(tu){
     var r=tu.querySelector('.tres'); if(r){ r.innerHTML=html; }
     return;

@@ -476,3 +476,11 @@ Immediate next commit candidate:
 - Repeated `turn/diff/updated` snapshots now update the same standalone result card via `data-tuid`, reducing duplicate diff cards during long coding turns and keeping replay/live rendering less noisy across clients.
 - The generic tool-result renderer now detects diff-like content and uses the same diff card; non-diff output keeps the existing collapsed result block.
 - Added frontend static and Node helper checks for `nDiffResultHtml`, `nToolResultMarkup`, and `nRenderToolResult`, covering summary stats, add/delete line classes, and the special `turn-diff` path.
+
+
+## 17. 2026-07-17 JSON tool result card checkpoint
+
+- Improved the generic tool-result renderer again: JSON-shaped result content now becomes a structured result card with a concise summary, optional content preview, and pretty-printed JSON body.
+- Tool cards now keep the originating tool name in `data-tname`, so MCP/manual tool results can display summaries such as `JSON · server.tool` rather than an anonymous `Result (...)` blob.
+- The renderer still preserves the same replay contract (`tool_result` events with `tool_use_id`); this is a frontend-only display improvement that works for live events, replay, reconnect, and catch-up polling.
+- Added static and Node-level checks for `nJsonResultHtml`, JSON previews, and the JSON branch in `nToolResultMarkup`.

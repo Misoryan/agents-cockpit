@@ -23,7 +23,8 @@ const {
   nReplayBatchAsync,
   nDiffResultHtml,
   nDiffStats,
-  nToolResultMarkup
+  nToolResultMarkup,
+  nJsonResultHtml
 } = ctx;
 
 let st = {renderedEvents: {}, lastSeq: 0};
@@ -69,6 +70,11 @@ assert.ok(diffHtml.includes("du-add"));
 assert.ok(diffHtml.includes("du-del"));
 assert.ok(nToolResultMarkup("turn-diff", sampleDiff).includes("diff-unified"));
 assert.ok(nToolResultMarkup("tool-1", "plain text").includes("Result (1 lines)"));
+const jsonHtml = nJsonResultHtml('{"content":[{"type":"text","text":"hello from mcp"}],"isError":false}', "demo.tool");
+assert.ok(jsonHtml.includes("JSON · demo.tool"));
+assert.ok(jsonHtml.includes("json-preview"));
+assert.ok(jsonHtml.includes("json-result"));
+assert.ok(nToolResultMarkup("mcp-tool-demo", '{"error":"bad"}', "demo.tool").includes("JSON · demo.tool · error"));
 
 (async function(){
   let catchupEvents = [];

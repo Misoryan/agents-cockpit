@@ -1,10 +1,10 @@
 # codex-web 中 Codex 会话 vs Codex CLI 差距分析与适配计划
 
-生成日期：2026-07-16
+生成日期：2026-07-16；最新校准：2026-07-17
 项目：`E:\tools\codex-web`
-当前代码：`main` / `9f2fc85 refactor codex web structure` + 本轮未提交适配工作树
+当前代码：`main` / `520a05c Add Codex MCP passthrough smoke`，本次校准前工作树为 clean
 对照对象：本机 `codex-cli 0.142.4`、`codex app-server --stdio`、本机生成的 app-server JSON Schema
-工作树状态：本报告对应的 CLI parity / replay / WebSocket / slash / terminal / MCP 适配改动仍在本地待提交，提交前应重新运行第 9 节验证命令。
+当前快照：更完整、可执行的当前版差距分析见 `docs/codex-cli-gap-adaptation-plan.md`；本文件保留早期分析和连续 checkpoint。
 
 ## 0. 结论先行
 

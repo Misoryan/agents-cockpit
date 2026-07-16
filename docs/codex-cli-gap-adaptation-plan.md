@@ -227,7 +227,7 @@ Browser / Android WebView
 
 任务：
 
-- 为 terminalInteraction 增加真实长命令 smoke：多次 stdin、resize、terminate、断线恢复。
+- 为 terminalInteraction 增加长链路 smoke：多次 stdin、resize、close stdin、terminate、关闭后的拒绝和 replayable close 事件。第一版已落到 `tools/codex_terminal_smoke.py`；后续还应补真实 Codex command exec 场景。
 - 继续细化 command execution card：status、cwd、duration、stdout/stderr、exit code、折叠大输出。
 - 继续细化 file change card：文件列表、patch 预览、大 diff 折叠、跳转。
 - 扩展 MCP smoke 到 startup status、resource read、OAuth/login 降级提示。

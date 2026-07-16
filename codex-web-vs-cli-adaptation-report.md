@@ -525,3 +525,11 @@ Immediate next commit candidate:
 - The same smoke deliberately closes the mirror tab's WebSocket, sends another backend-confirmed notice while that tab is disconnected, and verifies the mirror tab recovers the missed notice through replay/catch-up without clearing the existing DOM content.
 - This upgrades Phase A evidence from protocol-only to rendered-browser evidence for the most important user-visible invariant: multi-client content stays synchronized and reconnect recovery appends missing content instead of repainting the whole conversation.
 - Added `tests/check_codex_browser_smoke_helpers.py` to keep the smoke's login, `showNativeSession`, forced `ws.close()`, `/api/nslash`, and DOM-preservation assertions present in the fast test bundle.
+
+
+## 23. 2026-07-17 terminal interaction smoke checkpoint
+
+- Added `tools/codex_terminal_smoke.py` to validate the Web adapter side of Codex terminal interaction without waiting for a nondeterministic model-triggered interactive command. It simulates two `item/commandExecution/terminalInteraction` notifications, tracks their process ids, and drives the same `terminal_write`, `terminal_resize`, and `terminal_terminate` methods used by `/api/nterminal`.
+- The smoke verifies multiple stdin writes are base64-encoded into `command/exec/write`, resize maps to `command/exec/resize`, close-stdin emits a replayable `terminal_closed`, terminate maps to `command/exec/terminate`, and closed/terminated processes reject later actions.
+- Added `tests/check_codex_terminal_smoke_helpers.py` so this long-path contract is covered by the fast test bundle while the standalone smoke remains runnable with `python tools\codex_terminal_smoke.py --cwd .`.
+- This closes the first repeatable terminalInteraction validation gap; a later smoke can still add a real app-server `command/exec` launch once that method is productized instead of only supporting write/resize/terminate for existing Codex-owned processes.

@@ -165,6 +165,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   one temporary Codex session, verifies a backend-confirmed rename notice reaches
   both DOMs, forcibly closes one page's WebSocket, then verifies replay/catch-up
   adds the missed notice without clearing existing content.
+- `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
+  adapter path with two tracked processes, multiple stdin writes, resize,
+  close-stdin, terminate, replayable `terminal_closed` events, and
+  unknown-process rejection after close/terminate.
 
 ## Optional Follow-ups
 
@@ -177,7 +181,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 Run this bundle after behavior changes:
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check
@@ -197,4 +201,5 @@ python tools\codex_ws_smoke.py --seconds 2
 python tools\codex_ws_smoke.py --clients 2 --seconds 2 --launch-temp --cwd .
 python tools\codex_mcp_smoke.py --cwd .
 python tools\codex_browser_smoke.py --cwd .
+python tools\codex_terminal_smoke.py --cwd .
 ```

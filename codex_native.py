@@ -24,6 +24,7 @@ import codex_replay
 import codex_requests
 import codex_routing
 import codex_session_events
+import codex_terminal
 import codex_text
 import codex_thread_history
 import common
@@ -932,72 +933,19 @@ class CodexSession:
         return {"ok": True, "files": files}
 
     def terminal_interaction_event(self, params):
-        params = params or {}
-        process_id = str(params.get("processId") or "").strip()
-        if not process_id:
-            return None
-        item_id = str(params.get("itemId") or "")
-        event = {
-            "type": "terminal_interaction",
-            "process_id": process_id,
-            "item_id": item_id,
-            "stdin": str(params.get("stdin") or ""),
-        }
-        with self._pending_lock:
-            self._terminal_processes[process_id] = dict(event)
-        return event
+        return codex_terminal.terminal_interaction_event(self, params)
 
     def _terminal_known(self, process_id):
-        process_id = str(process_id or "").strip()
-        if not process_id:
-            return ""
-        with self._pending_lock:
-            return process_id if process_id in self._terminal_processes else ""
+        return codex_terminal.terminal_known(self, process_id)
 
     def terminal_write(self, process_id, text="", close_stdin=False):
-        process_id = self._terminal_known(process_id)
-        if not process_id:
-            return {"ok": False, "error": "unknown terminal process"}
-        params = {"processId": process_id}
-        text = "" if text is None else str(text)
-        if text:
-            params["deltaBase64"] = base64.b64encode(text.encode("utf-8")).decode("ascii")
-        if close_stdin:
-            params["closeStdin"] = True
-        self._client().request("command/exec/write", params, timeout=15)
-        if close_stdin:
-            with self._pending_lock:
-                self._terminal_processes.pop(process_id, None)
-            self._record_and_broadcast({"type": "terminal_closed", "process_id": process_id})
-        else:
-            self._broadcast({"type": "terminal_input_sent", "process_id": process_id})
-        return {"ok": True, "process_id": process_id, "closed": bool(close_stdin)}
+        return codex_terminal.terminal_write(self, process_id, text=text, close_stdin=close_stdin)
 
     def terminal_terminate(self, process_id):
-        process_id = self._terminal_known(process_id)
-        if not process_id:
-            return {"ok": False, "error": "unknown terminal process"}
-        self._client().request("command/exec/terminate", {"processId": process_id}, timeout=15)
-        with self._pending_lock:
-            self._terminal_processes.pop(process_id, None)
-        self._record_and_broadcast({"type": "terminal_closed", "process_id": process_id, "terminated": True})
-        return {"ok": True, "process_id": process_id, "terminated": True}
+        return codex_terminal.terminal_terminate(self, process_id)
 
     def terminal_resize(self, process_id, cols, rows):
-        process_id = self._terminal_known(process_id)
-        if not process_id:
-            return {"ok": False, "error": "unknown terminal process"}
-        try:
-            cols = max(1, int(cols))
-            rows = max(1, int(rows))
-        except Exception:
-            return {"ok": False, "error": "invalid terminal size"}
-        self._client().request(
-            "command/exec/resize",
-            {"processId": process_id, "size": {"cols": cols, "rows": rows}},
-            timeout=15,
-        )
-        return {"ok": True, "process_id": process_id, "cols": cols, "rows": rows}
+        return codex_terminal.terminal_resize(self, process_id, cols, rows)
 
     def _broadcast_transient(self, obj):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")

@@ -549,3 +549,10 @@ Immediate next commit candidate:
 - The verifier supports text output for humans and `--json` for scripts, plus `--behind-https-proxy` for reverse-proxy deployments where Agents Cockpit itself receives local HTTP behind TLS.
 - Added `tests/check_hardened_profile_tool.py` with passing, proxy, and weak-config fixtures so the hardened profile no longer exists only as README prose.
 - Updated README, `REFACTOR_PROGRESS.md`, and the CLI adaptation plan validation bundle to include the hardened-profile check.
+
+
+## 26. 2026-07-17 terminal adapter extraction checkpoint
+
+- Added `codex_terminal.py` and moved the terminalInteraction process tracking plus `command/exec/write`, `command/exec/resize`, and `command/exec/terminate` mapping logic out of `codex_native.py`.
+- `CodexSession.terminal_interaction_event`, `_terminal_known`, `terminal_write`, `terminal_resize`, and `terminal_terminate` remain as compatibility wrappers, so `/api/nterminal`, replay, browser cards, and existing tests keep the same public behavior.
+- This is the first Phase D structure-hardening step after the terminal smoke: it reduces the session class responsibility without changing the validated terminalInteraction contract.

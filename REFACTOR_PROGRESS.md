@@ -10,7 +10,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `manager.py` is now a thin HTTP/WebSocket shell; session lifecycle lives in `manager_sessions.py`, internal gate/control endpoints in `manager_internal_api.py`, and browser APIs in `manager_user_api.py`.
 - `common.py` is now mostly a compatibility facade over focused helpers such as `common_auth.py`, `common_process.py`, `common_history.py`, `common_registry.py`, and `common_http.py`.
 - `native.py` keeps the Claude session class while delegating CLI argv/process/replay/gate helpers to `native_*.py` modules.
-- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, replay, text/form/history, thread-history conversion, and notification lifecycle helpers to `codex_*.py` modules.
+- `codex_native.py` keeps the Codex session class while delegating app-server client, routing, requests, replay, text/form/history, thread-history conversion, terminal interaction, and notification lifecycle helpers to `codex_*.py` modules.
 - `index.html` is now mostly markup. Frontend assets live under `assets/`, split into app shell/sidebar/state/native/replay/socket/action/auth/icon files.
 
 ## Completed Items
@@ -169,6 +169,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and
   unknown-process rejection after close/terminate.
+- Codex terminal-interaction state and command/exec write/resize/terminate
+  mapping logic moved out of `codex_native.py` into `codex_terminal.py`, leaving
+  the public `CodexSession.terminal_*` methods as compatibility wrappers.
 - Browser-facing POST routes and native WebSocket handshakes now enforce a
   configurable Origin/Referer check before cookie-auth state changes or WS
   attachment. Same Host / `X-Forwarded-Host`, explicit `allowed_origins`, and
@@ -191,7 +194,7 @@ checkout. It is intentionally concise so future changes can stay incremental.
 Run this bundle after behavior changes:
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py codex_terminal.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

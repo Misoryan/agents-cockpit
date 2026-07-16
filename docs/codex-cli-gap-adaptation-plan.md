@@ -241,7 +241,7 @@ Browser / Android WebView
 任务：
 
 - 拆 `CodexSession`：`CodexSessionState`、`CodexTurnRunner`、`CodexRequestAdapter`、`CodexNotificationAdapter`、`CodexReplayFacade`。
-- 第一小步已完成：terminalInteraction 状态和 `command/exec/*` 映射逻辑已抽到 `codex_terminal.py`，`CodexSession.terminal_*` 仅保留兼容包装。
+- 已完成结构小步：terminalInteraction 状态和 `command/exec/*` 映射逻辑已抽到 `codex_terminal.py`，pending approval/ask/form 状态和 snapshot/replay helper 已抽到 `codex_pending.py`；`CodexSession` 保留兼容包装。
 - 将 `assets/native_events.js` 的工具卡 renderer 拆为小模块或清晰命名分区。
 - 将 native-stage 相关 CSS 从 `index.html` 下沉到 `assets/`。
 - 为 `codex_client.py` 路由 fallback 增加 trace fixtures。
@@ -282,7 +282,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py codex_terminal.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_config.py codex_pending.py codex_terminal.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\check_hardened_profile.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

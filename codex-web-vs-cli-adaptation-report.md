@@ -556,3 +556,10 @@ Immediate next commit candidate:
 - Added `codex_terminal.py` and moved the terminalInteraction process tracking plus `command/exec/write`, `command/exec/resize`, and `command/exec/terminate` mapping logic out of `codex_native.py`.
 - `CodexSession.terminal_interaction_event`, `_terminal_known`, `terminal_write`, `terminal_resize`, and `terminal_terminate` remain as compatibility wrappers, so `/api/nterminal`, replay, browser cards, and existing tests keep the same public behavior.
 - This is the first Phase D structure-hardening step after the terminal smoke: it reduces the session class responsibility without changing the validated terminalInteraction contract.
+
+
+## 27. 2026-07-17 pending request adapter extraction checkpoint
+
+- Added `codex_pending.py` and moved Codex pending approval/ask/form helper logic out of `codex_native.py`: pending detection, approval decisions, ask/form answers, state snapshot pending lists, replayable pending-card snapshots, and pending waiter cleanup.
+- `CodexSession.approve`, `CodexSession.answer`, `_state_snapshot`, `_pending_events_snapshot`, `state`, `close`, and `on_client_exit` still expose the same behavior through wrappers or direct helper calls, preserving `/api/napprove`, `/api/nanswer`, replay recovery, and app-server-exit cleanup.
+- Added `tests/check_codex_pending_helpers.py` so pending approval, ask, form, terminal snapshot mixing, event wakeups, and broadcasts are covered in the fast test bundle.

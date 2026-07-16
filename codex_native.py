@@ -20,6 +20,7 @@ import codex_config
 import codex_events
 import codex_forms
 import codex_history
+import codex_pending
 import codex_replay
 import codex_requests
 import codex_routing
@@ -274,13 +275,7 @@ class CodexSession:
             return
         self._closed = True
         self.alive = False
-        with self._pending_lock:
-            for entry in self._pending.values():
-                try:
-                    entry["event"].set()
-                except Exception:
-                    pass
-            self._pending.clear()
+        codex_pending.clear_pending(self)
         try:
             self._client().unregister(self)
         except Exception:
@@ -311,9 +306,8 @@ class CodexSession:
     def state(self):
         if self._closed:
             return "idle"
-        with self._pending_lock:
-            if self._pending:
-                return "confirm"
+        if codex_pending.has_pending(self):
+            return "confirm"
         if self._awaiting_plan_decision:
             return "plan"
         if self._busy:
@@ -1247,30 +1241,10 @@ class CodexSession:
         return codex_requests.approval_response(method, allow, always, params)
 
     def approve(self, tool_use_id, allow, message=None, always=False):
-        with self._pending_lock:
-            entry = self._pending.get(tool_use_id)
-        if not entry or entry.get("kind") != "approve":
-            return False
-        entry["allow"] = bool(allow)
-        entry["always"] = bool(always)
-        entry["event"].set()
-        self._broadcast({"type": "approval_decision", "tool_use_id": tool_use_id, "allow": bool(allow)})
-        if always and allow:
-            self._broadcast({"type": "auto_allow_added", "tool": entry.get("method") or "Codex"})
-        return True
+        return codex_pending.approve(self, tool_use_id, allow, always=always)
 
     def answer(self, tool_use_id, ans):
-        with self._pending_lock:
-            entry = self._pending.get(tool_use_id)
-        if not entry or entry.get("kind") not in ("ask", "form"):
-            return False
-        entry["answer"] = ans if ans is not None else ""
-        entry["event"].set()
-        if entry.get("kind") == "form":
-            self._broadcast({"type": "form_answered", "tool_use_id": tool_use_id})
-        else:
-            self._broadcast({"type": "ask_answered", "tool_use_id": tool_use_id})
-        return True
+        return codex_pending.answer(self, tool_use_id, ans)
 
     @staticmethod
     def _is_dangerous(text):
@@ -1397,15 +1371,10 @@ class CodexSession:
                 pass
 
     def _state_snapshot(self):
-        with self._pending_lock:
-            pending = list(self._pending.items())
-        return codex_replay.state_snapshot(self, pending)
+        return codex_pending.state_snapshot(self)
 
     def _pending_events_snapshot(self):
-        with self._pending_lock:
-            pending = list(self._pending.items())
-            terminals = [dict(value) for value in self._terminal_processes.values()]
-        return codex_replay.pending_events_snapshot(pending) + terminals
+        return codex_pending.pending_events_snapshot(self)
 
     def _push(self, event, title, body, webhook_body=None):
         try:
@@ -1423,14 +1392,7 @@ class CodexSession:
 
     def on_client_exit(self):
         was_busy = bool(self._busy)
-        with self._pending_lock:
-            had_pending = bool(self._pending)
-            for entry in self._pending.values():
-                try:
-                    entry["event"].set()
-                except Exception:
-                    pass
-            self._pending.clear()
+        had_pending = codex_pending.clear_pending(self)
         self._busy = False
         self.current_turn_started_at = None
         self._thread_ready = False

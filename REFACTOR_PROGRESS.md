@@ -135,6 +135,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Frontend replay de-duplication now uses one stable key path for live and
   replayed events, filters duplicate events inside replay batches, and skips
   already-rendered replay events during polling or reconnect recovery.
+- The visible Codex/native session now has a throttled catch-up replay poll:
+  session status polling can call `/api/nreplay?after=<lastSeq>` even while the
+  WebSocket is still open, so stale-open sockets can recover missed events
+  silently without clearing or repainting the conversation.
 
 ## Optional Follow-ups
 

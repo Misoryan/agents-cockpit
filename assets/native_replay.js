@@ -186,3 +186,39 @@ function nativePollOnce(sid){
     nativeStartPolling(sid,false);
   });
 }
+function nativeCatchupActiveState(s){
+  return !!(s && (s.state==="running" || s.state==="confirm" || s.state==="plan"));
+}
+function nativeMaybeCatchupPoll(s, prevState, reason){
+  if(!s || s.sid!==currentSid || !nativeStages[s.sid]) return;
+  var st=nativeStages[s.sid];
+  if(!nStageHasReplayContent(st) || st.replayActive || st.replayWaiting) return;
+  var active=nativeCatchupActiveState(s);
+  var justSettled=!!(prevState && prevState!=="idle" && prevState!=="new" && s.state==="idle");
+  if(!active && !justSettled) return;
+  nativeCatchupPoll(s.sid, reason || (active?"active":"settled"));
+}
+function nativeCatchupPoll(sid, reason){
+  if(!sid || currentSid!==sid || !nativeStages[sid]) return;
+  var st=nativeStages[sid], ws=nativeWs[sid];
+  if(!ws || ws.readyState!==1){
+    nativeStartPolling(sid, false);
+    return;
+  }
+  if(st.catchupInFlight || st.replayActive || st.replayWaiting) return;
+  var now=Date.now(), minDelay=(reason==="settled")?1200:6000;
+  if(st.lastCatchupPoll && now-st.lastCatchupPoll<minDelay) return;
+  st.lastCatchupPoll=now;
+  st.catchupInFlight=true;
+  var after=nativeReplayAfter(st);
+  api("/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after)).then(function(r){
+    st.catchupInFlight=false;
+    if(!r || r.ok===false || currentSid!==sid || !nativeStages[sid]) return;
+    var evs=r.events||[];
+    if(evs.length){ nReplayBatchAsync(sid, st, evs, {silent:true}); }
+    if(r.snapshot){ nHandle(sid, r.snapshot); }
+    (r.pending||[]).forEach(function(ev){ nHandle(sid, ev); });
+  }).catch(function(){
+    st.catchupInFlight=false;
+  });
+}

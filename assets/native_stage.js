@@ -7,7 +7,8 @@ function nativeStage(sid){
   nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
                       renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null,
-                      replayWaiting:false, replayWaitTimer:null, lastReplayBatchSig:"", replaySigParts:[]};
+                      replayWaiting:false, replayWaitTimer:null, lastReplayBatchSig:"", replaySigParts:[],
+                      lastCatchupPoll:0, catchupInFlight:false};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){

@@ -112,7 +112,14 @@ function rememberSessions(ss, skipPendingOpen){
   var _rg=0,_pg=0; (ss||[]).forEach(function(s){ if(s.state==="running")_rg++; else if(s.state==="confirm"||s.state==="plan")_pg++; });
   var _parts=[]; if(_rg)_parts.push(_rg+" 生成中"); if(_pg)_parts.push(_pg+" 待处理");
   var rc=$("runcnt"); if(rc) rc.textContent=_parts.length?("· "+_parts.join(" · ")):"";
-  if(currentSid){ var _cs=nFindRunSession(currentSid); if(_cs){ nSetGen(_cs.state==="running"); nRenderYoloBadge(_cs); nEnsurePendingVisible(_cs); } }
+  var _visibleCatchup=null;
+  if(currentSid){
+    var _cs=nFindRunSession(currentSid), _prev=sessionWatch[currentSid];
+    if(_cs){
+      nSetGen(_cs.state==="running"); nRenderYoloBadge(_cs); nEnsurePendingVisible(_cs);
+      _visibleCatchup={session:_cs, prevState:_prev&&_prev.state};
+    }
+  }
   Object.keys(nativeStages).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropNativeStage(sid); });
   ss.forEach(function(s){
     var prev=sessionWatch[s.sid];
@@ -128,6 +135,9 @@ function rememberSessions(ss, skipPendingOpen){
   if(dirModel.length && !sbArchived){
     ensureSessionDirs(); attachSessionsToModel();
     var sig=sessionSignature(); if(sig!==lastSig){ lastSig=sig; renderSidebar(); }
+  }
+  if(_visibleCatchup && typeof nativeMaybeCatchupPoll==="function"){
+    nativeMaybeCatchupPoll(_visibleCatchup.session, _visibleCatchup.prevState);
   }
   if(!skipPendingOpen && pendingOpenSid){ openSessionBySid(pendingOpenSid, true); pendingOpenSid=""; try{ history.replaceState(null,"",location.pathname); }catch(e){} }
 }

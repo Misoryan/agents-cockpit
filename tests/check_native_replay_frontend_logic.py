@@ -54,6 +54,52 @@ nReplayBatchAsync("s1", st2, [
 ], {silent:true});
 assert.deepStrictEqual(handled, ["seq:2", "seq:3"]);
 assert.strictEqual(st2.lastSeq, 3);
+
+(async function(){
+  let catchupEvents = [];
+  let catchupUrls = [];
+  let st3 = {
+    sid: "s3",
+    root: {children: [{classList: {contains: () => false}}]},
+    renderedEvents: {"seq:4": true},
+    lastSeq: 4,
+    replayActive: false,
+    replayWaiting: false,
+    lastCatchupPoll: 0,
+    catchupInFlight: false
+  };
+  ctx.currentSid = "s3";
+  ctx.nativeStages = {s3: st3};
+  ctx.nativeWs = {s3: {readyState: 1}};
+  ctx.nativePollTimers = {};
+  ctx.nativePollBusy = {};
+  ctx.nFindRunSession = function(sid){ return {sid, state: "running"}; };
+  ctx.api = function(url){
+    catchupUrls.push(url);
+    return Promise.resolve({
+      ok: true,
+      events: [{type:"assistant", seq:5}],
+      snapshot: {type:"state_snapshot", last_seq:5},
+      pending: []
+    });
+  };
+  ctx.nHandle = function(sid, event){
+    catchupEvents.push(event.type + ":" + (event.seq || event.last_seq || ""));
+    ctx.nMarkRendered(st3, event);
+  };
+  ctx.nativeMaybeCatchupPoll({sid:"s3", state:"running"}, "running", "test");
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(catchupUrls.length, 1);
+  assert.ok(catchupUrls[0].includes("/api/nreplay?sid=s3&after=4"));
+  assert.deepStrictEqual(catchupEvents, ["assistant:5", "state_snapshot:5"]);
+  assert.strictEqual(st3.lastSeq, 5);
+  ctx.nativeMaybeCatchupPoll({sid:"s3", state:"running"}, "running", "test");
+  assert.strictEqual(catchupUrls.length, 1, "catch-up poll should be throttled");
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
 '''
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as handle:
         handle.write(js)

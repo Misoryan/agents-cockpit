@@ -342,3 +342,129 @@ git diff --check
 - These notices intentionally pass safe recovery metadata to the UI instead of raw request params, so token material is not exposed in the browser replay/detail panel.
 - Added README/config guidance for hardened deployments: HTTPS-only cookies, workspace-root restrictions, per-user Codex/Claude homes, and web approval gates instead of auto-approve.
 - The adapter still does not fake success for token refresh or attestation; full Web-native account refresh remains a later low-priority account integration task.
+
+
+## 14. 2026-07-17 current reassessment and adaptation plan
+
+Current verified baseline:
+
+- Branch/worktree: `main...origin/main`, clean before this documentation update.
+- Latest pushed checkpoint: `d6e7f68 Exercise live broadcast in Codex WS smoke`.
+- Local CLI baseline: `codex-cli 0.142.4`.
+- Protocol matrix baseline: app-server schema currently records 68 server notifications, 10 server requests, and 87 client requests. The web adapter labels 30 notifications as supported, 7 as degraded, 31 as generic visible, 5 server requests as supported, 3 as degraded, 2 as generic visible, and 27 client requests as supported.
+
+### 14.1 Current product position
+
+The project is now a credible remote Codex session host, not just a web terminal wrapper. Its strongest areas are:
+
+- Structured app-server integration instead of TUI scraping.
+- Multi-client replay with stable `seq` / `event_id` and `after=<lastSeq>` reconnect.
+- Sidebar/history lifecycle controls, including active/archived Codex history.
+- Launch config parity for model, search, sandbox, approval, reasoning effort/summary, service tier, and workspace-write writable roots.
+- Input parity first slice: slash palette, `@` file mention via `fuzzyFileSearch`, image upload/paste, Plan/task switches, and backend-confirmed lifecycle actions.
+- Approval/ask/form/pending-card recovery across reconnects.
+- Manual MCP resource/tool slash calls, dynamic tool allowlist passthrough, and web stdin cards for terminal interaction.
+- Multi-user state/home/workspace isolation with documented hardened deployment guidance.
+
+It is still not a full Codex CLI replacement. The remaining gap is less about basic chat and more about tail behavior: stale-open WebSocket reconciliation, real-world browser/mobile visual QA, richer Codex-native tool cards, deep MCP/terminal validation, Web-native account recovery, plugin/skills/account/client-method coverage, and security hardening for tunneled/shared exposure.
+
+Updated rough progress estimate:
+
+| Area | Current estimate | Notes |
+| --- | ---: | --- |
+| Remote usable Codex agent session | 85% | Core chat, approvals, Plan, history, replay, image input, and multi-client protocol smoke are usable. |
+| Full Codex CLI TUI replacement | 65-70% | High-frequency session operations are covered; plugin/skills/account/doctor/cloud/exec/review/apply-style workflows remain mostly outside the web UI. |
+| Multi-access and sync | 75% | Incremental reconnect and two-client smoke are strong; open-but-stale WS catch-up and real browser/mobile visual tests are still needed. |
+| app-server protocol coverage | 60% | 27/87 client requests are supported; many long-tail account/config/fs/plugin/skills/windows sandbox methods are intentionally not integrated yet. |
+| Frontend maintainability | 65% | JS/CSS are split, but `index.html` still holds large native-stage style blocks and the JS state model remains global. |
+| Backend maintainability | 70% | Manager/common/native modules are split; `CodexSession`, `common.py`, and some app-server routing fallbacks remain complexity hotspots. |
+| Security/release hardening | 55% | Auth/multi-user/hardened docs exist; CSRF/Origin checks and stricter default deployment profiles still need implementation. |
+
+### 14.2 Current CLI vs Web gaps
+
+1. Session transport and replay:
+   - Reconnect after a closed WebSocket is much better now because both WS URL and `/api/nreplay` can use `after=<lastSeq>`.
+   - Remaining gap: if the browser WebSocket remains `readyState === 1` but stops receiving useful events, `pollSessionSignals()` currently only refreshes session state and does not perform a low-frequency `after=<lastSeq>` catch-up. This can still leave the UI waiting until a close/reconnect happens.
+   - Required adaptation: add throttled visible-session catch-up polling that runs even when WS is open, uses the current replay cursor, and applies only unseen events silently.
+
+2. Launch/config parity:
+   - Covered: model, web search, sandbox, approval, reasoning effort, reasoning summary, service tier, and writable roots.
+   - Remaining gap: CLI `--profile`, arbitrary `-c key=value`, `--enable/--disable`, local provider / OSS mode, and some account/config methods do not have safe Web UI equivalents yet.
+   - Required adaptation: keep unsupported config hidden unless the app-server schema has a clear target field; add read-only profile/config visibility before allowing writes.
+
+3. Input parity:
+   - Covered: common slash commands, keyboard selection, `@` mention, and image input.
+   - Remaining gap: the palette is still a small command list rather than a CLI-grade command surface; image history thumbnails and cleanup policy are basic; file mentions are first-slice UX.
+   - Required adaptation: expand command discovery in small batches and keep each command backend-confirmed so the UI never displays fake state.
+
+4. Tool/terminal parity:
+   - Covered: generic command/file/MCP/dynamic tool cards, manual MCP slash calls, allowlisted dynamic tool passthrough, and terminal stdin/resize/terminate endpoints.
+   - Remaining gap: real MCP server E2E has not become a repeatable smoke; terminal interaction needs long-running/interactive command validation; file diffs and `turn/diff/updated` still need Codex-native cards.
+   - Required adaptation: validate one real MCP server and one real interactive command path first, then improve renderer fidelity.
+
+5. Account and non-session CLI capabilities:
+   - Covered: account refresh and attestation now fail visibly with safe CLI recovery steps.
+   - Remaining gap: Web-native account login/logout/token refresh, usage/rate-limit details, `doctor`, `plugin`, `skills`, `cloud`, `review`, `apply`, and noninteractive `exec` are mostly not integrated.
+   - Required adaptation: treat these as lower priority than session stability unless the user workflow depends on them; start with read-only account/status/plugin/skills views before write/install actions.
+
+6. Security and deployment:
+   - Covered: auth, multi-user isolation, README/config hardened guidance, per-user homes, workspace-root checks for writable dirs.
+   - Remaining gap: state-changing JSON APIs still need Origin/CSRF protection for tunneled/shared exposure; default config remains local/LAN-friendly; manager/internal control boundaries need continued audit.
+   - Required adaptation: add an opt-in hardened mode first, then consider making safer defaults the recommended public profile.
+
+### 14.3 Current code issues to keep visible
+
+- `assets/app_sidebar.js` / `assets/native_replay.js`: polling and pending-card resync are still mostly close-triggered. Add open-WS catch-up polling to avoid stale-but-open sockets causing delayed UI.
+- `assets/native_events.js`: the event renderer has grown large and handles many item types in one file. New Codex-native cards should be split before adding many more special cases.
+- `index.html`: native-stage CSS is still inline, so markup, layout policy, and component styling remain coupled.
+- `codex_native.py`: `CodexSession` is still the largest backend hotspot. It owns session state, turn lifecycle, persistence, replay, app-server calls, request handling, notifications, and push state.
+- `codex_client.py`: notification routing still needs trace fixtures for methods that lack complete thread/turn/item IDs; the "single busy session" fallback is useful but should not be the only multi-session safety net.
+- `common.py`: still acts as a compatibility facade with import-time config/auth/binary discovery. This is manageable now, but it complicates isolated tests and future service boundaries.
+- `web.py`: still mixes login, static serving, manager proxying, restart/stop, and manager watchdog concerns.
+- `docs/app-server-protocol-matrix.md`: useful as a snapshot, but future Codex CLI upgrades must regenerate it and compare drift before assuming parity still holds.
+
+### 14.4 Recommended adaptation roadmap from here
+
+Phase 1 - Stability before feature depth:
+
+- Add throttled foreground catch-up polling using `/api/nreplay?sid=<sid>&after=<lastSeq>` even when WS is open.
+- Extend frontend static checks to assert the catch-up path uses `after`, `silent:true`, in-flight guards, and does not clear DOM.
+- Run protocol smoke with two clients and one temporary session after every replay/socket change.
+- Add at least one manual browser/mobile visual checklist for reconnect, pending approval, Plan, image, and sidebar history.
+
+Phase 2 - Tool and terminal realism:
+
+- Pick one real MCP server and make dynamic-tool passthrough a repeatable end-to-end test.
+- Validate terminal stdin with at least one interactive command requiring multiple writes and termination.
+- Improve renderer cards for command execution, file changes, MCP results, context compaction, and diffs before adding more raw JSON output.
+
+Phase 3 - CLI command/config parity:
+
+- Add read-only profile/config/account status visibility first.
+- Only expose writable config/profile controls when the target app-server request and schema fields are known.
+- Expand slash palette in small confirmed batches: delete/unsubscribe/metadata where useful, account/status reads, plugin/skills reads, and richer goal/profile shortcuts.
+
+Phase 4 - Structure hardening:
+
+- Split `CodexSession` along state, turn runner, notification adapter, request handler, and replay store seams.
+- Move remaining native-stage CSS out of `index.html`.
+- Group frontend globals into a small `window.AC` namespace or ES-module-like boundaries before the next large UI feature.
+- Add trace fixtures for app-server routing and replay edge cases.
+
+Phase 5 - Deployment hardening:
+
+- Add Origin/CSRF checks for state-changing browser APIs.
+- Make hardened profile easy to enable and verify: HTTPS cookies, path restrictions, non-default homes, no auto-approve, and private manager port.
+- Keep localhost/internal manager endpoints explicitly authenticated and covered by boundary tests.
+
+Immediate next commit candidate:
+
+- Implement Phase 1 catch-up polling first. It directly addresses the current user-facing risk: WebSocket 1006 or stale-open connections should not cause duplicate replay, missing pending cards, or visible conversation flicker. This is small enough to validate with `node --check`, frontend static tests, replay helper tests, `tools/codex_ws_smoke.py --clients 2 --launch-temp`, and `git diff --check`.
+
+
+## 15. 2026-07-17 foreground catch-up polling checkpoint
+
+- Implemented a throttled visible-session catch-up path in `assets/native_replay.js`. When `/api/sessions` says the current visible session is running, waiting for confirmation, in Plan mode, or has just settled from an active state, the browser can call `/api/nreplay?sid=<sid>&after=<lastSeq>` even if the WebSocket still reports `readyState === 1`.
+- The catch-up path is intentionally silent: it uses existing replay de-duplication and `nReplayBatchAsync(..., {silent:true})`, handles `state_snapshot` and pending cards, and does not clear the existing DOM. This targets stale-open WS cases separately from normal closed-socket polling.
+- Added per-stage `lastCatchupPoll` and `catchupInFlight` guards so the regular 4s `/api/sessions` signal loop cannot flood replay requests while a session is actively streaming.
+- Added frontend contract coverage in `tests/check_replay_loading_frontend.py` and a Node-level behavior check in `tests/check_native_replay_frontend_logic.py` to lock the `after=<lastSeq>` URL, silent replay behavior, open-WS trigger, and throttling.

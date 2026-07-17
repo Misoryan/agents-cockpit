@@ -320,6 +320,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   requests outside bounded dimensions before calling app-server, tightening the
   `/api/nterminal` command-I/O guard beyond process ownership and action
   allowlisting.
+- Web lifecycle controls now have regression coverage proving bad browser
+  origins are rejected before auth/restart/stop side effects, while same-origin
+  restart-manager still reaches the guarded control path.
 - `codex_inventory.py` now backs `/skills` and `/plugins [installed|available]`
   with read-only app-server inventory calls, strips local skill/plugin paths
   before replay, and renders `codex.skills` / `codex.plugins` as structured

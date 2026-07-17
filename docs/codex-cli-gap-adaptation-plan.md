@@ -269,7 +269,7 @@ Browser / Android WebView
 - 将 hardened profile 从“文档建议 + verifier”推进到可选择配置模板或启动检查。
 - 审计 upload/image、workspace roots、per-user Codex/Claude home、MCP config 写入边界。（upload/image 第一刀已落地：`prepare_image_inputs()` 现在校验数量、大小、base64、MIME allowlist 和 magic-byte 签名一致性。）
 - 强化 `/api/nterminal` command-I/O 边界。（第一刀已落地：stdin 写入有大小上限，resize 有明确范围，且仍保留 session/process ownership 与 action allowlist。）
-- 对 manager/internal endpoint 保持“必须内部 token + 预期来源 + 测试覆盖”。
+- 对 manager/internal endpoint 保持“必须内部 token + 预期来源 + 测试覆盖”。（web lifecycle control 第一刀已落地：测试证明错误 Origin 在 auth/restart/stop side effect 前被拒绝，同源 restart-manager 仍可进入受控路径。）
 
 验收：hardened profile 下跨站 POST、缺 Origin、越界 workspace/upload、未授权 internal control 都被拒绝且有测试。
 

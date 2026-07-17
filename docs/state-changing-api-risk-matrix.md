@@ -64,3 +64,7 @@ Run it with `--json` when a CI-style machine-readable summary is useful:
 ```powershell
 python tools\check_state_changing_api_risks.py --json
 ```
+
+`tests/check_web_security_helpers.py` also exercises the web lifecycle control
+routes through `WebHandler.do_POST`, proving rejected browser origins do not
+reach auth or restart/stop side effects.

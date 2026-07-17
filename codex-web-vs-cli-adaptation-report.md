@@ -867,3 +867,9 @@ Immediate next commit candidate:
 - Strengthened `codex_terminal.py` so browser terminal stdin is rejected before app-server when it exceeds the bounded input limit.
 - Terminal resize requests now reject invalid or out-of-range dimensions instead of silently clamping, keeping `/api/nterminal` behavior explicit and auditable.
 - Extended the terminal adapter smoke/helper check to prove oversized stdin and invalid resize requests do not produce app-server `command/exec/*` calls.
+
+## 68. 2026-07-17 web lifecycle Origin regression checkpoint
+
+- Extended `tests/check_web_security_helpers.py` so web lifecycle controls are exercised through `WebHandler.do_POST`, not only the lower-level origin helper.
+- The test now proves bad browser origins on `/api/restart_web`, `/api/restart_manager`, `/api/restart`, and `/api/_stop` are rejected before auth, restart, stop, or `STOPPING` side effects run.
+- The same coverage verifies a same-origin `/api/restart_manager` request still reaches the guarded soft-restart path, keeping the hardening check from becoming a false-positive block.

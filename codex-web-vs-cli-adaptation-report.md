@@ -929,3 +929,10 @@ Immediate next commit candidate:
 - If another device answers or approves while the current browser misses the live resolution event, the next replay/catch-up snapshot removes stale pending cards without clearing the rest of the conversation DOM.
 - Pending cards still de-duplicate by `data-tuid` when their explicit pending events arrive, so initial replay and live catch-up keep the same card contract.
 - The frontend Node replay check now covers both keeping a still-pending ask card and clearing stale approval/form cards when the snapshot no longer lists them.
+
+## 77. 2026-07-17 idle snapshot turn-settle checkpoint
+
+- Frontend `state_snapshot` handling now closes any still-open turn card when the server snapshot says the session is idle, even if the browser missed the final result/done event.
+- The settle path clears stale `curTxt` / `curThink` / thinking references and marks the turn card `done`, preventing the next streamed turn from appending into an old message bubble after reconnect or stale-open catch-up.
+- Confirm/plan snapshots are intentionally excluded so pending approval, ask, form, and plan cards remain interactive while the agent is waiting for the user.
+- The frontend Node replay check now covers idle snapshot settle for an open streamed text bubble and confirms that confirm-state snapshots do not close pending turns.

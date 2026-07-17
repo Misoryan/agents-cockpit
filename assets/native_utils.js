@@ -174,6 +174,13 @@ function nEndTurn(st){
   if(st.turnCard) st.turnCard.classList.add("done");
   st.turnCard=null; st.curTxt=null; st.curThink=null; st.lastToolGroup=null;
 }
+function nSettleIdleSnapshot(st, obj){
+  if(!st || !obj || obj.running) return false;
+  if(obj.state==="confirm" || obj.state==="plan") return false;
+  if(!(st.thinking || st.thinkBubble || st.curThink || st.curTxt || st.turnCard)) return false;
+  nEndTurn(st);
+  return true;
+}
 /* result 事件的轻量元信息条:补齐 CLI 底栏的「用量/收尾」层。
    显示:收尾图标(随 stop_reason / is_error 变化)、轮数、token 用量(入/出/缓存)、耗时。
    stop_reason 异常(max_tokens / refusal)或 is_error → 红框警示,补 CLI 里限流/拒绝/截断的感知。

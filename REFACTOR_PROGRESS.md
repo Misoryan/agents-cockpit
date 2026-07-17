@@ -380,6 +380,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - `state_snapshot` now reconciles approval/plan/ask/form cards against the
   server pending id list, so a stale tab clears confirmations answered on
   another device during the next catch-up without repainting the conversation.
+- Idle `state_snapshot` now also settles an open streamed turn card when the
+  browser missed the final result/done event, while leaving confirm/plan turns
+  interactive.
 
 ## Optional Follow-ups
 

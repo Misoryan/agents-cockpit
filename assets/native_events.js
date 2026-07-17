@@ -42,13 +42,11 @@ function nHandle(sid, obj){
     st.planMode=!!obj.plan; st.taskMode=!!obj.task;
     st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
     nReconcilePendingSnapshot(st, obj);
+    nSettleIdleSnapshot(st, obj);
     if(currentSid===sid){
       nSyncModes(st);
       nSetGen(!!obj.running);
       if(obj.running && !st.curTxt && !st.curThink){ nStartThinking(st, obj); }
-      else if(!obj.running && (st.thinking || st.thinkBubble || st.curThink)){
-        nEndTurn(st);
-      }
     }
     if(obj.route_debug){ try{ console.debug("[Codex route]", obj.route_debug); }catch(_e){} }
     if(obj.state==="confirm" || obj.state==="plan"){

@@ -27,6 +27,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_helpers.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_text_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_terminal_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
@@ -42,6 +43,7 @@ const {
   nUpdateScrollButton,
   nJumpBottom,
   nScrollBottom,
+  nSettleIdleSnapshot,
   nativeConnect,
   nativeCatchupPoll,
   nReconcilePendingSnapshot,
@@ -112,6 +114,25 @@ assert.strictEqual(pendingCards[1].removed, false);
 assert.strictEqual(pendingCards[2].removed, true);
 nReconcilePendingSnapshot({root: pendingRoot}, {type:"state_snapshot", pending:[]});
 assert.strictEqual(pendingCards[1].removed, true, "empty snapshot pending list should clear stale pending cards");
+
+let turnDoneClass = "";
+let idleStage = {
+  turnCard: {classList: {add: (cls) => { turnDoneClass = cls; }}},
+  curTxt: {},
+  curThink: null,
+  thinking: false
+};
+assert.strictEqual(nSettleIdleSnapshot(idleStage, {type:"state_snapshot", state:"idle", running:false}), true);
+assert.strictEqual(turnDoneClass, "done");
+assert.strictEqual(idleStage.turnCard, null);
+assert.strictEqual(idleStage.curTxt, null);
+let confirmStage = {
+  turnCard: {classList: {add: () => { throw new Error("confirm snapshot should not close pending turn"); }}},
+  curTxt: {},
+  thinking: false
+};
+assert.strictEqual(nSettleIdleSnapshot(confirmStage, {type:"state_snapshot", state:"confirm", running:false}), false);
+assert.notStrictEqual(confirmStage.turnCard, null);
 
 let unseen = nReplayUnseenEvents(st, [
   {type:"assistant", seq:1},

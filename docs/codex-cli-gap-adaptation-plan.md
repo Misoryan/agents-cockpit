@@ -375,6 +375,9 @@ sessions converge without clearing the existing DOM.
 cards against the server pending id list, so pending UI answered from
 another device is cleared by catch-up even if the live resolution event
 was missed.
+Idle snapshots now also settle any open streamed turn card when the final
+result/done event was missed, clearing stale text/thinking pointers without
+closing confirm or plan turns that still need user action.
 
 Codex CLI 升级后：
 

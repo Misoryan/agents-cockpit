@@ -117,7 +117,7 @@ function rememberSessions(ss, skipPendingOpen){
     var _cs=nFindRunSession(currentSid), _prev=sessionWatch[currentSid];
     if(_cs){
       nSetGen(_cs.state==="running"); nRenderYoloBadge(_cs); nEnsurePendingVisible(_cs);
-      _visibleCatchup={session:_cs, prevState:_prev&&_prev.state};
+      _visibleCatchup={session:_cs, prevSession:_prev};
     }
   }
   Object.keys(nativeStages).forEach(function(sid){ if(!ss.some(function(s){return s.sid===sid;})) dropNativeStage(sid); });
@@ -137,7 +137,7 @@ function rememberSessions(ss, skipPendingOpen){
     var sig=sessionSignature(); if(sig!==lastSig){ lastSig=sig; renderSidebar(); }
   }
   if(_visibleCatchup && typeof nativeMaybeCatchupPoll==="function"){
-    nativeMaybeCatchupPoll(_visibleCatchup.session, _visibleCatchup.prevState);
+    nativeMaybeCatchupPoll(_visibleCatchup.session, _visibleCatchup.prevSession);
   }
   if(!skipPendingOpen && pendingOpenSid){ openSessionBySid(pendingOpenSid, true); pendingOpenSid=""; try{ history.replaceState(null,"",location.pathname); }catch(e){} }
 }

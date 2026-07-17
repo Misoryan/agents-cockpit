@@ -241,6 +241,44 @@ assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
   assert.strictEqual(st3.lastSeq, 5);
   ctx.nativeMaybeCatchupPoll({sid:"s3", state:"running"}, "running", "test");
   assert.strictEqual(catchupUrls.length, 1, "catch-up poll should be throttled");
+
+  let idleEvents = [];
+  let idleUrls = [];
+  let st4 = {
+    sid: "s4",
+    root: {children: [{classList: {contains: () => false}}]},
+    renderedEvents: {"seq:7": true},
+    lastSeq: 7,
+    replayActive: false,
+    replayWaiting: false,
+    lastCatchupPoll: 0,
+    catchupInFlight: false
+  };
+  ctx.currentSid = "s4";
+  ctx.nativeStages = {s4: st4};
+  ctx.nativeWs = {s4: {readyState: 1}};
+  ctx.api = function(url){
+    idleUrls.push(url);
+    return Promise.resolve({
+      ok: true,
+      events: [{type:"codex_notice", seq:8}],
+      snapshot: {type:"state_snapshot", last_seq:8},
+      pending: []
+    });
+  };
+  ctx.nHandle = function(sid, event){
+    idleEvents.push(event.type + ":" + (event.seq || event.last_seq || ""));
+    ctx.nMarkRendered(st4, event);
+  };
+  ctx.nativeMaybeCatchupPoll(
+    {sid:"s4", state:"idle", last_output_ts:20},
+    {state:"idle", last_output_ts:10}
+  );
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(idleUrls.length, 1, "idle activity should trigger catch-up");
+  assert.ok(idleUrls[0].includes("/api/nreplay?sid=s4&after=7"));
+  assert.deepStrictEqual(idleEvents, ["codex_notice:8", "state_snapshot:8"]);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

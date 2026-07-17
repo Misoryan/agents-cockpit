@@ -130,7 +130,7 @@ Browser / Android WebView
 - WS URL 和 `/api/nreplay` 都支持 `after=<lastSeq>`。
 - 前端对 live/replay 使用统一去重 key，不清 DOM 恢复状态。
 - `state_snapshot` 能收敛 stale thinking/turn UI。
-- open-WS catch-up polling 能在 socket 显示 open 但漏事件时静默补增量。
+- open-WS catch-up polling 能在 socket 显示 open 但漏事件时静默补增量；Codex broadcast 会刷新 session activity，前端看到 `/api/sessions` 的 `last_output_ts` 增长后也会触发 catch-up，所以 idle 状态下的 rename/notice 类事件不必等 socket close 才恢复。
 - `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层、headless 双页层与默认窄屏/mobile mirror；browser smoke 会标记既有 DOM 节点，分别验证断线 catch-up 和强制 `nativeConnect(..., {force:true})` 重连后未被清空重建，同时检查窄屏 composer/input/submit 和移动抽屉布局仍可用。
 
 仍缺：
@@ -357,6 +357,10 @@ The same browser smoke now simulates an open-but-stale WebSocket by silencing
 the mirror tab's live message handler, sending a backend-confirmed rename, and
 forcing foreground catch-up; the missed event must appear without replacing the
 previously marked DOM node.
+That stale-open scenario now goes through normal `/api/sessions` polling and
+`rememberSessions()` activity detection instead of directly invoking
+`nativeCatchupPoll()`, so idle lifecycle/notice events are covered by the same
+automatic path a visible browser uses.
 
 Codex CLI 升级后：
 

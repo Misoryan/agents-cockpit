@@ -887,3 +887,10 @@ Immediate next commit candidate:
 - Updated the analysis to reflect the current browser `/exec-stream`, MCP resource card, account-status, plugin/skills inventory, command/diff card, image upload guard, terminal I/O guard, and web lifecycle Origin hardening slices.
 - Added a code-structure heat map covering `codex_native.py`, Codex adapters, `codex_client.py`, manager/web/common entry points, and the remaining frontend renderer/action hotspots.
 - The current adaptation plan stays focused on Web-specific strengths: multi-client replay/catch-up stability, truthful app-server-backed controls, visible tool/account/MCP state, and security hardening before deeper non-session CLI workflows.
+
+## 71. 2026-07-17 session-activity catch-up checkpoint
+
+- Codex broadcasts now refresh `last_activity` before sending replayable events, so `/api/sessions` exposes activity changes for backend-confirmed notices and lifecycle events, not only full turns.
+- The visible browser catch-up path now compares the current session's `last_output_ts` with the previous poll snapshot and calls `/api/nreplay?after=<lastSeq>` when activity advances while the WebSocket still appears open.
+- `tools/codex_browser_smoke.py` now verifies the stale-open WebSocket scenario through normal session polling / `rememberSessions()` activity detection instead of directly invoking `nativeCatchupPoll()`.
+- This closes the practical gap where an idle tab with an open-but-stale socket could miss a `/rename` or similar notice until an eventual close/reconnect.

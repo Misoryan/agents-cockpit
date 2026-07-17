@@ -197,6 +197,12 @@ checkout. It is intentionally concise so future changes can stay incremental.
   the mirror tab's message handler, sending a backend-confirmed rename, and
   forcing the foreground catch-up path to prove the missed event appears
   without clearing the marked DOM node.
+- Open-but-stale WebSocket recovery now also follows normal session polling:
+  Codex broadcasts refresh session activity timestamps, and the visible client
+  triggers `/api/nreplay?after=<lastSeq>` when `/api/sessions` reports new
+  activity even if the socket still appears open. The browser smoke exercises
+  this path through `rememberSessions()` instead of calling the catch-up helper
+  directly.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

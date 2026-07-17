@@ -191,14 +191,19 @@ function nativePollOnce(sid){
 function nativeCatchupActiveState(s){
   return !!(s && (s.state==="running" || s.state==="confirm" || s.state==="plan"));
 }
-function nativeMaybeCatchupPoll(s, prevState, reason){
+function nativeMaybeCatchupPoll(s, prevSession, reason){
   if(!s || s.sid!==currentSid || !nativeStages[s.sid]) return;
   var st=nativeStages[s.sid];
   if(!nStageHasReplayContent(st) || st.replayActive || st.replayWaiting) return;
   var active=nativeCatchupActiveState(s);
+  var prevState=(prevSession && typeof prevSession==="object") ? prevSession.state : prevSession;
   var justSettled=!!(prevState && prevState!=="idle" && prevState!=="new" && s.state==="idle");
-  if(!active && !justSettled) return;
-  nativeCatchupPoll(s.sid, reason || (active?"active":"settled"));
+  var activityChanged=!!(
+    prevSession && typeof prevSession==="object" &&
+    Number(s.last_output_ts||0) > Number(prevSession.last_output_ts||0)
+  );
+  if(!active && !justSettled && !activityChanged) return;
+  nativeCatchupPoll(s.sid, reason || (active?"active":(justSettled?"settled":"activity")));
 }
 function nativeCatchupPoll(sid, reason){
   if(!sid || currentSid!==sid || !nativeStages[sid]) return;
@@ -208,7 +213,7 @@ function nativeCatchupPoll(sid, reason){
     return;
   }
   if(st.catchupInFlight || st.replayActive || st.replayWaiting) return;
-  var now=Date.now(), minDelay=(reason==="settled")?1200:6000;
+  var now=Date.now(), minDelay=(reason==="activity")?0:((reason==="settled")?1200:6000);
   if(st.lastCatchupPoll && now-st.lastCatchupPoll<minDelay) return;
   st.lastCatchupPoll=now;
   st.catchupInFlight=true;

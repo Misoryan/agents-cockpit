@@ -490,18 +490,15 @@ def _silence_open_ws(page, sid):
     )
 
 
-def _trigger_open_catchup(page, sid, reason="settled"):
-    escaped_sid = json.dumps(sid)
-    escaped_reason = json.dumps(reason)
-    page.eval(
+def _trigger_session_signal_poll(page):
+    return page.eval(
         """(function(){
-          var sid=%s;
-          if(typeof nativeCatchupPoll !== 'function') return false;
-          var st=(window.nativeStages||{})[sid];
-          if(st){ st.lastCatchupPoll=0; st.catchupInFlight=false; }
-          nativeCatchupPoll(sid, %s);
-          return true;
-        })()""" % (escaped_sid, escaped_reason),
+          if(typeof api !== 'function' || typeof rememberSessions !== 'function') return Promise.resolve(false);
+          return api('/api/sessions').then(function(r){
+            rememberSessions((r&&r.sessions)||[]);
+            return true;
+          });
+        })()""",
         timeout=5,
     )
 
@@ -619,10 +616,11 @@ def run_smoke(args):
         before_open_text = before_open_catchup.get("text") if before_open_catchup else ""
 
         stale_name = first_name + " stale-open"
+        signal_poll_before = bool(_trigger_session_signal_poll(page_b))
         stale_ws_silenced = bool(_silence_open_ws(page_b, sid))
         _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + stale_name})
         _wait_text(page_a, sid, stale_name, timeout=15)
-        _trigger_open_catchup(page_b, sid, "settled")
+        signal_poll_after = bool(_trigger_session_signal_poll(page_b))
         _wait_text(page_b, sid, stale_name, timeout=20)
         after_open_catchup = _page_summary(page_b, sid)
         open_catchup_dom_preserved = bool(
@@ -665,6 +663,8 @@ def run_smoke(args):
             and after_catchup
             and after
             and primary
+            and signal_poll_before
+            and signal_poll_after
             and stale_ws_silenced
             and before["childCount"] >= before_open_catchup["childCount"]
             and after_catchup["childCount"] >= before["childCount"]
@@ -731,6 +731,8 @@ def run_smoke(args):
             "dom_marker": marked,
             "stale_open_catchup": {
                 "ws_silenced": stale_ws_silenced,
+                "session_poll_before": signal_poll_before,
+                "session_poll_after": signal_poll_after,
                 "rename": stale_name,
                 "dom_preserved": open_catchup_dom_preserved,
                 "text_preserved": open_catchup_text_preserved,

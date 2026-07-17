@@ -45,6 +45,10 @@ class CodexBroadcastAdapter:
 
     def broadcast(self, event):
         event = self.session._replay.prepare_broadcast(event)
+        try:
+            self.session.last_activity = self.time_fn()
+        except Exception:
+            pass
         self.send_to_clients(event)
         self.session._persist_if_due(event)
         return event

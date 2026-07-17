@@ -26,6 +26,7 @@ class FakeSession:
         self._replay = FakeReplay()
         self.persisted = []
         self._last_notify = {}
+        self.last_activity = 0.0
 
     def _persist_if_due(self, event):
         self.persisted.append(event)
@@ -64,10 +65,11 @@ def test_broadcast_prunes_dead_clients_and_persists():
         sent.append((sock, data.decode("utf-8"), opcode))
 
     session = FakeSession()
-    adapter = CodexBroadcastAdapter(session, ws_send, FakeNotify())
+    adapter = CodexBroadcastAdapter(session, ws_send, FakeNotify(), time_fn=lambda: 123.5)
     out = adapter.broadcast({"type": "assistant", "text": "你好"})
 
     assert out["seq"] == 1
+    assert session.last_activity == 123.5
     assert session.persisted == [out]
     assert session.clients == {"ok"}
     assert sent == [("ok", '{"type": "assistant", "text": "你好", "seq": 1}', 0x1)]

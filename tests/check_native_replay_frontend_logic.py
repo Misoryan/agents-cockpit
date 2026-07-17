@@ -24,6 +24,7 @@ const {
   nReplayUnseenEvents,
   nReplayEventKey,
   nReplayBatchAsync,
+  nResetReplayState,
   nDiffResultHtml,
   nDiffFileSections,
   nDiffFileListHtml,
@@ -201,6 +202,22 @@ assert.ok(mcpBody.includes("lookup"));
 assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
 
 (async function(){
+  let cancelHandled = [];
+  let stCancel = {sid:"cancel", root:{innerHTML:"", children:[]}, renderedEvents:{}, lastSeq:0};
+  ctx.currentSid = "";
+  ctx.nRenderTasks = function(){};
+  ctx.nHandle = function(_sid, event){
+    cancelHandled.push(event.seq);
+    nMarkRendered(stCancel, event);
+  };
+  nReplayBatchAsync("cancel", stCancel, Array.from({length:40}, (_, i) => ({type:"assistant", seq:i+1})), {silent:true});
+  assert.strictEqual(cancelHandled.length, 18);
+  assert.strictEqual(stCancel.replayActive, true);
+  nResetReplayState(stCancel);
+  assert.strictEqual(stCancel.replayActive, false);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.strictEqual(cancelHandled.length, 18, "cancelled replay pump should not continue rendering");
+
   let catchupEvents = [];
   let catchupUrls = [];
   let st3 = {

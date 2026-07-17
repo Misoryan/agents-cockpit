@@ -36,6 +36,7 @@ function nMarkRendered(st,obj){
   return true;
 }
 function nResetReplayState(st){
+  st.replayRunId=(st.replayRunId||0)+1;
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
   if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
@@ -46,6 +47,7 @@ function nResetReplayState(st){
   st.lastSeq=0;
   st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
   st.replayCard=null; st.replayWaiting=false;
+  st.replayActive=false; st.replayPending=[];
   st.root.innerHTML="";
 }
 function nReplayIsPendingEvent(e){
@@ -124,11 +126,15 @@ function nReplayProgressWait(st){
 function nReplayBatchAsync(sid, st, events, opts){
   opts=opts||{};
   var renderEvents=nReplayUnseenEvents(st, nReplayRenderableEvents(events)), total=renderEvents.length, idx=0, chunk=18;
-  st.replayActive=true; st.replayPending=[];
+  if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
+  var runId=(st.replayRunId||0)+1; st.replayRunId=runId;
+  st.replayActive=true; st.replayPending=st.replayPending||[];
   if(!opts.silent) nReplayProgressStart(st,total,total?"Loading conversation":"No replay history",total?"":"empty");
   function pump(){
+    if(st.replayRunId!==runId) return;
     var end=Math.min(total, idx+chunk);
     for(; idx<end; idx++){
+      if(st.replayRunId!==runId) return;
       var e=renderEvents[idx];
       try{ e.replay=true; nHandle(sid, e); }
       catch(err){ try{ console.warn("[N] replay event skipped", e&&e.type, err); }catch(_e){} }
@@ -138,6 +144,7 @@ function nReplayBatchAsync(sid, st, events, opts){
       st.replayTimer=setTimeout(pump, 0);
       return;
     }
+    if(st.replayRunId!==runId) return;
     st.replayTimer=null; st.replayActive=false;
     if(!opts.silent) nReplayProgressDone(st,total,total?"Conversation loaded":"No replay history",total?"":"empty");
     var pending=st.replayPending||[]; st.replayPending=[];

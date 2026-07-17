@@ -7,12 +7,17 @@ function nativeStage(sid){
   nativeStages[sid]={sid:sid, root:d, curTxt:null, curThink:null, turnCard:null, shownCount:0, model:"", lastToolGroup:null,
                       planMode:null, taskMode:null, todos:null, tasksCollapsed:false, lastPendingResync:0,
                       renderedEvents:{}, lastBatchSig:"", lastSeq:0, replayActive:false, replayPending:[], replayCard:null, replayTimer:null,
-                      replayWaiting:false, replayWaitTimer:null, lastReplayBatchSig:"", replaySigParts:[],
+                      replayWaiting:false, replayWaitTimer:null, replayRunId:0, lastReplayBatchSig:"", replaySigParts:[],
                       lastCatchupPoll:0, catchupInFlight:false};
   return nativeStages[sid];
 }
 function dropNativeStage(sid){
   var st=nativeStages[sid]; if(!st) return;
+  if(typeof nResetReplayState==="function") nResetReplayState(st);
+  if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
+  if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
+  if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
+  st.replayRunId=(st.replayRunId||0)+1;
   if(st.root.parentNode) st.root.parentNode.removeChild(st.root);
   delete nativeStages[sid];
   if(nativeReconnectTimers[sid]){ clearTimeout(nativeReconnectTimers[sid]); delete nativeReconnectTimers[sid]; }

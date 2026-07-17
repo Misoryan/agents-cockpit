@@ -203,6 +203,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   activity even if the socket still appears open. The browser smoke exercises
   this path through `rememberSessions()` instead of calling the catch-up helper
   directly.
+- Frontend replay loading now has a cancellation token (`replayRunId`) and
+  resets `replayActive`/queued replay events when a stage is reset or dropped,
+  so long-history replay pumps cannot keep rendering stale chunks after a
+  reconnect, `replay_replace`, or closed session.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

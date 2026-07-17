@@ -894,3 +894,10 @@ Immediate next commit candidate:
 - The visible browser catch-up path now compares the current session's `last_output_ts` with the previous poll snapshot and calls `/api/nreplay?after=<lastSeq>` when activity advances while the WebSocket still appears open.
 - `tools/codex_browser_smoke.py` now verifies the stale-open WebSocket scenario through normal session polling / `rememberSessions()` activity detection instead of directly invoking `nativeCatchupPoll()`.
 - This closes the practical gap where an idle tab with an open-but-stale socket could miss a `/rename` or similar notice until an eventual close/reconnect.
+
+## 72. 2026-07-17 replay pump cancellation checkpoint
+
+- Added a frontend `replayRunId` cancellation token so an older asynchronous replay batch stops rendering after a stage reset, `replay_replace`, or session drop.
+- `nResetReplayState()` now clears `replayActive` and queued live events as well as timers, preventing long-history loading from leaving the stage stuck in replay mode if a reset happens mid-pump.
+- `dropNativeStage()` now clears replay/thinking timers before removing the DOM node, reducing hidden timer work and stale writes after a session closes.
+- The Node frontend replay check now proves a 40-event replay stops after the first chunk when reset, which guards against duplicate/flickering chunks during reconnect and long-history recovery.

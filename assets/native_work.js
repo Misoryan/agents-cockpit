@@ -346,6 +346,10 @@ function nWorkErrorHtml(turn){
   var err=String(turn.error||"本轮执行失败，未提供详细错误。").trim();
   return '<div class="work-error"><span>错误</span><pre>'+nEsc(err)+'</pre></div>';
 }
+function nWorkUserTextHtml(turn){
+  var full=String((turn&&turn.user_text)||"").trim();
+  return '<div class="work-user">'+nEsc(full||"Agent turn")+'</div>';
+}
 function nWorkTurnHtml(turn, idx, total){
   turn=turn||{};
   var toolTotal=nWorkToolTotal(turn), fileTotal=nWorkFileTotal(turn);
@@ -353,12 +357,12 @@ function nWorkTurnHtml(turn, idx, total){
   var meta=[nWorkTurnStatusText(turn.status), toolTotal?toolTotal+" 动作":"0 动作", fileTotal?fileTotal+" 文件":""].filter(Boolean).join(" · ");
   var metaHtml=nEsc(meta)+(running ? nWorkTurnElapsedHtml(turn) : "");
   var isLatest=idx===total-1;
-  var title=nWorkShort((turn.user_text||"").split("\n")[0]||"Agent turn", 90);
   var detailKey="final-"+nWorkTurnKey(turn, idx);
   var filesKey="files-"+nWorkTurnKey(turn, idx);
   var chatKey=nWorkTurnKey(turn, idx);
   return '<section class="work-turn '+nWorkSafeStatus(turn.status||"done")+'">'+
-    '<div class="work-turn-head"><div><span class="work-pill">'+nEsc("#"+(idx+1))+'</span><b>'+nEsc(title)+'</b></div><em>'+metaHtml+'</em></div>'+
+    '<div class="work-turn-head"><div><span class="work-pill">'+nEsc("#"+(idx+1))+'</span></div><em>'+metaHtml+'</em></div>'+
+    nWorkUserTextHtml(turn)+
     (isLatest?'':nWorkTodosHtml(turn.todos||[]))+
     (running?nWorkCurrentActionHtml(turn):nWorkCompleteHtml(turn, toolTotal, fileTotal, isLatest))+
     (running?nWorkProgressHtml(turn):'')+

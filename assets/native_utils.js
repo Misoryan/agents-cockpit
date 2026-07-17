@@ -108,6 +108,25 @@ function nTasksAllCompleted(st){
   var todos=(st&&st.todos)||[];
   return !!todos.length && todos.every(function(x){ return (x.status||"")==="completed"; });
 }
+function nSettleActiveTasks(st){
+  var todos=(st&&st.todos)||[];
+  if(!todos.length) return false;
+  var hasPending=false, changed=false;
+  st.todos=todos.map(function(x){
+    var status=x.status||"pending";
+    if(status==="pending") hasPending=true;
+    if(status==="in_progress"){
+      changed=true;
+      var y=Object.assign({}, x);
+      y.status="completed";
+      return y;
+    }
+    return x;
+  });
+  if(hasPending || !changed){ return false; }
+  nRenderTasks(st);
+  return true;
+}
 function nMaybeCompleteTasks(st){
   if(!nTasksAllCompleted(st)) return false;
   nRenderTasks(st);

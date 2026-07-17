@@ -936,3 +936,10 @@ Immediate next commit candidate:
 - The settle path clears stale `curTxt` / `curThink` / thinking references and marks the turn card `done`, preventing the next streamed turn from appending into an old message bubble after reconnect or stale-open catch-up.
 - Confirm/plan snapshots are intentionally excluded so pending approval, ask, form, and plan cards remain interactive while the agent is waiting for the user.
 - The frontend Node replay check now covers idle snapshot settle for an open streamed text bubble and confirms that confirm-state snapshots do not close pending turns.
+
+## 78. 2026-07-17 stale replay fetch guard checkpoint
+
+- Frontend replay resets now increment a `replayFetchId` token in addition to cancelling asynchronous replay pumps.
+- In-flight `/api/nreplay` polling and silent catch-up requests capture that token and drop their response if a stage reset, `replay_replace`, or session drop happened before the HTTP response returned.
+- `nResetReplayState()` also clears `catchupInFlight`, so a reset cannot leave a visible session stuck behind an old catch-up request.
+- The frontend Node replay check now proves a catch-up response resolved after reset does not render stale events or advance `lastSeq`.

@@ -406,6 +406,42 @@ assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
   assert.strictEqual(switchUrls.length, 1, "tab switch catch-up should bypass active-state throttle");
   assert.ok(switchUrls[0].includes("/api/nreplay?sid=s-switch&after=9"));
 
+  let staleFetchHandled = 0;
+  let staleFetchResolve;
+  let stStaleFetch = {
+    sid: "stale-fetch",
+    root: {innerHTML: "old", children: [{classList: {contains: () => false}}]},
+    renderedEvents: {"seq:2": true},
+    lastSeq: 2,
+    replayActive: false,
+    replayWaiting: false,
+    replayFetchId: 0,
+    lastCatchupPoll: 0,
+    catchupInFlight: false
+  };
+  ctx.currentSid = "stale-fetch";
+  ctx.nativeStages = {"stale-fetch": stStaleFetch};
+  ctx.nativeWs = {"stale-fetch": {readyState: 1}};
+  ctx.api = function(_url){
+    return new Promise((resolve) => { staleFetchResolve = resolve; });
+  };
+  ctx.nHandle = function(){ staleFetchHandled++; };
+  nativeCatchupPoll("stale-fetch", "activity");
+  assert.strictEqual(stStaleFetch.catchupInFlight, true);
+  nResetReplayState(stStaleFetch);
+  assert.strictEqual(stStaleFetch.catchupInFlight, false);
+  assert.strictEqual(stStaleFetch.replayFetchId, 1);
+  staleFetchResolve({
+    ok: true,
+    events: [{type:"assistant", seq:3}],
+    snapshot: {type:"state_snapshot", last_seq:3},
+    pending: []
+  });
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(staleFetchHandled, 0, "stale catch-up response after reset must not render events");
+  assert.strictEqual(stStaleFetch.lastSeq, 0);
+
   let sockets = [];
   let stalePolls = 0;
   let staleReconnects = 0;

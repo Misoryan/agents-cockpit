@@ -378,6 +378,9 @@ was missed.
 Idle snapshots now also settle any open streamed turn card when the final
 result/done event was missed, clearing stale text/thinking pointers without
 closing confirm or plan turns that still need user action.
+Replay resets now also invalidate in-flight replay/catch-up HTTP responses
+with a per-stage `replayFetchId`, preventing late `/api/nreplay` responses
+from writing stale events into a freshly reset or replaced DOM.
 
 Codex CLI 升级后：
 

@@ -37,6 +37,7 @@ function nMarkRendered(st,obj){
 }
 function nResetReplayState(st){
   st.replayRunId=(st.replayRunId||0)+1;
+  st.replayFetchId=(st.replayFetchId||0)+1;
   if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
   if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
   if(st.replayWaitTimer){ clearTimeout(st.replayWaitTimer); st.replayWaitTimer=null; }
@@ -48,6 +49,7 @@ function nResetReplayState(st){
   st.todos=null; if(currentSid===st.sid) nRenderTasks(st);
   st.replayCard=null; st.replayWaiting=false;
   st.replayActive=false; st.replayPending=[];
+  st.catchupInFlight=false;
   st.root.innerHTML="";
 }
 function nReplayIsPendingEvent(e){
@@ -176,11 +178,13 @@ function nativePollOnce(sid){
   if(!sid || currentSid!==sid || !nativeStages[sid]) return;
   if(nativePollBusy[sid]){ nativeStartPolling(sid,false); return; }
   var st=nativeStage(sid), after=nativeReplayAfter(st);
+  var fetchId=st.replayFetchId||0;
   nativePollBusy[sid]=true;
   var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after);
   if(window.NATIVE_DEBUG){ try{ console.log("[N] replay poll", sid, "after="+after, "url="+url); }catch(_e){} }
   api(url).then(function(r){
     nativePollBusy[sid]=false;
+    if(!nativeStages[sid] || nativeStages[sid]!==st || (st.replayFetchId||0)!==fetchId) return;
     if(!r || r.ok===false){ nativeStartPolling(sid,false); return; }
     var evs=r.events||[];
     if(evs.length){ nReplayBatchAsync(sid, st, evs, {silent:nStageHasReplayContent(st)}); }
@@ -192,6 +196,7 @@ function nativePollOnce(sid){
     }
   }).catch(function(){
     nativePollBusy[sid]=false;
+    if(!nativeStages[sid] || nativeStages[sid]!==st || (st.replayFetchId||0)!==fetchId) return;
     nativeStartPolling(sid,false);
   });
 }
@@ -224,11 +229,13 @@ function nativeCatchupPoll(sid, reason){
   if(st.lastCatchupPoll && now-st.lastCatchupPoll<minDelay) return;
   st.lastCatchupPoll=now;
   st.catchupInFlight=true;
+  var fetchId=st.replayFetchId||0;
   var after=nativeReplayAfter(st);
   var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&after="+encodeURIComponent(after);
   if(window.NATIVE_DEBUG){ try{ console.log("[N] catch-up", sid, "reason="+(reason||""), "after="+after, "url="+url); }catch(_e){} }
   api(url).then(function(r){
     st.catchupInFlight=false;
+    if(!nativeStages[sid] || nativeStages[sid]!==st || (st.replayFetchId||0)!==fetchId) return;
     if(!r || r.ok===false || currentSid!==sid || !nativeStages[sid]) return;
     var evs=r.events||[];
     if(window.NATIVE_DEBUG){ try{ console.log("[N] catch-up result", sid, "events="+evs.length, "snapshot="+(!!r.snapshot), "pending="+((r.pending||[]).length)); }catch(_e){} }
@@ -236,6 +243,7 @@ function nativeCatchupPoll(sid, reason){
     if(r.snapshot){ nHandle(sid, r.snapshot); }
     (r.pending||[]).forEach(function(ev){ nHandle(sid, ev); });
   }).catch(function(){
+    if(!nativeStages[sid] || nativeStages[sid]!==st || (st.replayFetchId||0)!==fetchId) return;
     st.catchupInFlight=false;
   });
 }

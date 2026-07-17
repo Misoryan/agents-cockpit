@@ -383,6 +383,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Idle `state_snapshot` now also settles an open streamed turn card when the
   browser missed the final result/done event, while leaving confirm/plan turns
   interactive.
+- Replay/catch-up HTTP responses now carry a per-stage `replayFetchId` guard,
+  so responses arriving after `nResetReplayState()` or `replay_replace` cannot
+  write stale events into the newly reset DOM.
 
 ## Optional Follow-ups
 

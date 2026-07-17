@@ -41,7 +41,8 @@ var nativeSlashCommands=[
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;
 var nativeImageAttachments=[];
 var NATIVE_IMAGE_MAX_BYTES=8*1024*1024;
-var nativeInputRaf=0;
+var nativeInputAssistTimer=null;
+var nativeHeightTimer=null;
 function nSlashMenu(){ return $("slashmenu"); }
 function nCloseSlashMenu(){
   var m=nSlashMenu(); if(m) m.classList.remove("open");
@@ -144,17 +145,32 @@ function nRenderInputAssist(){
   if(value.trim().charAt(0)==="/"){ nRenderSlashMenu(); return; }
   var info=nMentionInfo();
   if(info && info.query.length>=1){ nRenderFileMentionMenu(info); return; }
-  nCloseSlashMenu();
+  var m=nSlashMenu();
+  if(m && m.classList.contains("open")) nCloseSlashMenu();
+}
+function nLooksLikeAssistInput(value){
+  value=String(value||"");
+  if(value.trim().charAt(0)==="/") return true;
+  return /(^|\s)@(?:"[^"]*|[^\s@"]*)$/.test(value);
 }
 function nScheduleInputAssist(inp){
-  if(nativeInputRaf) cancelAnimationFrame(nativeInputRaf);
-  nativeInputRaf=requestAnimationFrame(function(){
-    nativeInputRaf=0;
-    if(!inp) return;
-    inp.style.height="auto";
-    inp.style.height=Math.min(inp.scrollHeight,200)+"px";
-    nRenderInputAssist();
-  });
+  if(!inp) return;
+  var value=inp.value||"";
+  if(nativeInputAssistTimer){ clearTimeout(nativeInputAssistTimer); nativeInputAssistTimer=null; }
+  if(nativeHeightTimer){ clearTimeout(nativeHeightTimer); nativeHeightTimer=null; }
+  if(nLooksLikeAssistInput(value)){
+    nativeInputAssistTimer=setTimeout(function(){ nativeInputAssistTimer=null; nRenderInputAssist(); }, 60);
+  }else{
+    var m=nSlashMenu();
+    if(m && m.classList.contains("open")) nCloseSlashMenu();
+  }
+  if(value.indexOf("\n")>=0 || value.length>160 || inp.offsetHeight>70){
+    nativeHeightTimer=setTimeout(function(){
+      nativeHeightTimer=null;
+      inp.style.height="auto";
+      inp.style.height=Math.min(inp.scrollHeight,200)+"px";
+    }, 120);
+  }
 }
 function nCurrentCodexSession(){
   var s=currentSid?nFindRunSession(currentSid):null;

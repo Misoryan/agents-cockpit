@@ -55,9 +55,10 @@ def events_from_thread(thread):
 
 def snapshot_from_thread(thread):
     thread = thread or {}
+    events = events_from_thread(thread)
     return {
         "thread": thread,
-        "events": events_from_thread(thread)[-200:],
+        "events": events,
         "cwd": thread.get("cwd") or os.path.expanduser("~"),
         "title": codex_history.thread_title(thread),
     }

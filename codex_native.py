@@ -34,7 +34,7 @@ from common import ws_send, ws_recv, STATE_DIR
 _CLIENT_LOCK = threading.Lock()
 _CLIENTS = {}
 
-_REPLAY_MAX_EVENTS = 400
+_REPLAY_MAX_EVENTS = 5000
 _REPLAY_STREAM_MAX_CHARS = 24000
 
 
@@ -659,10 +659,38 @@ class CodexSession:
     def _events_after_seq(self, after_seq=0):
         return self._replay.events_after_seq(after_seq)
 
+    def _repair_full_replay_from_thread(self):
+        if not self.thread_id or self._closed:
+            return False
+        with self._lock:
+            timeline = list(self.timeline or [])
+            first_seq = int((timeline[0] or {}).get("seq") or 0) if timeline else 0
+            looks_truncated = bool(timeline and first_seq > 1)
+        if not looks_truncated:
+            return False
+        try:
+            response = self._client().request(
+                "thread/read", {"threadId": self.thread_id, "includeTurns": True}, timeout=30)
+            thread = (response or {}).get("thread") or {}
+            events = codex_thread_history.events_from_thread(thread)
+        except Exception:
+            return False
+        if not events:
+            return False
+        with self._lock:
+            self.timeline = []
+            self._adopt_history_replay(events)
+            self._persist()
+        return True
+
     def replay_payload(self, after_seq=0):
+        if not after_seq:
+            self._repair_full_replay_from_thread()
         return self._replay.replay_payload(after_seq)
 
     def add_client(self, sock, after_seq=0):
+        if not after_seq:
+            self._repair_full_replay_from_thread()
         return self._replay.add_client(
             sock,
             after_seq=after_seq,

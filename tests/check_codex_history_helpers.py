@@ -33,6 +33,13 @@ def main():
     assert item["archived"] is True
     assert codex_native._thread_id({"sessionId": "sid"}) == "sid"
     assert codex_native._thread_title({}) == "(Untitled)"
+    long_thread = {"cwd": "repo", "turns": [
+        {"items": [{"type": "userMessage", "content": [{"type": "text", "text": "msg %03d" % i}]}]}
+        for i in range(230)
+    ]}
+    long_snapshot = codex_thread_history.snapshot_from_thread(long_thread)
+    assert len(long_snapshot["events"]) == 460
+    assert "msg 000" in str(long_snapshot["events"][0])
 
     filtered = codex_history.filter_thread_history_items([
         {"thread_id": "a", "title": "old", "ts": 1},

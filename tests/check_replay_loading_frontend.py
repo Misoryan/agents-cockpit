@@ -75,6 +75,8 @@ def main():
     assert "def _repair_full_replay_from_thread(self):" in codex_native
     assert "thread/read" in codex_native and "includeTurns" in codex_native
     assert "self._repair_full_replay_from_thread()" in codex_native
+    assert "local_tail = list(self.timeline or [])" in codex_native
+    assert "replay_signature(event)" in codex_native
     local_scripts = [src for src in parser.srcs if src.startswith("/assets/")]
     assert local_scripts == [
         "/assets/vendor/marked.min.js",

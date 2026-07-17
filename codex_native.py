@@ -6,6 +6,7 @@ stream-json events, while speaking Codex app-server JSONL/JSON-RPC on the
 backend.
 """
 import atexit
+import json
 import os
 import threading
 import time
@@ -677,9 +678,25 @@ class CodexSession:
             return False
         if not events:
             return False
+        def replay_signature(event):
+            item = dict(event or {})
+            for key in ("seq", "merged_seq", "event_id", "_stream_chunks"):
+                item.pop(key, None)
+            try:
+                return json.dumps(item, sort_keys=True, ensure_ascii=False)
+            except Exception:
+                return repr(item)
         with self._lock:
+            local_tail = list(self.timeline or [])
             self.timeline = []
             self._adopt_history_replay(events)
+            known = set(replay_signature(event) for event in self.timeline)
+            for event in local_tail:
+                sig = replay_signature(event)
+                if sig in known:
+                    continue
+                recorded = self._record_timeline_locked(dict(event))
+                known.add(replay_signature(recorded))
             self._persist()
         return True
 

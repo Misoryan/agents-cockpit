@@ -4,6 +4,11 @@ import base64
 
 
 UNKNOWN_PROCESS = {"ok": False, "error": "unknown terminal process"}
+MAX_TERMINAL_INPUT_CHARS = 64 * 1024
+MIN_TERMINAL_COLS = 1
+MAX_TERMINAL_COLS = 500
+MIN_TERMINAL_ROWS = 1
+MAX_TERMINAL_ROWS = 200
 
 
 def terminal_interaction_event(session, params):
@@ -37,6 +42,8 @@ def terminal_write(session, process_id, text="", close_stdin=False):
         return dict(UNKNOWN_PROCESS)
     params = {"processId": process_id}
     text = "" if text is None else str(text)
+    if len(text) > MAX_TERMINAL_INPUT_CHARS:
+        return {"ok": False, "error": "terminal input exceeds %d characters" % MAX_TERMINAL_INPUT_CHARS}
     if text:
         params["deltaBase64"] = base64.b64encode(text.encode("utf-8")).decode("ascii")
     if close_stdin:
@@ -67,10 +74,12 @@ def terminal_resize(session, process_id, cols, rows):
     if not process_id:
         return dict(UNKNOWN_PROCESS)
     try:
-        cols = max(1, int(cols))
-        rows = max(1, int(rows))
+        cols = int(cols)
+        rows = int(rows)
     except Exception:
         return {"ok": False, "error": "invalid terminal size"}
+    if cols < MIN_TERMINAL_COLS or cols > MAX_TERMINAL_COLS or rows < MIN_TERMINAL_ROWS or rows > MAX_TERMINAL_ROWS:
+        return {"ok": False, "error": "terminal size out of range"}
     session._client().request(
         "command/exec/resize",
         {"processId": process_id, "size": {"cols": cols, "rows": rows}},

@@ -26,7 +26,7 @@ routes cannot be added without an explicit risk classification.
 | `/api/ninterrupt` | medium | turn_control | auth, user_context, session_owner |
 | `/api/nsend` | high | codex_turn_and_upload | auth, user_context, session_owner, busy_guard, image_validation |
 | `/api/nslash` | high | codex_control | auth, user_context, session_owner, busy_guard, slash_allowlist |
-| `/api/nterminal` | high | command_io | auth, user_context, session_owner, process_owner, terminal_action_allowlist |
+| `/api/nterminal` | high | command_io | auth, user_context, session_owner, process_owner, terminal_action_allowlist, input_size_limit, resize_bounds |
 | `/api/nmode` | low | ui_mode | auth, user_context, session_owner |
 | `/api/napprove` | high | approval_gate | auth, user_context, session_owner, pending_request |
 | `/api/nanswer` | high | answer_gate | auth, user_context, session_owner, pending_request |

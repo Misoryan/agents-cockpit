@@ -861,3 +861,9 @@ Immediate next commit candidate:
 - Strengthened `codex_input.py` so Codex image uploads validate decoded bytes against the declared image MIME type before writing into the per-session upload directory.
 - PNG, JPEG, GIF, and WebP uploads now require matching magic-byte signatures in addition to the existing count, size, base64, and MIME allowlist checks.
 - Extended input/config helper tests to cover valid image signatures and MIME/content mismatch rejection, turning the `/api/nsend` `image_validation` matrix entry into a concrete runtime guard.
+
+## 67. 2026-07-17 terminal command-I/O runtime-guard checkpoint
+
+- Strengthened `codex_terminal.py` so browser terminal stdin is rejected before app-server when it exceeds the bounded input limit.
+- Terminal resize requests now reject invalid or out-of-range dimensions instead of silently clamping, keeping `/api/nterminal` behavior explicit and auditable.
+- Extended the terminal adapter smoke/helper check to prove oversized stdin and invalid resize requests do not produce app-server `command/exec/*` calls.

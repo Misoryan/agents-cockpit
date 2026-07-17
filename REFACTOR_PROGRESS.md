@@ -316,6 +316,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Codex image uploads now verify decoded file signatures against the declared
   image MIME type before storing local images, so `/api/nsend` image validation
   covers count, size, base64 validity, MIME allowlist, and magic-byte mismatch.
+- Codex terminal stdin now rejects oversized browser input and terminal resize
+  requests outside bounded dimensions before calling app-server, tightening the
+  `/api/nterminal` command-I/O guard beyond process ownership and action
+  allowlisting.
 - `codex_inventory.py` now backs `/skills` and `/plugins [installed|available]`
   with read-only app-server inventory calls, strips local skill/plugin paths
   before replay, and renders `codex.skills` / `codex.plugins` as structured

@@ -24,6 +24,8 @@ def main():
     assert result["terminal_input_sent"] == 2
     assert [event["process_id"] for event in result["terminal_closed"]] == ["proc-1", "proc-2"]
     assert result["terminal_closed"][1]["terminated"] is True
+    assert "exceeds" in result["rejected_oversize"]
+    assert result["rejected_resize"] == "terminal size out of range"
     assert result["rejected_after_close"] == "unknown terminal process"
     assert result["rejected_after_terminate"] == "unknown terminal process"
     print("codex terminal smoke helper checks passed")

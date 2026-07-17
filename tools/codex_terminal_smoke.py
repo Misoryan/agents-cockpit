@@ -17,6 +17,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import codex_session_events  # noqa: E402
+import codex_terminal  # noqa: E402
 from codex_native import CodexSession  # noqa: E402
 
 
@@ -67,6 +68,10 @@ def run_smoke(cwd):
 
         first = session.terminal_write("proc-1", "alpha\n")
         second = session.terminal_write("proc-1", "beta\n")
+        rejected_oversize = session.terminal_write(
+            "proc-1", "x" * (codex_terminal.MAX_TERMINAL_INPUT_CHARS + 1)
+        )
+        rejected_resize = session.terminal_resize("proc-1", codex_terminal.MAX_TERMINAL_COLS + 1, 40)
         resize = session.terminal_resize("proc-1", 120, 40)
         closed = session.terminal_write("proc-1", "done\n", close_stdin=True)
         rejected_after_close = session.terminal_write("proc-1", "late\n")
@@ -87,6 +92,8 @@ def run_smoke(cwd):
 
         assert first == {"ok": True, "process_id": "proc-1", "closed": False}
         assert second == {"ok": True, "process_id": "proc-1", "closed": False}
+        assert rejected_oversize["ok"] is False and "exceeds" in rejected_oversize["error"]
+        assert rejected_resize == {"ok": False, "error": "terminal size out of range"}
         assert resize == {"ok": True, "process_id": "proc-1", "cols": 120, "rows": 40}
         assert closed == {"ok": True, "process_id": "proc-1", "closed": True}
         assert rejected_after_close["ok"] is False
@@ -110,6 +117,8 @@ def run_smoke(cwd):
             "terminal_interactions": len(term_events) + 1,
             "terminal_input_sent": len(terminal_sent),
             "terminal_closed": terminal_closed,
+            "rejected_oversize": rejected_oversize.get("error"),
+            "rejected_resize": rejected_resize.get("error"),
             "rejected_after_close": rejected_after_close.get("error"),
             "rejected_after_terminate": rejected_after_terminate.get("error"),
         }

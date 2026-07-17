@@ -25,6 +25,33 @@ from common import BaseHandler, ThreadingServer
 
 _server = [None]
 
+WEB_CONTROL_ROUTE_RISKS = {
+    "/api/restart_web": {
+        "risk": "high",
+        "area": "web_lifecycle",
+        "guards": ("browser_auth", "origin_check"),
+    },
+    "/api/restart_manager": {
+        "risk": "high",
+        "area": "manager_lifecycle",
+        "guards": ("browser_auth", "origin_check", "internal_soft_exit"),
+    },
+    "/api/restart": {
+        "risk": "critical",
+        "area": "full_lifecycle",
+        "guards": ("browser_auth", "origin_check", "internal_exit"),
+    },
+    "/api/_stop": {
+        "risk": "critical",
+        "area": "full_lifecycle",
+        "guards": ("browser_auth", "origin_check", "internal_exit"),
+    },
+}
+
+
+def web_control_post_risk(path):
+    return WEB_CONTROL_ROUTE_RISKS.get(path)
+
 
 # ---------- restart paths (all os._exit; never os.execv — unreliable on Win) ----------
 def restart_web_soon():

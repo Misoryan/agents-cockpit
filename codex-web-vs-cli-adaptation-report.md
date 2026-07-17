@@ -848,3 +848,10 @@ Immediate next commit candidate:
 - When the status card exposes a `Browse` action, the smoke follows that exposed command and requires the resulting `MCP Resources |` `.mcp-resource-card` to appear in both tabs as well.
 - MCP status/resource result events now keep parseable JSON for browser renderers and strip oversized tool schemas/descriptions from the summary payload, avoiding a truncated raw blob when real servers expose many tools.
 - This closes the first browser-level evidence gap for MCP status/resource card synchronization; richer resource-read button coverage can still be added with a controlled temporary MCP config.
+
+## 65. 2026-07-17 state-changing API risk-matrix checkpoint
+
+- Added `docs/state-changing-api-risk-matrix.md` to classify browser/manager/internal POST routes by risk, area, and required guards.
+- Added route-risk metadata in `manager_user_api.py`, `manager_internal_api.py`, and `web.py` for launch/resume/stop/send/slash/terminal/mode/approval/history/restart/gate/control paths.
+- Added `tools/check_state_changing_api_risks.py` plus a helper test so new mutating POST routes must update the matrix instead of silently expanding the exposed attack surface.
+- This advances Phase 5 hardening without changing route behavior; the next hardening slice can convert specific matrix gaps into stricter runtime checks.

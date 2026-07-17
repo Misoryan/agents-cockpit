@@ -265,7 +265,7 @@ Browser / Android WebView
 
 任务：
 
-- 增加 state-changing API 风险矩阵和测试：launch/send/slash/terminal/history/upload/restart/stop/gate/control。
+- 增加 state-changing API 风险矩阵和测试：launch/send/slash/terminal/history/upload/restart/stop/gate/control。（第一刀已落地：`docs/state-changing-api-risk-matrix.md` 记录 browser/manager/internal POST 风险、职责和 required guards，`tools/check_state_changing_api_risks.py` 静态校验新增路由必须补分类。）
 - 将 hardened profile 从“文档建议 + verifier”推进到可选择配置模板或启动检查。
 - 审计 upload/image、workspace roots、per-user Codex/Claude home、MCP config 写入边界。
 - 对 manager/internal endpoint 保持“必须内部 token + 预期来源 + 测试覆盖”。
@@ -305,7 +305,7 @@ Browser / Android WebView
 快速验证：
 
 ```powershell
-python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_account.py codex_command_exec.py codex_config.py codex_input.py codex_inventory.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py
+python -m py_compile app.py web.py common.py manager.py native.py codex_native.py codex_broadcast.py codex_account.py codex_command_exec.py codex_config.py codex_input.py codex_inventory.py codex_notifications.py codex_mcp_status.py codex_pending.py codex_replay_facade.py codex_slash.py codex_state.py codex_terminal.py codex_turn.py gate_mcp.py codex_client.py codex_events.py codex_forms.py codex_history.py codex_replay.py codex_requests.py codex_routing.py codex_session_events.py codex_text.py codex_thread_history.py common_auth.py common_binaries.py common_browse.py common_ccswitch.py common_history.py common_http.py common_notify.py common_process.py common_registry.py common_users.py common_ws.py manager_internal_api.py manager_sessions.py manager_user_api.py native_cli.py native_config.py native_gate.py native_replay.py tools\app_server_protocol_matrix.py tools\codex_ws_smoke.py tools\codex_mcp_smoke.py tools\codex_visual_smoke_report.py tools\codex_browser_smoke.py tools\codex_terminal_smoke.py tools\codex_command_exec_smoke.py tools\check_hardened_profile.py tools\check_state_changing_api_risks.py
 Get-ChildItem assets -Recurse -Filter *.js | Sort-Object FullName | ForEach-Object { node --check $_.FullName }
 Get-ChildItem tests\check_*.py | Sort-Object Name | ForEach-Object { python $_.FullName }
 git diff --check

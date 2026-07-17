@@ -10,6 +10,84 @@ import manager_sessions
 from codex_native import CodexSession
 
 
+USER_POST_ROUTE_RISKS = {
+    "/api/launch": {
+        "risk": "high",
+        "area": "session_lifecycle",
+        "guards": ("auth", "user_context", "workspace_root", "writable_roots"),
+    },
+    "/api/resume": {
+        "risk": "high",
+        "area": "session_lifecycle",
+        "guards": ("auth", "user_context", "history_owner", "workspace_root"),
+    },
+    "/api/nresume": {
+        "risk": "high",
+        "area": "session_lifecycle",
+        "guards": ("auth", "user_context", "history_owner", "workspace_root"),
+    },
+    "/api/stop": {
+        "risk": "medium",
+        "area": "session_lifecycle",
+        "guards": ("auth", "user_context", "session_owner"),
+    },
+    "/api/stop_all": {
+        "risk": "high",
+        "area": "session_lifecycle",
+        "guards": ("auth", "user_context", "owned_sessions_only"),
+    },
+    "/api/ninterrupt": {
+        "risk": "medium",
+        "area": "turn_control",
+        "guards": ("auth", "user_context", "session_owner"),
+    },
+    "/api/nsend": {
+        "risk": "high",
+        "area": "codex_turn_and_upload",
+        "guards": ("auth", "user_context", "session_owner", "busy_guard", "image_validation"),
+    },
+    "/api/nslash": {
+        "risk": "high",
+        "area": "codex_control",
+        "guards": ("auth", "user_context", "session_owner", "busy_guard", "slash_allowlist"),
+    },
+    "/api/nterminal": {
+        "risk": "high",
+        "area": "command_io",
+        "guards": ("auth", "user_context", "session_owner", "process_owner", "terminal_action_allowlist"),
+    },
+    "/api/nmode": {
+        "risk": "low",
+        "area": "ui_mode",
+        "guards": ("auth", "user_context", "session_owner"),
+    },
+    "/api/napprove": {
+        "risk": "high",
+        "area": "approval_gate",
+        "guards": ("auth", "user_context", "session_owner", "pending_request"),
+    },
+    "/api/nanswer": {
+        "risk": "high",
+        "area": "answer_gate",
+        "guards": ("auth", "user_context", "session_owner", "pending_request"),
+    },
+    "/api/history_delete": {
+        "risk": "high",
+        "area": "history_mutation",
+        "guards": ("auth", "user_context", "history_owner"),
+    },
+    "/api/codex_history_action": {
+        "risk": "high",
+        "area": "history_mutation",
+        "guards": ("auth", "user_context", "history_owner", "codex_backend_only", "action_allowlist"),
+    },
+}
+
+
+def state_changing_post_risk(path):
+    return USER_POST_ROUTE_RISKS.get(path)
+
+
 def handle_get(handler, path, pr, ctx, owned_session_fn):
     if path == "/api/browse":
         query = urllib.parse.parse_qs(pr.query)

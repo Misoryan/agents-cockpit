@@ -7,6 +7,32 @@ import time
 
 INTERNAL_GATE_POSTS = {"/api/_perm_gate", "/api/_ask_gate"}
 INTERNAL_CONTROL_POSTS = {"/api/_exit", "/api/_soft_exit"}
+INTERNAL_POST_ROUTE_RISKS = {
+    "/api/_perm_gate": {
+        "risk": "critical",
+        "area": "internal_approval_gate",
+        "guards": ("internal_auth", "optional_user_context", "session_owner"),
+    },
+    "/api/_ask_gate": {
+        "risk": "critical",
+        "area": "internal_answer_gate",
+        "guards": ("internal_auth", "optional_user_context", "session_owner"),
+    },
+    "/api/_exit": {
+        "risk": "critical",
+        "area": "internal_control",
+        "guards": ("internal_auth", "control_route_only"),
+    },
+    "/api/_soft_exit": {
+        "risk": "critical",
+        "area": "internal_control",
+        "guards": ("internal_auth", "control_route_only"),
+    },
+}
+
+
+def internal_post_risk(path):
+    return INTERNAL_POST_ROUTE_RISKS.get(path)
 
 
 def post_context(handler, path):

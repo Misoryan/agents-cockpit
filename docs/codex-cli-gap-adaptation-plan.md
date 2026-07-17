@@ -332,6 +332,10 @@ the resulting MCP resources card to synchronize across both tabs.
 The MCP status/resource payload is kept as valid JSON for specialized browser
 cards by stripping oversized tool schemas and shortening long descriptions
 before replay.
+The same browser smoke now simulates an open-but-stale WebSocket by silencing
+the mirror tab's live message handler, sending a backend-confirmed rename, and
+forcing foreground catch-up; the missed event must appear without replacing the
+previously marked DOM node.
 
 Codex CLI 升级后：
 

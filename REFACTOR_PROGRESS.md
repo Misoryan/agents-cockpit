@@ -193,6 +193,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   temporary Codex session, sends stdin through `/api/nterminal`, and verifies
   both desktop and narrow mirror DOMs contain the final command output before
   the reconnect/DOM-preservation phases.
+- The browser smoke now also simulates an open-but-stale WebSocket by silencing
+  the mirror tab's message handler, sending a backend-confirmed rename, and
+  forcing the foreground catch-up path to prove the missed event appears
+  without clearing the marked DOM node.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

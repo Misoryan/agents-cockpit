@@ -477,6 +477,35 @@ def _first_mcp_browse_command(page, sid):
     ) or ""
 
 
+def _silence_open_ws(page, sid):
+    escaped_sid = json.dumps(sid)
+    return page.eval(
+        """(function(){
+          var ws=(window.nativeWs||{})[%s];
+          if(!ws || ws.readyState !== 1) return false;
+          ws.onmessage=function(){};
+          return true;
+        })()""" % escaped_sid,
+        timeout=5,
+    )
+
+
+def _trigger_open_catchup(page, sid, reason="settled"):
+    escaped_sid = json.dumps(sid)
+    escaped_reason = json.dumps(reason)
+    page.eval(
+        """(function(){
+          var sid=%s;
+          if(typeof nativeCatchupPoll !== 'function') return false;
+          var st=(window.nativeStages||{})[sid];
+          if(st){ st.lastCatchupPoll=0; st.catchupInFlight=false; }
+          nativeCatchupPoll(sid, %s);
+          return true;
+        })()""" % (escaped_sid, escaped_reason),
+        timeout=5,
+    )
+
+
 def _shell_exec_stdin_command(token):
     py = sys.executable
     code = (
@@ -586,7 +615,23 @@ def run_smoke(args):
 
         marker = "keep-dom-%d" % int(time.time() * 1000)
         marked = _mark_first_message_node(page_b, sid, marker)
-        before = _page_summary(page_b, sid)
+        before_open_catchup = _page_summary(page_b, sid)
+        before_open_text = before_open_catchup.get("text") if before_open_catchup else ""
+
+        stale_name = first_name + " stale-open"
+        stale_ws_silenced = bool(_silence_open_ws(page_b, sid))
+        _api_post_json("/api/nslash", user, {"sid": sid, "command": "/rename " + stale_name})
+        _wait_text(page_a, sid, stale_name, timeout=15)
+        _trigger_open_catchup(page_b, sid, "settled")
+        _wait_text(page_b, sid, stale_name, timeout=20)
+        after_open_catchup = _page_summary(page_b, sid)
+        open_catchup_dom_preserved = bool(
+            after_open_catchup and after_open_catchup.get("firstNodeMarker") == marker
+        )
+        open_catchup_text_preserved = bool(
+            before_open_text and after_open_catchup and before_open_text in (after_open_catchup.get("text") or "")
+        )
+        before = after_open_catchup
         before_text = before.get("text") if before else ""
 
         page_b.eval("""(function(){
@@ -616,11 +661,15 @@ def run_smoke(args):
 
         ok = bool(
             before
+            and before_open_catchup
             and after_catchup
             and after
             and primary
+            and stale_ws_silenced
+            and before["childCount"] >= before_open_catchup["childCount"]
             and after_catchup["childCount"] >= before["childCount"]
             and after["childCount"] >= after_catchup["childCount"]
+            and stale_name in before["text"]
             and second_name in after_catchup["text"]
             and third_name in after["text"]
             and third_name in primary["text"]
@@ -640,7 +689,10 @@ def run_smoke(args):
                 )
             )
             and after_catchup["lastSeq"] >= before["lastSeq"]
+            and before["lastSeq"] >= before_open_catchup["lastSeq"]
             and after["lastSeq"] >= after_catchup["lastSeq"]
+            and open_catchup_dom_preserved
+            and open_catchup_text_preserved
             and catchup_dom_preserved
             and catchup_text_preserved
             and dom_preserved
@@ -677,6 +729,14 @@ def run_smoke(args):
                 "resource_cards_mirror": mcp_resource_cards_mirror,
             },
             "dom_marker": marked,
+            "stale_open_catchup": {
+                "ws_silenced": stale_ws_silenced,
+                "rename": stale_name,
+                "dom_preserved": open_catchup_dom_preserved,
+                "text_preserved": open_catchup_text_preserved,
+                "before": before_open_catchup,
+                "after": after_open_catchup,
+            },
             "dom_preserved_after_catchup": catchup_dom_preserved,
             "text_preserved_after_catchup": catchup_text_preserved,
             "dom_preserved_after_reconnect": dom_preserved,

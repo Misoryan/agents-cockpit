@@ -873,3 +873,9 @@ Immediate next commit candidate:
 - Extended `tests/check_web_security_helpers.py` so web lifecycle controls are exercised through `WebHandler.do_POST`, not only the lower-level origin helper.
 - The test now proves bad browser origins on `/api/restart_web`, `/api/restart_manager`, `/api/restart`, and `/api/_stop` are rejected before auth, restart, stop, or `STOPPING` side effects run.
 - The same coverage verifies a same-origin `/api/restart_manager` request still reaches the guarded soft-restart path, keeping the hardening check from becoming a false-positive block.
+
+## 69. 2026-07-17 stale-open browser catch-up checkpoint
+
+- Extended `tools/codex_browser_smoke.py` to simulate a WebSocket that remains open but stops delivering useful messages by silencing the mirror tab's live message handler.
+- The smoke sends a backend-confirmed `/rename`, verifies the primary tab sees it live, then forces the foreground `/api/nreplay?after=<lastSeq>` catch-up path on the stale-open mirror tab.
+- The mirror must receive the missed rename through catch-up while preserving the previously marked DOM node and prior text, giving rendered-browser evidence for the stale-open case in addition to closed-socket reconnect.

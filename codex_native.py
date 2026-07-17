@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Codex app-server backed structured sessions for Agents Cockpit.
 
 This adapter keeps the browser-facing event shape close to native.py's Claude

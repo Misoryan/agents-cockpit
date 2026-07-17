@@ -1,4 +1,4 @@
-﻿"""Static contract checks for native replay loading feedback in index.html."""
+"""Static contract checks for native replay loading feedback in index.html."""
 import subprocess
 import sys
 import tempfile

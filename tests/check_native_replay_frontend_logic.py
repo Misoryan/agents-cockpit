@@ -11,7 +11,18 @@ def main():
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
-let ctx = {console, setTimeout, clearTimeout, requestAnimationFrame: (fn) => fn(), window: {}, _I: () => ""};
+let ctx = {
+  console,
+  setTimeout,
+  clearTimeout,
+  setInterval: () => 1,
+  clearInterval: () => {},
+  requestAnimationFrame: (fn) => fn(),
+  window: {},
+  document: {addEventListener: () => {}, visibilityState: "visible"},
+  location: {protocol: "http:", host: "localhost"},
+  _I: () => ""
+};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
@@ -19,6 +30,7 @@ vm.runInContext(fs.readFileSync("assets/native_tool_helpers.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_terminal_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_socket.js", "utf8"), ctx);
 const {
   nMarkRendered,
   nReplayUnseenEvents,
@@ -29,6 +41,7 @@ const {
   nUpdateScrollButton,
   nJumpBottom,
   nScrollBottom,
+  nativeConnect,
   nDiffResultHtml,
   nDiffFileSections,
   nDiffFileListHtml,
@@ -324,6 +337,63 @@ assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
   assert.strictEqual(idleUrls.length, 1, "idle activity should trigger catch-up");
   assert.ok(idleUrls[0].includes("/api/nreplay?sid=s4&after=7"));
   assert.deepStrictEqual(idleEvents, ["codex_notice:8", "state_snapshot:8"]);
+
+  let sockets = [];
+  let stalePolls = 0;
+  let staleReconnects = 0;
+  let stopPolls = 0;
+  let socketMessages = 0;
+  ctx.WebSocket = function(url){
+    this.url = url;
+    this.readyState = 1;
+    this.sent = [];
+    this.closed = false;
+    this.send = (msg) => { this.sent.push(msg); };
+    this.close = () => { this.closed = true; this.readyState = 3; };
+    sockets.push(this);
+  };
+  ctx.nativeStages = {
+    s5: {
+      sid: "s5",
+      root: {children: [{classList: {contains: () => false}}]},
+      renderedEvents: {"seq:12": true},
+      lastSeq: 12,
+      replayActive: false,
+      replayWaiting: false
+    }
+  };
+  ctx.nativeWs = {};
+  ctx.nativeReconnectTimers = {};
+  ctx.nativeReconnectState = {};
+  ctx.nativePollTimers = {};
+  ctx.nativePollBusy = {};
+  ctx.currentSid = "s5";
+  ctx.nativeStartPolling = function(){ stalePolls++; };
+  ctx.nativeScheduleReconnect = function(){ staleReconnects++; };
+  ctx.nativeStopPolling = function(){ stopPolls++; };
+  ctx.nHandle = function(){ socketMessages++; };
+  nativeConnect("s5");
+  const firstSocket = sockets[0];
+  nativeConnect("s5", {force:true});
+  const secondSocket = sockets[1];
+  assert.notStrictEqual(firstSocket, secondSocket);
+  assert.strictEqual(ctx.nativeWs.s5, secondSocket);
+  firstSocket.onopen();
+  firstSocket.onmessage({data: '{"type":"assistant","seq":13}'});
+  firstSocket.onclose({code:1006, reason:"old"});
+  assert.strictEqual(firstSocket.closed, true, "stale socket open should close itself");
+  assert.strictEqual(stopPolls, 0, "stale socket open must not stop active polling");
+  assert.strictEqual(socketMessages, 0, "stale socket messages must be ignored");
+  assert.strictEqual(stalePolls, 0, "stale socket close must not start replay polling");
+  assert.strictEqual(staleReconnects, 0, "stale socket close must not schedule reconnect");
+  assert.strictEqual(ctx.nativeWs.s5, secondSocket);
+  secondSocket.onmessage({data: '{"type":"assistant","seq":14}'});
+  assert.strictEqual(socketMessages, 1, "current socket messages should still be handled");
+  ctx.nativeReconnectState.s5 = {lastLog: Date.now(), openedAt: Date.now()};
+  secondSocket.onclose({code:1006, reason:"current"});
+  assert.strictEqual(stalePolls, 1, "current socket close should start replay polling");
+  assert.strictEqual(staleReconnects, 1, "current socket close should schedule reconnect");
+  assert.strictEqual(ctx.nativeWs.s5, null);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

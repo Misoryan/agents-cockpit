@@ -370,6 +370,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - MCP status/resource summary payloads now stay parseable for specialized
   browser cards by omitting oversized tool schemas and truncating long
   descriptions structurally instead of cutting the final JSON string.
+- Native WebSocket open/message/close callbacks now ignore superseded sockets,
+  preventing an old forced-reconnect socket from triggering extra replay polls
+  or reconnect timers after a replacement socket is already active.
 
 ## Optional Follow-ups
 

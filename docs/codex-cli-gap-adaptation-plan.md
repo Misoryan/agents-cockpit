@@ -363,6 +363,10 @@ That stale-open scenario now goes through normal `/api/sessions` polling and
 `rememberSessions()` activity detection instead of directly invoking
 `nativeCatchupPoll()`, so idle lifecycle/notice events are covered by the same
 automatic path a visible browser uses.
+Native WebSocket callbacks now also check that the callback belongs to the
+current socket for that session. Superseded sockets ignore late open/message
+callbacks and their close callbacks no longer start replay polling or schedule
+extra reconnects after a replacement socket has already been installed.
 
 Codex CLI 升级后：
 

@@ -908,3 +908,10 @@ Immediate next commit candidate:
 - `nScrollBottom()` uses that sticky state instead of only checking after DOM growth, so large replay, catch-up, command output, or MCP result chunks keep following when the user was at bottom before the update.
 - If the user has manually scrolled up, new replay/live chunks no longer force the viewport back to the bottom, reducing mobile and long-session jumpiness during multi-client updates.
 - The frontend Node replay check covers both behaviors with a fake scroll container.
+
+## 74. 2026-07-17 stale WebSocket event guard checkpoint
+
+- Superseded native WebSocket instances now ignore late `open`, `message`, and `close` callbacks once a newer socket owns the same session id.
+- A stale socket close no longer starts replay polling or schedules another reconnect after an explicit reconnect has already installed a replacement socket.
+- A stale socket open closes itself without calling `nativeStopPolling()`, so an old browser connection cannot suppress catch-up for the active socket.
+- The frontend Node replay/socket check now covers stale socket open/message/close callbacks and verifies the current socket still handles messages and close recovery normally.

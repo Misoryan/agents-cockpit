@@ -48,6 +48,11 @@ function nativeConnect(sid, opts){
   ws._openedAt=Date.now();
   nativeWs[sid]=ws;
   ws.onopen=function(){
+    if(nativeWs[sid]!==ws){
+      if(window.NATIVE_DEBUG){ try{ console.log("[N] stale ws open ignored", sid); }catch(_e){} }
+      try{ ws.close(); }catch(_e){}
+      return;
+    }
     nativeStopPolling(sid);
     var rs=nativeReconnectState[sid]||{attempts:0,lastLog:0};
     rs.openedAt=Date.now();
@@ -58,8 +63,17 @@ function nativeConnect(sid, opts){
       }
     }, 10000);
   };
-  ws.onmessage=function(ev){ try{ nHandle(sid, JSON.parse(ev.data)); }catch(e){} };
+  ws.onmessage=function(ev){
+    if(nativeWs[sid]!==ws) return;
+    try{ nHandle(sid, JSON.parse(ev.data)); }catch(e){}
+  };
   ws.onclose=function(ev){
+    clearInterval(ws._ka);
+    var isCurrent=(nativeWs[sid]===ws);
+    if(!isCurrent){
+      if(window.NATIVE_DEBUG){ try{ console.log("[N] stale ws close ignored", sid, "code="+ev.code); }catch(_e){} }
+      return;
+    }
     var now=Date.now(), rs=nativeReconnectState[sid]||{attempts:0,lastLog:0};
     var lived=now-(rs.openedAt||ws._openedAt||now);
     rs.attempts = lived>10000 ? 0 : Math.min(6, (rs.attempts||0)+1);
@@ -74,8 +88,7 @@ function nativeConnect(sid, opts){
         "visibility="+(document.visibilityState||""));
       rs.lastLog=now;
     }
-    if(nativeWs[sid]===ws) nativeWs[sid]=null;
-    clearInterval(ws._ka);
+    nativeWs[sid]=null;
     if(currentSid===sid && nativeStages[sid]){
       nativeStartPolling(sid, true);
       nativeScheduleReconnect(sid, 30000);

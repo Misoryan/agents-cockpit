@@ -283,6 +283,8 @@ def _new_turn(event=None, user_text="", user_images=0):
         "todos": [],
         "elapsed_ms": None,
         "started_at_ms": None,
+        "started_ts": (event or {}).get("ts"),
+        "finished_ts": None,
         "duration_ms": None,
         "usage": {},
         "error": "",
@@ -575,12 +577,14 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
         elif typ == "result":
             current["status"] = "error" if event.get("error") or event.get("is_error") else "done"
             current["duration_ms"] = event.get("duration_ms")
+            current["finished_ts"] = event.get("ts") or current.get("finished_ts")
             current["usage"] = event.get("usage") or {}
             current["error"] = _short(event.get("error") or "", _MAX_TOOL_PREVIEW)
             current["merged_seq"] = max(current.get("merged_seq") or 0, _seq(event))
             current = None
         elif typ == "interrupted":
             current["status"] = "interrupted"
+            current["finished_ts"] = event.get("ts") or current.get("finished_ts")
             current["merged_seq"] = max(current.get("merged_seq") or 0, _seq(event))
             current = None
     snapshot = snapshot or {}

@@ -74,6 +74,8 @@ def main():
         {"seq": 3, "text": " world"},
     ]
     inc_stream = codex_replay.events_after_seq(session, 2)
+    assert len(inc_stream) == 1
+    assert inc_stream[0].pop("ts") > 0
     assert inc_stream == [{
         "type": "stream_event",
         "event": {"delta": {"type": "text_delta", "text": " world"}},

@@ -152,6 +152,7 @@ def record_timeline(session, obj, replay_max_events, stream_max_chars):
     if obj.get("type") in ("replay_batch", "state_snapshot", "codex_usage"):
         return obj
     out = dict(obj)
+    out.setdefault("ts", int(time.time() * 1000))
     if not out.get("seq"):
         seq, event_id = event_identity(session, out)
         out["seq"] = seq

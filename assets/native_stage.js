@@ -34,9 +34,9 @@ function hideNative(){
   if(sid && typeof nativeStopWorkPolling==="function") nativeStopWorkPolling(sid);
   nSetGen(false); setMainView("landing"); renderSessionTabs(); nUpdateScrollButton();
 }
-function nAddRow(st, cls, html){
+function nAddRow(st, cls, html, ts){
   if(cls!=="result") st.lastToolGroup=null;
   st.curTxt=null;
   var d=document.createElement("div"); d.className="nmsg "+cls;
-  d.innerHTML=html; if(cls==="user"){var _mt=document.createElement("div");_mt.className="mtime";_mt.textContent=_msgTime();d.appendChild(_mt);} (st.turnCard||st.root).appendChild(d); nScrollBottom();
+  d.innerHTML=html; if(cls==="user"){var _mt=document.createElement("div");_mt.className="mtime";_mt.textContent=nFmtClock(ts)||_msgTime();d.appendChild(_mt);} (st.turnCard||st.root).appendChild(d); nScrollBottom();
 }

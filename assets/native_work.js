@@ -354,7 +354,10 @@ function nWorkTurnHtml(turn, idx, total){
   turn=turn||{};
   var toolTotal=nWorkToolTotal(turn), fileTotal=nWorkFileTotal(turn);
   var running=turn.status==="running";
-  var meta=[nWorkTurnStatusText(turn.status), toolTotal?toolTotal+" 动作":"0 动作", fileTotal?fileTotal+" 文件":""].filter(Boolean).join(" · ");
+  var meta=[nWorkTurnStatusText(turn.status), toolTotal?toolTotal+" 动作":"0 动作", fileTotal?fileTotal+" 文件":""].filter(Boolean);
+  var clock=nFmtClock(running ? turn.started_ts : turn.finished_ts);
+  if(clock) meta.push((running?"开始 ":"完成 ")+clock);
+  meta=meta.join(" · ");
   var metaHtml=nEsc(meta)+(running ? nWorkTurnElapsedHtml(turn) : "");
   var isLatest=idx===total-1;
   var detailKey="final-"+nWorkTurnKey(turn, idx);

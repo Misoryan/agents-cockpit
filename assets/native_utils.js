@@ -223,6 +223,18 @@ function nSettleIdleSnapshot(st, obj){
    必须在 nEndTurn 之前调用(此时 turnCard 还在,信息条挂在 turn 卡尾部)。 */
 function nFmtDur(ms){var s=Math.max(0,Math.round(Number(ms)/1000));if(s<60)return s+"秒";var m=Math.floor(s/60),r=s%60;return r?(m+"分"+r+"秒"):(m+"分钟");}
 function _msgTime(){var d=new Date();function z(n){return(n<10?"0":"")+n;}return z(d.getHours())+":"+z(d.getMinutes());}
+/* 事件真实时间戳(epoch ms)→ 时钟串:当天 HH:MM,跨天补 M-D。无 ts 返回空串,调用方回退 _msgTime()。 */
+function nFmtClock(ts){
+  var n=Number(ts); if(!(n>0)) return "";
+  var d=new Date(n); if(isNaN(d.getTime())) return "";
+  function z(x){return(x<10?"0":"")+x;}
+  var t=z(d.getHours())+":"+z(d.getMinutes());
+  var now=new Date();
+  if(d.getFullYear()!==now.getFullYear()||d.getMonth()!==now.getMonth()||d.getDate()!==now.getDate()){
+    t=(d.getMonth()+1)+"-"+d.getDate()+" "+t;
+  }
+  return t;
+}
 function nMetaRow(st,obj){
   var sr=String(obj.stop_reason||""), isErr=obj.is_error||obj.error;
   var ic=_I('circle-check'), title="完成";
@@ -242,6 +254,8 @@ function nMetaRow(st,obj){
   if(cache) tk.push("缓存 "+nFmtTok(cache));
   if(tk.length) parts.push(nEsc(tk.join(" / ")));
   if(obj.duration_ms!=null) parts.push(nEsc(nFmtDur(obj.duration_ms)));
+  var doneAt=nFmtClock(obj.ts);
+  if(doneAt) parts.push(nEsc("完成 "+doneAt));
   var d=document.createElement("div"); d.className="nmsg meta"+(warn?" warn":"");
   d.innerHTML=parts.join('<span class="msep">·</span>');
   (st.turnCard||st.root).appendChild(d); nScrollBottom();

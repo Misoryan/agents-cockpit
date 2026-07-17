@@ -31,8 +31,10 @@ def decorate_event(session, obj):
     return event
 
 
-def record_event(session, obj, limit=200):
+def record_event(session, obj, limit=200, stamp=True):
     event = decorate_event(session, obj)
+    if stamp:
+        event.setdefault("ts", int(time.time() * 1000))
     session.events.append(event)
     if len(session.events) > limit:
         session.events = session.events[-limit:]
@@ -54,7 +56,7 @@ def load_events(session, events, next_seq=None):
     session._next_seq = 1
     for event in events or []:
         if isinstance(event, dict):
-            record_event(session, event)
+            record_event(session, event, stamp=False)
     try:
         stored_next = int(next_seq or 0)
     except (TypeError, ValueError):

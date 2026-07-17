@@ -40,8 +40,8 @@
     <button class="sb-new" id="newbtn"><i class="ic" data-lucide="square-pen"></i> 新建对话</button>
     <input class="sb-search" id="sb-search" placeholder="搜索目录 / 对话">
     <div class="sb-history-filter" aria-label="History filter">
-      <button type="button" id="hist-active" class="active">Active</button>
-      <button type="button" id="hist-archived">Archived</button>
+      <button type="button" id="hist-active" class="active">&#36827;&#34892;&#20013;</button>
+      <button type="button" id="hist-archived">&#24050;&#24402;&#26723;</button>
     </div>
     <div class="sb-list" id="dirlist"></div>
     <div class="sb-account">
@@ -342,13 +342,14 @@
       <button type="button" id="scrollbottom" title="Scroll to bottom" aria-label="Scroll to bottom"><i class="ic" data-lucide="arrow-down"></i></button>
       <form id="nativesend">
         <div class="nwrap">
-          <div id="slashmenu" role="listbox" aria-label="Codex slash commands"></div>
+          <div id="slashmenu" role="listbox" aria-label="Codex &#25351;&#20196;&#21015;&#34920;"></div>
           <div id="nattachpreview" class="nattach-preview" aria-live="polite"></div>
           <textarea id="nativeinput" placeholder="给 agent 发消息…  Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
           <div class="ns-tools">
             <button type="button" class="nmode" id="nmode-plan" aria-pressed="false" title="开启后 agent 先只读调研并出计划,你批准后再执行(安全)"><i class="ic" data-lucide="clipboard-list"></i>计划</button>
             <button type="button" class="nmode" id="nmode-task" aria-pressed="false" title="开启后 agent 用任务清单跟踪多步骤工作并实时显示进度"><i class="ic" data-lucide="list-checks"></i>任务</button>
-            <button type="button" class="nmode" id="nativeattach" title="Attach image for Codex"><i class="ic" data-lucide="image-plus"></i>??</button>
+            <button type="button" class="nmode" id="nativeslashhelp" title="&#25171;&#24320; Codex &#25351;&#20196;&#21015;&#34920;"><i class="ic" data-lucide="terminal"></i>&#25351;&#20196;</button>
+            <button type="button" class="nmode" id="nativeattach" title="&#19978;&#20256;&#22270;&#29255;&#32473; Codex"><i class="ic" data-lucide="image-plus"></i>&#22270;&#29255;</button>
             <input type="file" id="nativeimagefile" accept="image/*" multiple style="display:none">
             <span class="ns-spacer"></span>
             <button type="submit" id="nativesubmit" title="发送 (Enter)"><i class="ic" data-lucide="arrow-up"></i></button>
@@ -385,11 +386,11 @@
         <label>联网搜索 <select class="mselect" id="lm-codex-search"><option value="">跟随配置</option><option value="live">live</option><option value="disabled">disabled</option></select></label>
         <label>沙箱 <select class="mselect" id="lm-codex-sandbox"><option value="">跟随配置</option><option value="read-only">read-only</option><option value="workspace-write">workspace-write</option><option value="danger-full-access">danger-full-access</option></select></label>
         <label>审批 <select class="mselect" id="lm-codex-approval"><option value="">跟随配置</option><option value="untrusted">untrusted</option><option value="on-request">on-request</option><option value="never">never</option><option value="on-failure">on-failure</option></select></label>
-        <label>Reasoning <input class="mselect" id="lm-codex-reasoning" list="lm-codex-reasoning-list" placeholder="default / low / medium / high"></label>
+        <label>&#25512;&#29702;&#24378;&#24230; <input class="mselect" id="lm-codex-reasoning" list="lm-codex-reasoning-list" placeholder="&#40664;&#35748; / low / medium / high"></label>
         <datalist id="lm-codex-reasoning-list"><option value="low"><option value="medium"><option value="high"></datalist>
-        <label>Reasoning summary <select class="mselect" id="lm-codex-summary"><option value="">????</option><option value="auto">auto</option><option value="concise">concise</option><option value="detailed">detailed</option><option value="none">none</option></select></label>
-        <label>Service tier <input class="mselect" id="lm-codex-service-tier" placeholder="default / auto / flex"></label>
-        <label>Writable dirs <textarea class="mselect" id="lm-codex-writable-roots" rows="2" placeholder="?????????????"></textarea></label>
+        <label>&#25512;&#29702;&#25688;&#35201; <select class="mselect" id="lm-codex-summary"><option value="">&#36319;&#38543;&#37197;&#32622;</option><option value="auto">&#33258;&#21160;</option><option value="concise">&#31616;&#27905;</option><option value="detailed">&#35814;&#32454;</option><option value="none">&#19981;&#26174;&#31034;</option></select></label>
+        <label>&#26381;&#21153;&#26723;&#20301; <input class="mselect" id="lm-codex-service-tier" placeholder="&#40664;&#35748; / auto / flex"></label>
+        <label>&#39069;&#22806;&#21487;&#20889;&#30446;&#24405; <textarea class="mselect" id="lm-codex-writable-roots" rows="2" placeholder="&#27599;&#34892;&#19968;&#20010;&#30446;&#24405;&#65307;&#20165; workspace-write &#27801;&#31665;&#20351;&#29992;"></textarea></label>
       </div>
       <div class="mhint" id="lm-codex-hint">这些字段直接透传给 Codex app-server；留空则使用 CODEX_HOME/config.toml。</div>
       <div class="mhint" id="lm-codex-status"></div>

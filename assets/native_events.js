@@ -144,7 +144,7 @@ function nHandle(sid, obj){
   if(t==="thread_forked"){
     var frow=document.createElement("div");
     frow.className="nmsg sys";
-    var ftitle=obj.title||"Forked Codex thread", fid=obj.thread_id||"";
+    var ftitle=obj.title||"\u5206\u53c9\u7684 Codex \u4f1a\u8bdd", fid=obj.thread_id||"";
     frow.innerHTML='Codex: '+_I('git-branch')+' 已 fork 新线程 <span class="tcdesc">'+nEsc(fid)+'</span> ';
     var fbtn=document.createElement("button");
     fbtn.type="button";

@@ -55,10 +55,14 @@ def main():
     assert 'id="lm-codex-field"' in html
     assert 'id="slashmenu"' in html
     assert 'id="hist-archived"' in html
+    assert '&#36827;&#34892;&#20013;' in html
+    assert '&#24050;&#24402;&#26723;' in html
     assert 'id="lm-codex-reasoning"' in html
     assert 'id="lm-codex-summary"' in html
     assert 'id="lm-codex-service-tier"' in html
     assert 'id="lm-codex-writable-roots"' in html
+    assert 'id="nativeslashhelp"' in html
+    assert '&#22270;&#29255;' in html
     assert 'id="lm-codex-status"' in html
     parser = ScriptExtractor()
     parser.feed(html)
@@ -129,7 +133,7 @@ def main():
         "function closeSession(sid, btn)",
         "function resumeHist(h)",
         "function delHist(h, btn)",
-        "{label:\"Unarchive\", title:\"Unarchive this Codex history thread\", action:\"unarchive\"}",
+        "{label:\"\\u53d6\\u6d88\\u5f52\\u6863\", title:\"\\u4ece\\u5f52\\u6863\\u4e2d\\u6062\\u590d\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd\", action:\"unarchive\"}",
         "function nativeScheduleReconnect(sid, delay)",
         "function nativeReconnectDelay(sid, baseDelay)",
         "if(existing && (existing.readyState===0 || existing.readyState===1) && !opts.force) return existing",
@@ -310,24 +314,28 @@ def main():
         "function codexDiagnosticRows(r)",
         "function renderCodexDiagnostics(r)",
         "function renderCodexStatus(r)",
-        "Read-only Codex status",
-        "Codex diagnostics",
+        "Codex \u53ea\u8bfb\u72b6\u6001",
+        "Codex \u8bca\u65ad",
         "lm-codex-diagnostics",
         'class="codex-diag"',
         "permission_profiles",
         "function runCodexAction(sid, command, btn, cwd)",
         "function appendCodexRunActions(el, s)",
         'postJSON("/api/nslash", {sid:sid, command:command})',
-        '{label:"Fork", title:"Fork this Codex thread", command:"/fork"}',
-        '{label:"Rollback", title:"Rollback one Codex turn", command:"/rollback 1"}',
-        '{label:"Rename", title:"Rename this Codex thread"',
-        '{label:"Goal", title:"Set this Codex thread goal"',
+        "function appendCodexActionMenu(el, actions)",
+        'more.className="cbtn ghost more-actions"',
+        '{label:"\\u5206\\u53c9", title:"\\u5206\\u53c9\\u6b64 Codex \\u4f1a\\u8bdd", command:"/fork"}',
+        '{label:"\\u56de\\u6eda", title:"\\u56de\\u6eda\\u4e00\\u8f6e Codex \\u5bf9\\u8bdd", command:"/rollback 1"}',
+        '{label:"\\u91cd\\u547d\\u540d", title:"\\u91cd\\u547d\\u540d\\u6b64 Codex \\u4f1a\\u8bdd"',
+        '{label:"\\u76ee\\u6807", title:"\\u8bbe\\u7f6e\\u6b64 Codex \\u4f1a\\u8bdd\\u76ee\\u6807"',
         "function runCodexHistoryAction(h, action, btn, extra)",
         "function appendCodexHistoryActions(el, h)",
         'postJSON("/api/codex_history_action"',
-        '{label:"Fork", title:"Fork this Codex history thread", action:"fork"}',
-        '{label:"Rename", title:"Rename this Codex history thread", action:"rename"',
-        '{label:"Goal", title:"Set this Codex history thread goal", action:"goal_set"',
+        '{label:"\\u5206\\u53c9", title:"\\u5206\\u53c9\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd", action:"fork"}',
+        '{label:"\\u5f52\\u6863", title:"\\u5f52\\u6863\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd", action:"archive"}',
+        '{label:"\\u53d6\\u6d88\\u5f52\\u6863", title:"\\u4ece\\u5f52\\u6863\\u4e2d\\u6062\\u590d\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd", action:"unarchive"}',
+        '{label:"\\u91cd\\u547d\\u540d", title:"\\u91cd\\u547d\\u540d\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd", action:"rename"',
+        '{label:"\\u76ee\\u6807", title:"\\u8bbe\\u7f6e\\u6b64 Codex \\u5386\\u53f2\\u4f1a\\u8bdd\\u76ee\\u6807", action:"goal_set"',
     ]
     missing = [token for token in required if token not in js]
     assert not missing, "missing replay loading contracts: %r" % missing

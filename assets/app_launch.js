@@ -84,27 +84,27 @@ function codexMaskEmail(email){
 }
 function codexAccountStatusText(account){
   account=account||{};
-  if(!Object.keys(account).length) return "account=unknown";
+  if(!Object.keys(account).length) return "账号=未知";
   if(account.signed_in){
     var parts=[account.type||"signed-in"];
     if(account.plan_type) parts.push(account.plan_type);
     if(account.credential_source) parts.push(account.credential_source);
     if(account.email) parts.push(codexMaskEmail(account.email));
-    return "account="+parts.join("/");
+    return "账号="+parts.join("/");
   }
-  if(account.requires_openai_auth) return "account=login required";
-  return "account=not signed in";
+  if(account.requires_openai_auth) return "账号=需要登录";
+  return "账号=未登录";
 }
 function codexStatusText(r){
   if(!r) return "";
   var cfg=r.config||{}, rows=[
-    ["model", ["model"]],
-    ["approval", ["approval_policy"]],
-    ["sandbox", ["sandbox_mode", "sandbox"]],
-    ["search", ["web_search"]],
-    ["reasoning", ["model_reasoning_effort", "reasoning_effort"]],
-    ["summary", ["model_reasoning_summary", "reasoning_summary"]],
-    ["tier", ["service_tier"]]
+    ["模型", ["model"]],
+    ["审批", ["approval_policy"]],
+    ["沙箱", ["sandbox_mode", "sandbox"]],
+    ["搜索", ["web_search"]],
+    ["推理", ["model_reasoning_effort", "reasoning_effort"]],
+    ["摘要", ["model_reasoning_summary", "reasoning_summary"]],
+    ["档位", ["service_tier"]]
   ];
   var parts=[];
   rows.forEach(function(row){
@@ -114,36 +114,36 @@ function codexStatusText(r){
     if(v) parts.push(row[0]+"="+v);
   });
   var meta=[];
-  if(Array.isArray(r.models)) meta.push("models="+r.models.length);
-  if(Array.isArray(r.permission_profiles)) meta.push("permission profiles="+r.permission_profiles.length);
-  if(Array.isArray(r.config_layers)) meta.push("layers="+r.config_layers.length);
-  var body=parts.length?parts.join(" | "):"no high-frequency fields";
-  return "Read-only Codex status: config("+body+") | "+codexAccountStatusText(r.account)+(meta.length?" | "+meta.join(" | "):"");
+  if(Array.isArray(r.models)) meta.push("模型="+r.models.length);
+  if(Array.isArray(r.permission_profiles)) meta.push("权限配置="+r.permission_profiles.length);
+  if(Array.isArray(r.config_layers)) meta.push("配置层="+r.config_layers.length);
+  var body=parts.length?parts.join(" | "):"未读到高频配置";
+  return "Codex 只读状态：配置("+body+") | "+codexAccountStatusText(r.account)+(meta.length?" | "+meta.join(" | "):"");
 }
 function codexDiagValue(v){
-  if(Array.isArray(v)) return v.length?v.join("\n"):"(none)";
+  if(Array.isArray(v)) return v.length?v.join("\n"):"(无)";
   if(v && typeof v==="object") return JSON.stringify(v);
-  return String(v==null||v===""?"(default)":v);
+  return String(v==null||v===""?"(默认)":v);
 }
 function codexDiagnosticRows(r){
   if(!r || !r.diagnostics) return [];
   var d=r.diagnostics, inherited=d.inherited||{};
   return [
-    ["cwd", d.cwd||lmDir||""],
-    ["codex home", d.codex_home||"default CODEX_HOME"],
-    ["state dir", d.state_dir||""],
-    ["workspace roots", d.workspace_roots||[]],
-    ["inherited config", inherited],
-    ["capabilities", "models="+(d.models||0)+", permission_profiles="+(d.permission_profiles||0)+", layers="+(d.config_layers||0)],
-    ["account", codexAccountStatusText(r.account).replace(/^account=/, "")],
-    ["errors", d.error||r.error||""]
+    ["当前目录", d.cwd||lmDir||""],
+    ["Codex 主目录", d.codex_home||"默认 CODEX_HOME"],
+    ["状态目录", d.state_dir||""],
+    ["工作区根目录", d.workspace_roots||[]],
+    ["继承配置", inherited],
+    ["能力", "模型="+(d.models||0)+", 权限配置="+(d.permission_profiles||0)+", 配置层="+(d.config_layers||0)],
+    ["账号", codexAccountStatusText(r.account).replace(/^account=|^\u8d26\u53f7=/, "")],
+    ["错误", d.error||r.error||""]
   ];
 }
 function renderCodexDiagnostics(r){
   var box=$("lm-codex-diagnostics"); if(!box) return;
   var rows=codexDiagnosticRows(r);
   if(!rows.length){ box.innerHTML=""; return; }
-  box.innerHTML='<details class="codex-diag"><summary>Codex diagnostics</summary><div class="diag-grid">'+rows.map(function(row){
+  box.innerHTML='<details class="codex-diag"><summary>Codex 诊断</summary><div class="diag-grid">'+rows.map(function(row){
     return '<b>'+esc(row[0])+'</b><pre>'+esc(codexDiagValue(row[1]))+'</pre>';
   }).join("")+'</div></details>';
 }

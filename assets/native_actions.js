@@ -12,31 +12,31 @@ function nInterrupt(){
   postJSON("/api/ninterrupt",{sid:currentSid}).then(function(){}).catch(function(){});
 }
 var nativeSlashCommands=[
-  {cmd:"/model", fill:"/model ", desc:"Set model for subsequent Codex turns"},
-  {cmd:"/compact", fill:"/compact", desc:"Compact this Codex thread context"},
-  {cmd:"/approval", fill:"/approval on-request", desc:"Set approval policy: untrusted, on-request, never"},
-  {cmd:"/sandbox", fill:"/sandbox workspace-write", desc:"Set sandbox: read-only, workspace-write, danger-full-access"},
-  {cmd:"/search", fill:"/search live", desc:"Set web search before the Codex thread starts"},
-  {cmd:"/reasoning", fill:"/reasoning medium", desc:"Set reasoning effort for subsequent Codex turns"},
-  {cmd:"/summary", fill:"/summary auto", desc:"Set reasoning summary: auto, concise, detailed, none"},
-  {cmd:"/service-tier", fill:"/service-tier auto", desc:"Set service tier override for subsequent Codex turns"},
-  {cmd:"/add-dir", fill:"/add-dir ", desc:"Set extra workspace-write writable directories"},
-  {cmd:"/rename", fill:"/rename ", desc:"Rename this Codex thread"},
-  {cmd:"/archive", fill:"/archive", desc:"Archive this Codex thread in history"},
-  {cmd:"/unarchive", fill:"/unarchive", desc:"Restore this Codex thread from archived history"},
-  {cmd:"/fork", fill:"/fork", desc:"Fork this Codex thread into a new history entry"},
-  {cmd:"/rollback", fill:"/rollback 1", desc:"Drop the latest Codex turn from this thread"},
-  {cmd:"/goal", fill:"/goal get", desc:"Read or update the thread goal: get, set, clear, status"},
-  {cmd:"/mcp-status", fill:"/mcp-status full", desc:"List MCP servers with auth, tools, resources, and templates"},
-  {cmd:"/mcp-resources", fill:"/mcp-resources ", desc:"Browse one MCP server's resources and tools"},
-  {cmd:"/mcp-resource", fill:"/mcp-resource ", desc:"Read an MCP resource: server uri"},
-  {cmd:"/mcp-tool", fill:"/mcp-tool ", desc:"Call an MCP tool: server tool {json}"},
-  {cmd:"/skills", fill:"/skills", desc:"List available Codex skills for this workspace"},
-  {cmd:"/plugins", fill:"/plugins", desc:"List installed Codex plugins read-only"},
-  {cmd:"/account-status", fill:"/account-status", desc:"Read Codex account, usage, and rate-limit status"},
-  {cmd:"/exec", fill:"/exec ", desc:"Run one explicit shell command through Codex app-server command/exec"},
-  {cmd:"/exec-stream", fill:"/exec-stream ", desc:"Run a streamed command with browser stdin and terminate controls"},
-  {cmd:"/steer", fill:"/steer ", desc:"Send guidance to the currently running Codex turn"}
+  {cmd:"/model", fill:"/model ", desc:"\u5207\u6362\u540e\u7eed Codex \u8f6e\u6b21\u4f7f\u7528\u7684\u6a21\u578b"},
+  {cmd:"/compact", fill:"/compact", desc:"\u538b\u7f29\u5f53\u524d Codex \u4f1a\u8bdd\u4e0a\u4e0b\u6587"},
+  {cmd:"/approval", fill:"/approval on-request", desc:"\u8bbe\u7f6e\u5ba1\u6279\u7b56\u7565\uff1auntrusted / on-request / never"},
+  {cmd:"/sandbox", fill:"/sandbox workspace-write", desc:"\u8bbe\u7f6e\u6c99\u7bb1\uff1aread-only / workspace-write / danger-full-access"},
+  {cmd:"/search", fill:"/search live", desc:"\u5728 Codex \u7ebf\u7a0b\u5f00\u59cb\u524d\u8bbe\u7f6e\u8054\u7f51\u641c\u7d22"},
+  {cmd:"/reasoning", fill:"/reasoning medium", desc:"\u8bbe\u7f6e\u540e\u7eed\u8f6e\u6b21\u7684\u63a8\u7406\u5f3a\u5ea6"},
+  {cmd:"/summary", fill:"/summary auto", desc:"\u8bbe\u7f6e\u63a8\u7406\u6458\u8981\uff1aauto / concise / detailed / none"},
+  {cmd:"/service-tier", fill:"/service-tier auto", desc:"\u8bbe\u7f6e\u540e\u7eed\u8f6e\u6b21\u7684\u670d\u52a1\u6863\u4f4d"},
+  {cmd:"/add-dir", fill:"/add-dir ", desc:"\u6dfb\u52a0 workspace-write \u6c99\u7bb1\u4e0b\u7684\u989d\u5916\u53ef\u5199\u76ee\u5f55"},
+  {cmd:"/rename", fill:"/rename ", desc:"\u91cd\u547d\u540d\u5f53\u524d Codex \u4f1a\u8bdd"},
+  {cmd:"/archive", fill:"/archive", desc:"\u5c06\u5f53\u524d Codex \u4f1a\u8bdd\u5f52\u6863\u5230\u5386\u53f2"},
+  {cmd:"/unarchive", fill:"/unarchive", desc:"\u4ece\u5df2\u5f52\u6863\u5386\u53f2\u4e2d\u6062\u590d\u5f53\u524d\u4f1a\u8bdd"},
+  {cmd:"/fork", fill:"/fork", desc:"\u5c06\u5f53\u524d Codex \u4f1a\u8bdd\u5206\u53c9\u4e3a\u65b0\u5386\u53f2"},
+  {cmd:"/rollback", fill:"/rollback 1", desc:"\u56de\u6eda\u6700\u8fd1\u4e00\u8f6e Codex \u5bf9\u8bdd"},
+  {cmd:"/goal", fill:"/goal get", desc:"\u8bfb\u53d6\u6216\u66f4\u65b0\u4f1a\u8bdd\u76ee\u6807\uff1aget / set / clear / status"},
+  {cmd:"/mcp-status", fill:"/mcp-status full", desc:"\u67e5\u770b MCP \u670d\u52a1\u5668\u3001\u6388\u6743\u3001\u5de5\u5177\u548c\u8d44\u6e90"},
+  {cmd:"/mcp-resources", fill:"/mcp-resources ", desc:"\u6d4f\u89c8\u67d0\u4e2a MCP \u670d\u52a1\u5668\u7684\u8d44\u6e90\u548c\u5de5\u5177"},
+  {cmd:"/mcp-resource", fill:"/mcp-resource ", desc:"\u8bfb\u53d6 MCP \u8d44\u6e90\uff1aserver uri"},
+  {cmd:"/mcp-tool", fill:"/mcp-tool ", desc:"\u8c03\u7528 MCP \u5de5\u5177\uff1aserver tool {json}"},
+  {cmd:"/skills", fill:"/skills", desc:"\u5217\u51fa\u5f53\u524d\u5de5\u4f5c\u533a\u53ef\u7528\u7684 Codex skills"},
+  {cmd:"/plugins", fill:"/plugins", desc:"\u53ea\u8bfb\u5217\u51fa\u5df2\u5b89\u88c5\u7684 Codex \u63d2\u4ef6"},
+  {cmd:"/account-status", fill:"/account-status", desc:"\u8bfb\u53d6 Codex \u8d26\u53f7\u3001\u7528\u91cf\u548c\u9650\u989d\u72b6\u6001"},
+  {cmd:"/exec", fill:"/exec ", desc:"\u901a\u8fc7 Codex app-server \u6267\u884c\u4e00\u6761\u663e\u5f0f shell \u547d\u4ee4"},
+  {cmd:"/exec-stream", fill:"/exec-stream ", desc:"\u6267\u884c\u6d41\u5f0f\u547d\u4ee4\uff0c\u5e76\u63d0\u4f9b\u6d4f\u89c8\u5668 stdin / \u7ec8\u6b62\u63a7\u4ef6"},
+  {cmd:"/steer", fill:"/steer ", desc:"\u5411\u6b63\u5728\u8fd0\u884c\u7684 Codex \u8f6e\u6b21\u8ffd\u52a0\u6307\u5f15"}
 ];
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;
 var nativeImageAttachments=[];
@@ -151,7 +151,7 @@ function nRenderAttachments(){
   if(!nativeImageAttachments.length){ host.classList.remove("open"); return; }
   nativeImageAttachments.forEach(function(img, idx){
     var chip=document.createElement("div"); chip.className="nattach-chip";
-    chip.innerHTML='<img alt="" src="'+nEscAttr(img.data_url||"")+'"><span title="'+nEscAttr(img.name||"image")+'">'+nEsc(img.name||"image")+'</span><button type="button" title="Remove">&times;</button>';
+    chip.innerHTML='<img alt="" src="'+nEscAttr(img.data_url||"")+'"><span title="'+nEscAttr(img.name||"\u56fe\u7247")+'">'+nEsc(img.name||"\u56fe\u7247")+'</span><button type="button" title="\u79fb\u9664">&times;</button>';
     chip.querySelector("button").addEventListener("click", function(){
       nativeImageAttachments.splice(idx,1); nRenderAttachments();
     });
@@ -161,12 +161,12 @@ function nRenderAttachments(){
 }
 function nAddImageFile(file){
   if(!file || !/^image\//.test(file.type||"")) return;
-  if(!nCurrentCodexSession()){ alert("Image input is only supported for Codex sessions."); return; }
-  if(file.size>NATIVE_IMAGE_MAX_BYTES){ alert("Image is too large; max 8 MB."); return; }
+  if(!nCurrentCodexSession()){ alert("\u53ea有 Codex 会话支持图片输入。"); return; }
+  if(file.size>NATIVE_IMAGE_MAX_BYTES){ alert("\u56fe片过大，最多 8 MB。"); return; }
   var reader=new FileReader();
   reader.onload=function(){
     nativeImageAttachments.push({
-      name:file.name||"image",
+      name:file.name||"\u56fe\u7247",
       type:file.type||"image/png",
       size:file.size||0,
       data_url:String(reader.result||""),
@@ -241,9 +241,18 @@ function nToggleMode(which){
 }
 $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
 $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
+
+var slashHelp=$("nativeslashhelp");
+if(slashHelp) slashHelp.addEventListener("click", function(){
+  var inp=$("nativeinput"); if(!inp) return;
+  if((inp.value||"").trim().charAt(0)!=="/") inp.value="/";
+  inp.focus();
+  nRenderSlashMenu();
+});
+
 $("nativeattach").addEventListener("click", function(){
   if(!currentSid) return;
-  if(!nCurrentCodexSession()){ alert("Image input is only supported for Codex sessions."); return; }
+  if(!nCurrentCodexSession()){ alert("\u53ea有 Codex 会话支持图片输入。"); return; }
   $("nativeimagefile").click();
 });
 $("nativeimagefile").addEventListener("change", function(){ nAddImageFiles(this.files); });
@@ -301,7 +310,7 @@ function openForkedCodexThread(threadId, title, cwd){
     session_id: threadId,
     thread_id: threadId,
     cwd: cwd||"",
-    title: title||"Forked Codex thread",
+    title: title||"\u5206\u53c9\u7684 Codex \u4f1a\u8bdd",
     backend: "codex_native"
   });
 }

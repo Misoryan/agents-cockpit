@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """Replay identity and snapshot helpers for Claude NativeSession."""
+import time
+
+import work_summary
 
 
 def seq_value(obj):
@@ -79,21 +82,34 @@ def pending_events_snapshot(pending_items):
     return events
 
 
-def replay_payload(session, events, pending, model="", after_seq=0, state_fn=None):
+def replay_payload(session, events, pending, model="", after_seq=0, state_fn=None, view=None, turn=None):
     last = last_seq(session)
     state = state_fn() if state_fn else "idle"
+    turn_started_at = getattr(session, "current_turn_started_at", None) if getattr(session, "_busy", False) else None
+    now_ms = time.time() * 1000
+    snapshot = {
+        "type": "state_snapshot",
+        "state": state,
+        "running": bool(session._busy),
+        "plan": bool(session.plan_mode),
+        "task": bool(session.task_mode),
+        "pending": [{"id": event.get("tool_use_id"), "kind": event.get("type")} for event in pending],
+        "last_seq": last,
+        "turn_started_at": turn_started_at,
+        "turn_started_at_ms": int(turn_started_at * 1000) if turn_started_at else None,
+        "turn_elapsed_ms": int(now_ms - turn_started_at * 1000) if turn_started_at else None,
+        "server_now_ms": int(now_ms),
+    }
+    pending_events = ([{"type": "system", "model": model}] if model and not after_seq else []) + pending
+    view = str(view or "").lower()
+    if view == "work":
+        return work_summary.replay_payload(events, snapshot, pending)
+    if view in ("turn", "work_turn", "chat_turn"):
+        return work_summary.turn_events_payload(events, snapshot, pending, turn=turn)
     return {
         "ok": True,
         "events": events,
-        "snapshot": {
-            "type": "state_snapshot",
-            "state": state,
-            "running": bool(session._busy),
-            "plan": bool(session.plan_mode),
-            "task": bool(session.task_mode),
-            "pending": [{"id": event.get("tool_use_id"), "kind": event.get("type")} for event in pending],
-            "last_seq": last,
-        },
-        "pending": ([{"type": "system", "model": model}] if model and not after_seq else []) + pending,
+        "snapshot": snapshot,
+        "pending": pending_events,
         "last_seq": last,
     }

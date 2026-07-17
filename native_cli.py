@@ -77,6 +77,7 @@ def dump_failure(session, tag, result_ev, stderr_text):
 def run_cli(session, prompt, is_overloaded_fn, short_err_fn):
     session._busy = True
     session.last_activity = time.time()
+    session.current_turn_started_at = session.last_activity
     success = False
     try:
         result_ev, _ran_clean, stderr_text = session._run_one_round(prompt)
@@ -102,6 +103,7 @@ def run_cli(session, prompt, is_overloaded_fn, short_err_fn):
         session._record_and_broadcast({"type": "result", "error": "claude CLI 执行异常,见 manager 日志"})
     finally:
         session._busy = False
+        session.current_turn_started_at = None
         session._proc = None
         if session._interrupted and not session._closed:
             session._interrupted = False

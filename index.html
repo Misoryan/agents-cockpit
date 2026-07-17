@@ -86,11 +86,73 @@
         #nativemsgs>.nmsg{content-visibility:auto;contain-intrinsic-size:0 180px}
         #nativemsgs>.nmsg.turn{content-visibility:auto;contain-intrinsic-size:0 520px}
         #nativemsgs>.nmsg.replay-progress{content-visibility:visible}
+        .work-stage{max-width:820px;margin:0 auto;box-sizing:border-box}
+        .work-board{display:flex;flex-direction:column;gap:12px;min-width:0}
+        .work-hero{display:flex;align-items:flex-start;gap:14px;justify-content:space-between;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.05)}
+        .work-hero>*{min-width:0}
+        .work-hero h2{margin:2px 0 5px;font:700 22px/1.15 var(--sans);letter-spacing:-.03em;color:var(--ink)}
+        .work-hero p{margin:0;color:var(--muted);font:13px/1.45 var(--sans)}
+        .work-kicker{display:inline-flex;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:4px 7px}
+        .work-metrics{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;min-width:160px}
+        .work-metrics span{font:12px/1 var(--mono);color:var(--ink-2);background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:6px 8px}
+        .work-turn,.work-pending,.work-todos,.work-empty{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px;box-sizing:border-box;max-width:100%;overflow:hidden}
+        .work-turn.running{border-color:var(--accent)} .work-turn.error{border-color:var(--red);background:var(--red-soft)}
+        .work-turn-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+        .work-turn-head>div{min-width:0}.work-turn-head b{font:650 14px/1.35 var(--sans);color:var(--ink);word-break:break-word}.work-turn-head em{flex:0 0 auto;color:var(--muted);font:11px/1.5 var(--mono);font-style:normal}
+        .work-pill{display:inline-flex;margin-right:8px;color:var(--muted);font:11px var(--mono)}
+        .work-user{margin-top:8px;color:var(--ink-2);font:13px/1.55 var(--sans);white-space:pre-wrap;overflow-wrap:anywhere}
+        .work-subhead{font:650 12px/1 var(--sans);color:var(--ink);margin-bottom:8px}
+        .work-todo{display:flex;gap:8px;color:var(--ink-2);font:13px/1.45 var(--sans);margin:4px 0}.work-todo.completed{color:var(--green);text-decoration:line-through;opacity:.7}.work-todo.pending{color:var(--muted)}
+        .work-files{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-width:0}.work-files span,.work-files em{font:11px/1 var(--mono);color:var(--muted);background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:5px 7px;font-style:normal;max-width:100%;overflow-wrap:anywhere}.work-files.mini{margin:8px 0 0}
+        .work-final{margin-top:11px;border-top:1px solid var(--line);padding-top:10px;font:14px/1.65 var(--sans);color:var(--ink);overflow-wrap:anywhere}.work-final.latest{background:linear-gradient(90deg,var(--surface-soft),transparent);border-radius:8px;padding:10px}.work-final p{margin:8px 0}.work-final pre{max-width:100%;overflow:auto}.work-final code{white-space:pre-wrap}
+        .work-current-action,.work-complete{margin-top:10px;border:1px solid var(--line);background:var(--surface-soft);border-radius:10px;padding:10px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 9px;align-items:center;min-width:0;overflow-wrap:anywhere}
+        .work-current-action span,.work-complete span{font:700 11px/1 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+        .work-current-action b,.work-complete b{font:650 13px/1.35 var(--sans);color:var(--ink);min-width:0}
+        .work-current-action em,.work-current-action small,.work-complete em{grid-column:1/-1;color:var(--muted);font:12px/1.45 var(--sans);font-style:normal;min-width:0;overflow-wrap:anywhere}
+        .work-current-action.running{border-color:var(--accent);background:linear-gradient(90deg,var(--surface-soft),#fff)}
+        .work-current-action.failed{border-color:var(--red);background:var(--red-soft)}
+        .work-complete.error{border-color:var(--red);background:var(--red-soft)}
+        .work-progress{margin-top:10px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;overflow:hidden}
+        .work-progress .work-subhead{margin-bottom:6px;color:var(--accent)}
+        .work-progress-body{font:13px/1.6 var(--sans);color:var(--ink);overflow-wrap:anywhere}
+        .work-progress-body p{margin:6px 0}.work-progress-body pre{max-width:100%;overflow:auto}.work-progress-body code{white-space:pre-wrap}
+        .work-error{margin-top:10px;border:1px solid var(--red);background:var(--red-soft);border-radius:10px;padding:9px 10px;color:var(--ink)}
+        .work-error span{display:block;margin-bottom:6px;font:700 11px/1 var(--mono);color:var(--red);text-transform:uppercase;letter-spacing:.05em}.work-error pre{margin:0;white-space:pre-wrap;overflow:auto;font:12px/1.5 var(--mono);max-height:220px}
+        .work-turn-elapsed{color:var(--accent);font-weight:700}
+        .work-final-details{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+        .work-final-details summary{cursor:pointer;padding:9px 10px;font:650 12.5px/1.35 var(--sans);color:var(--ink);background:var(--surface-soft)}
+        .work-final-details .work-final{margin:0;border-top:1px solid var(--line);padding:10px}
+        .work-file-details{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+        .work-file-details summary{cursor:pointer;padding:9px 10px;font:650 12.5px/1.35 var(--sans);color:var(--ink);background:var(--surface-soft)}
+        .work-file-details summary span{color:var(--muted);font:11px var(--mono)}
+        .work-file-list{border-top:1px solid var(--line);display:flex;flex-direction:column}
+        .work-file-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:7px 10px;font:12px/1.35 var(--mono);border-top:1px solid var(--line)}
+        .work-file-row:first-child{border-top:0}.work-file-row b{font-weight:500;color:var(--ink-2);overflow-wrap:anywhere}.work-file-row span{font-weight:700}.work-file-row .add{color:var(--green)}.work-file-row .del{color:var(--red)}
+        .work-turn-chat{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);padding:10px;overflow:hidden}
+        .work-chat-body{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto;overscroll-behavior:contain}.work-chat-body .nmsg{animation:none}.work-chat-body>.nmsg{max-width:100%}.work-chat-body .nmsg.turn{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px}
+        .work-chat-empty{color:var(--muted);font:13px/1.5 var(--sans)}
+        .work-history{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}.work-history>summary{cursor:pointer;padding:11px 14px;font:650 13px/1.35 var(--sans);color:var(--ink);background:var(--surface-soft)}
+        .work-history-body{display:flex;flex-direction:column;gap:10px;padding:10px;background:var(--surface-soft)}.work-history-body .work-turn{box-shadow:none}
+        .work-running,.work-empty{color:var(--muted);font:13px/1.5 var(--sans);overflow-wrap:anywhere}
+        .work-pending{border-color:var(--amber);background:var(--amber-soft)}.work-pending b{display:block;margin-bottom:6px}.work-pending em{display:block;margin-top:8px;color:var(--muted);font:12px/1.45 var(--sans);font-style:normal}.work-pending button,.work-actions button,.work-hero button{margin-top:8px}
+        .work-actions{display:flex;justify-content:flex-end;margin-top:8px}
         #scrollbottom{position:absolute;right:calc(50% - 410px + 18px);bottom:calc(96px + env(safe-area-inset-bottom));width:38px;height:38px;display:none;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-strong);background:#fff;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.16);z-index:8;cursor:pointer;padding:0}
         #scrollbottom.show{display:flex}
         #scrollbottom:hover{background:var(--surface-hover)}
         #scrollbottom .ic{width:18px;height:18px;margin:0}
         @media (max-width:900px){#scrollbottom{right:16px;bottom:calc(96px + env(safe-area-inset-bottom))}}
+        @media (max-width:560px){
+          #nativemsgs{padding:12px 8px 18px}
+          .work-stage{max-width:100%}
+          .work-hero{flex-direction:column;gap:10px;padding:13px}
+          .work-hero h2{font-size:19px}
+          .work-metrics{justify-content:flex-start;min-width:0}
+          .work-turn-head{flex-direction:column;align-items:stretch;gap:5px}
+          .work-turn-head b{display:block;overflow-wrap:anywhere;word-break:normal}
+          .work-turn-head em{flex:auto;white-space:normal;word-break:break-word}
+          .work-current-action,.work-complete{grid-template-columns:1fr;padding:9px}
+          .work-actions{justify-content:stretch}.work-actions button{width:100%;margin-top:4px}
+        }
         .nmsg{padding:0;word-break:break-word;line-height:1.65;animation:nfade .14s ease}
         @keyframes nfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
         .nmsg.user{align-self:flex-end;max-width:78%;background:var(--user-bubble);color:var(--ink);border:0;border-radius:var(--radius-lg);padding:10px 14px}
@@ -319,6 +381,9 @@
         #nativesend .nwrap:focus-within{border-color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.09)}
         #nativesend .ns-tools{display:flex;align-items:center;gap:6px;padding-top:2px}
         #nativesend .ns-spacer{flex:1}
+        #nativesend .nview-switch{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;background:#fff}
+        #nativesend .nview-switch .nmode{border:0;border-radius:0;padding:5px 9px}
+        #nativesend .nview-switch .nmode+.nmode{border-left:1px solid var(--line)}
         #nativesend .nmode{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;font:12px/1.4 var(--sans);background:#fff;color:var(--muted);border:1px solid var(--line-strong);border-radius:14px;cursor:pointer}
         #nativesend .nmode:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--ink-2)}
         #nativesend .nmode.active{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -336,6 +401,17 @@
         #nativesubmit:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
         #nativesubmit:disabled{opacity:.4;cursor:default}
         #nativesubmit .ic{width:17px;height:17px;margin-right:0}
+        @media (max-width:560px){
+          #nativesend{padding:6px 8px calc(10px + env(safe-area-inset-bottom))}
+          #nativesend .nwrap{padding:4px 6px 6px}
+          #nativeinput{min-height:38px;font-size:14px}
+          #nativesend .ns-tools{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;align-items:stretch}
+          #nativesend .nview-switch{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;width:100%}
+          #nativesend .nview-switch .nmode{justify-content:center;min-width:0}
+          #nativesend .nmode{min-width:0;justify-content:center;padding:6px 6px;font-size:12px;white-space:nowrap}
+          #nativesend .ns-spacer{display:none}
+          #nativesubmit{width:100%;height:36px;border-radius:12px}
+        }
       </style>
       <div class="nathead">
         <button class="ghost" id="nativeback"><i class="ic" data-lucide="arrow-left"></i> 返回</button>
@@ -350,6 +426,10 @@
           <div id="nattachpreview" class="nattach-preview" aria-live="polite"></div>
           <textarea id="nativeinput" placeholder="给 agent 发消息…  Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
           <div class="ns-tools">
+            <div class="nview-switch" aria-label="View mode">
+              <button type="button" class="nmode" id="nview-chat" aria-pressed="false">Chat</button>
+              <button type="button" class="nmode active" id="nview-work" aria-pressed="true">Work</button>
+            </div>
             <button type="button" class="nmode" id="nmode-plan" aria-pressed="false" title="开启后 agent 先只读调研并出计划,你批准后再执行(安全)"><i class="ic" data-lucide="clipboard-list"></i>计划</button>
             <button type="button" class="nmode" id="nmode-task" aria-pressed="false" title="开启后 agent 用任务清单跟踪多步骤工作并实时显示进度"><i class="ic" data-lucide="list-checks"></i>任务</button>
             <button type="button" class="nmode" id="nativeslashhelp" title="&#25171;&#24320; Codex &#25351;&#20196;&#21015;&#34920;"><i class="ic" data-lucide="terminal"></i>&#25351;&#20196;</button>
@@ -468,6 +548,7 @@
 <script src="/assets/native_text_cards.js"></script>
 <script src="/assets/native_tool_results.js"></script>
 <script src="/assets/native_replay.js"></script>
+<script src="/assets/native_work.js"></script>
 <script src="/assets/native_forms.js"></script>
 <script src="/assets/native_pending_cards.js"></script>
 <script src="/assets/native_tool_cards.js"></script>

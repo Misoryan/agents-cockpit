@@ -102,13 +102,18 @@ def handle_get(handler, path, pr, ctx, owned_session_fn):
             after_seq = int(query.get("after", ["0"])[0] or 0)
         except Exception:
             after_seq = 0
+        view = (query.get("view", [""])[0] or "").strip().lower()
+        turn = (query.get("turn", [""])[0] or "").strip()
         session = owned_session_fn(sid, ctx)
         if not session or not session.get("native"):
             handler._json({"ok": False, "error": "native session not found"}, 404)
             return
         native = session.get("native")
         if hasattr(native, "replay_payload"):
-            handler._json(native.replay_payload(after_seq=after_seq))
+            try:
+                handler._json(native.replay_payload(after_seq=after_seq, view=view, turn=turn))
+            except TypeError:
+                handler._json(native.replay_payload(after_seq=after_seq))
         else:
             handler._json({"ok": False, "error": "replay not supported"}, 501)
     elif path == "/api/history":

@@ -280,6 +280,24 @@ def reattach_one(ctx, sid, entry):
             native.yolo = bool(entry.get("yolo"))
         except Exception:
             pass
+    state = str(entry.get("state") or "").lower()
+    if bool(entry.get("busy")) or state == "running":
+        try:
+            native._busy = True
+            native.current_turn_started_at = float(
+                entry.get("current_turn_started_at") or entry.get("last_activity") or time.time())
+        except Exception:
+            native.current_turn_started_at = time.time()
+    if provider == "codex" and (state == "plan" or entry.get("awaiting_plan_decision")):
+        try:
+            native._awaiting_plan_decision = True
+        except Exception:
+            pass
+    if entry.get("last_activity") is not None:
+        try:
+            native.last_activity = float(entry.get("last_activity"))
+        except Exception:
+            pass
     with lock:
         sessions[sid] = {
             "dir": entry.get("dir", getattr(native, "cwd", "")),

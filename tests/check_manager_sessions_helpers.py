@@ -21,6 +21,9 @@ class FakeNative:
         self.convo_title = "Native title"
         self.yolo = True
         self.last_activity = 123
+        self._busy = self.alive
+        self.current_turn_started_at = 99.0
+        self._awaiting_plan_decision = False
         self.closed = False
 
     def state(self):
@@ -51,6 +54,7 @@ def main():
     old_sessions = dict(manager_sessions.sessions)
     old_sid = manager_sessions.sid_counter[0]
     old_backends = common.BACKENDS
+    old_codex_session = manager_sessions.CodexSession
     try:
         with tempfile.TemporaryDirectory() as td:
             manager_sessions.sessions.clear()
@@ -92,6 +96,34 @@ def main():
             manager_sessions.persist_sessions()
             registry = common.registry_load(state_dir=td)
             assert set(registry["sessions"]) == {"s1", "s2"}
+            assert registry["sessions"]["s1"]["state"] == "running"
+            assert registry["sessions"]["s1"]["busy"] is True
+            assert registry["sessions"]["s1"]["current_turn_started_at"] == 99.0
+
+            recovered_native = FakeNative(thread_id="thread-recovered")
+            recovered_native._busy = False
+            recovered_native.current_turn_started_at = None
+            recovered_native._awaiting_plan_decision = False
+
+            class RecoverableCodex:
+                @classmethod
+                def recover(cls, *_args, **_kwargs):
+                    return recovered_native
+
+            manager_sessions.CodexSession = RecoverableCodex
+            manager_sessions.reattach_one(
+                {"user": "alice", "uid": "u1", "state_dir": td},
+                "s9",
+                {"dir": td, "backend": "codex_native", "provider": "codex",
+                 "title": "Recovered", "state": "running", "busy": True,
+                 "current_turn_started_at": 88.5,
+                 "awaiting_plan_decision": True, "thread_id": "thread-recovered",
+                 "state_dir": td},
+            )
+            assert recovered_native._busy is True
+            assert recovered_native.current_turn_started_at == 88.5
+            assert recovered_native._awaiting_plan_decision is True
+            assert manager_sessions.sessions["s9"]["native"] is recovered_native
 
             manager_sessions.sessions["dead"] = _session("alice", td, FakeNative(alive=False), started=3)
             manager_sessions.prune_dead()
@@ -106,6 +138,7 @@ def main():
         manager_sessions.sessions.update(old_sessions)
         manager_sessions.sid_counter[0] = old_sid
         common.BACKENDS = old_backends
+        manager_sessions.CodexSession = old_codex_session
 
     print("manager session helper checks passed")
 

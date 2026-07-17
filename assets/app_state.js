@@ -10,6 +10,12 @@ function setMainView(view){
 /* ---- structured agent session ---- */
 var currentSid=null;
 var nativeStages={}, nativeWs={}, nativeReconnectTimers={}, nativeReconnectState={}, nativePollTimers={}, nativePollBusy={};
+var nativeWorkStages={}, nativeWorkBusy={};
+var nativeViewMode="work";
+try{
+  var _nativeViewPref=localStorage.getItem("acNativeView") || acGetCookie("acNativeView") || "work";
+  nativeViewMode=_nativeViewPref==="chat" ? "chat" : "work";
+}catch(e){ nativeViewMode="work"; }
 var lmDir="", lmTitle="", lmBackend="codex_native", lmYolo=true;
 var lmCodexModel="", lmCodexSearch="", lmCodexSandbox="", lmCodexApproval="", lmCodexReasoning="", lmCodexSummary="", lmCodexServiceTier="", lmCodexWritableRoots="", lmCodexOptionsKey="";
 /* Preferences: cookie first, with localStorage fallback migrated into cookies. */

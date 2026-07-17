@@ -595,6 +595,10 @@ def _registry_safe_entry(sid, s):
     ns = s.get("native")
     backend = s.get("backend") or normalize_backend("")
     provider = s.get("provider") or ("codex" if is_codex_backend(backend) else "claude")
+    try:
+        native_state = ns.state() if ns else s.get("state", "idle")
+    except Exception:
+        native_state = s.get("state", "idle")
     return {
         "port": None,
         "pid": None,
@@ -605,6 +609,11 @@ def _registry_safe_entry(sid, s):
         "started": s.get("started", time.time()),
         "mode": s.get("mode", "new"),
         "yolo": bool(getattr(ns, "yolo", False) if ns else s.get("yolo")),
+        "state": native_state,
+        "busy": bool(getattr(ns, "_busy", False)) if ns else bool(s.get("busy")),
+        "current_turn_started_at": getattr(ns, "current_turn_started_at", None) if ns else s.get("current_turn_started_at"),
+        "last_activity": getattr(ns, "last_activity", None) if ns else s.get("last_activity"),
+        "awaiting_plan_decision": bool(getattr(ns, "_awaiting_plan_decision", False)) if ns else bool(s.get("awaiting_plan_decision")),
         "session_id": getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id"),
         "thread_id": getattr(ns, "thread_id", None) or s.get("thread_id"),
         "user": s.get("user") or getattr(ns, "user", ""),

@@ -31,6 +31,10 @@ vm.runInContext(fs.readFileSync("assets/native_text_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_terminal_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
+ctx.nativeViewMode = "chat";
+ctx.nativeWorkStages = {};
+ctx.nativeWorkBusy = {};
+vm.runInContext(fs.readFileSync("assets/native_work.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_pending_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_socket.js", "utf8"), ctx);
 const {
@@ -59,7 +63,23 @@ const {
   nCodexAccountResultHtml,
   nTerminalCardHtml,
   nSpecialToolBody,
-  nStructuredToolBody
+  nStructuredToolBody,
+  nativeViewIsWork,
+  nWorkStatusText,
+  nWorkSafeStatus,
+  nWorkElapsedMs,
+  nativeWorkSyncElapsed,
+  nativeWorkRenderSignature,
+  nativeWorkRememberOpenDetails,
+  nativeWorkRestoreOpenDetails,
+  nativeWorkTurnRows,
+  nWorkHistoryHtml,
+  nWorkProgressHtml,
+  nWorkTurnHtml,
+  nWorkErrorHtml,
+  nWorkToolTotal,
+  nWorkFileTotal,
+  nWorkCountsText
 } = ctx;
 
 let st = {renderedEvents: {}, lastSeq: 0};
@@ -69,6 +89,143 @@ assert.strictEqual(st.lastSeq, 1);
 
 assert.strictEqual(nMarkRendered(st, {type:"assistant", event_id:"evt-1"}), true);
 assert.strictEqual(nMarkRendered(st, {type:"assistant", event_id:"evt-1", replay:true}), false);
+assert.strictEqual(nativeViewIsWork(), false);
+ctx.nativeViewMode = "work";
+assert.strictEqual(nativeViewIsWork(), true);
+ctx.nativeViewMode = "chat";
+assert.strictEqual(nWorkStatusText("confirm", false), "等待确认");
+assert.strictEqual(nWorkSafeStatus('bad" onclick="x'), "pending");
+assert.strictEqual(nWorkElapsedMs({turn_elapsed_ms:2500}), 2500);
+assert.strictEqual(nWorkElapsedMs({running:true, turn_started_at_ms:1000, server_now_ms:3500}), 2500);
+assert.strictEqual(nWorkToolTotal({tool_total:3, tools:[{}]}), 3);
+assert.strictEqual(nWorkFileTotal({file_total:2, files:["a"]}), 2);
+assert.strictEqual(nWorkCountsText(null, [{name:"PowerShell", count:2}, {name:"Edit", count:1}]), "PowerShell x2 / Edit x1");
+let runningWorkHtml = nWorkTurnHtml({
+  status:"running",
+  user_text:"fix mobile",
+  tool_total:2,
+  file_total:1,
+  tool_counts:{Edit:1, PowerShell:1},
+  latest_tool:{name:"PowerShell", label:"npm test -- --watch=false", status:"running"},
+  tools:[
+    {id:"edit-1", name:"Edit", label:"old detail", input:{file_path:"assets/very/long/path.js", old_str:"old line", new_str:"new line"}, preview:"diff --git a/assets/very/long/path.js b/assets/very/long/path.js\n--- a/assets/very/long/path.js\n+++ b/assets/very/long/path.js\n@@\n-old line\n+new line", files:["assets/very/long/path.js"], changed_files:[{path:"assets/very/long/path.js", added:3, deleted:1}], diff:{added:3, deleted:1}},
+    {id:"cmd-1", name:"PowerShell", label:"npm test -- --watch=false", input:{command:"npm test -- --watch=false", cwd:"E:/repo"}, status:"running", preview:"running tests\nexit code: 0\nduration ms: 25"}
+  ],
+  files:["assets/very/long/path.js"],
+  todos:[{content:"Card task that should stay pinned", status:"in_progress"}],
+  elapsed_ms:2000,
+  assistant_text:"I checked the current test run and am fixing the Work card now.",
+  assistant_text_chars:61,
+  assistant_text_hidden:true
+}, 0, 1);
+assert.ok(runningWorkHtml.includes("work-current-action"));
+assert.ok(runningWorkHtml.includes("PowerShell"));
+assert.ok(runningWorkHtml.includes("2 动作"));
+assert.ok(runningWorkHtml.includes("work-turn-elapsed"));
+assert.ok(runningWorkHtml.includes("2秒"));
+assert.strictEqual((runningWorkHtml.match(/fix mobile/g) || []).length, 1, "running Work View should not duplicate the user prompt");
+assert.ok(runningWorkHtml.includes("work-progress"));
+assert.ok(runningWorkHtml.includes("AI 中途回复"));
+assert.ok(runningWorkHtml.includes("I checked the current test run"));
+assert.ok(!runningWorkHtml.includes("work-current-action-detail"));
+assert.ok(!runningWorkHtml.includes("动作详情"));
+assert.ok(!runningWorkHtml.includes("work-action-cards"));
+assert.ok(!runningWorkHtml.includes('class="nmsg tool work-tool-card'));
+assert.ok(!runningWorkHtml.includes("old detail"), "running Work View should hide older action details");
+assert.ok(!runningWorkHtml.includes("assets/very/long/path.js"), "running Work View should hide concrete action details");
+assert.ok(!runningWorkHtml.includes('class="tcmd">$ npm test -- --watch=false'));
+assert.ok(!runningWorkHtml.includes("E:/repo"));
+assert.ok(!runningWorkHtml.includes("cmd-det"));
+assert.ok(!runningWorkHtml.includes("running tests"));
+assert.ok(!runningWorkHtml.includes('class="diff-file"'));
+assert.ok(!runningWorkHtml.includes("old line"));
+assert.ok(!runningWorkHtml.includes("new line"));
+assert.ok(!runningWorkHtml.includes("diff-det"));
+assert.ok(!runningWorkHtml.includes("Card task that should stay pinned"), "latest Work card should not duplicate pinned tasks");
+assert.ok(nWorkProgressHtml({}) === "");
+let historicalTaskHtml = nWorkTurnHtml({
+  status:"done",
+  user_text:"older work",
+  tool_total:0,
+  todos:[{content:"Historical task visible", status:"pending"}]
+}, 0, 2);
+assert.ok(historicalTaskHtml.includes("Historical task visible"), "historical cards should still show their task list");
+let doneWorkHtml = nWorkTurnHtml({
+  status:"done",
+  user_text:"fix mobile",
+  tool_total:3,
+  file_total:2,
+  tool_counts:{PowerShell:2, Edit:1},
+  latest_tool:{name:"Edit", label:"assets/secret.js"},
+  tools:[{name:"Edit", label:"assets/secret.js"}],
+  files:["assets/secret.js"],
+  assistant_text:"detailed final text",
+  assistant_text_hidden:true,
+  assistant_text_chars:19,
+  changed_files:[{path:"assets/visible.js", added:4, deleted:2, total:6}],
+  diff_added:4,
+  diff_deleted:2,
+  diff_total:6
+}, 0, 1);
+assert.ok(doneWorkHtml.includes("work-complete"));
+assert.ok(doneWorkHtml.includes("work-final-details"));
+assert.ok(doneWorkHtml.includes('data-work-detail="final-turn-0" open'));
+assert.ok(doneWorkHtml.includes("work-file-details"));
+assert.ok(doneWorkHtml.includes("改动文件一览"));
+assert.ok(doneWorkHtml.includes("assets/visible.js"));
+assert.ok(doneWorkHtml.includes("+4"));
+assert.ok(doneWorkHtml.includes("-2"));
+assert.ok(doneWorkHtml.includes('data-work-action="chat-turn"'));
+assert.ok(doneWorkHtml.includes("查看本卡 Chat View"));
+assert.ok(doneWorkHtml.includes("3 个动作"));
+assert.ok(doneWorkHtml.includes("detailed final text"), "completed Work View should keep final assistant text inside a folded details block");
+assert.ok(!doneWorkHtml.includes("assets/secret.js"), "completed Work View should hide concrete tool/file details");
+assert.ok(!doneWorkHtml.includes("work-tools"));
+let failedWorkHtml = nWorkTurnHtml({
+  status:"error",
+  user_text:"run deploy",
+  tool_total:1,
+  file_total:0,
+  error:"boom <bad>"
+}, 0, 1);
+assert.ok(failedWorkHtml.includes("本轮失败"));
+assert.ok(failedWorkHtml.includes("work-error"));
+assert.ok(failedWorkHtml.includes("boom &lt;bad&gt;"));
+assert.ok(nWorkErrorHtml({status:"error"}).includes("未提供详细错误"));
+assert.strictEqual(
+  nativeWorkRenderSignature({status:"running", server_now_ms:1000, turn_elapsed_ms:500, turns:[{status:"running", elapsed_ms:500}]}, []),
+  nativeWorkRenderSignature({status:"running", server_now_ms:9000, turn_elapsed_ms:8500, turns:[{status:"running", elapsed_ms:8500}]}, []),
+  "work signature should ignore elapsed-only poll changes"
+);
+assert.notStrictEqual(
+  nativeWorkRenderSignature({status:"running", turns:[{status:"running"}]}, []),
+  nativeWorkRenderSignature({status:"idle", turns:[{status:"done"}]}, []),
+  "work signature should still change for content/state changes"
+);
+assert.deepStrictEqual(
+  nativeWorkTurnRows([{key:"turn-1"}, {key:"turn-2"}, {key:"turn-3"}]).map((row) => row.turn.key + ":" + row.idx),
+  ["turn-3:2", "turn-2:1", "turn-1:0"],
+  "Work View should render newest cards first while preserving original turn numbers"
+);
+let historyRows = nativeWorkTurnRows([{key:"turn-1", status:"done"}, {key:"turn-2", status:"done"}, {key:"turn-3", status:"done"}]).slice(1);
+let historyHtml = nWorkHistoryHtml(historyRows, 3);
+assert.ok(historyHtml.includes("work-history"));
+assert.ok(historyHtml.includes("历史轮次 · 2 轮"));
+assert.ok(!historyHtml.includes('data-work-detail="final-turn-3" open'), "historical cards should not default-open latest summary");
+let remembered = nativeWorkRememberOpenDetails({root:{querySelectorAll: () => [
+  {open:true, getAttribute: () => "final-turn-1"},
+  {open:false, getAttribute: () => "final-turn-2"}
+]}});
+assert.strictEqual(remembered["final-turn-1"], true);
+assert.strictEqual(remembered["final-turn-2"], undefined);
+let restoredDetail = {open:false, getAttribute: () => "final-turn-1"};
+nativeWorkRestoreOpenDetails({root:{querySelectorAll: () => [restoredDetail]}}, remembered);
+assert.strictEqual(restoredDetail.open, true);
+let elapsedNode = {textContent: ""};
+let elapsedStage = {root: {querySelectorAll: () => [elapsedNode]}, elapsedTimer: null};
+nativeWorkSyncElapsed(elapsedStage, {running:true, turn_elapsed_ms:1000});
+assert.strictEqual(elapsedStage.elapsedTimer, 1);
+assert.ok(elapsedNode.textContent, "work elapsed label should render immediately from server elapsed time");
 
 let scrollShown = false;
 let nodes = {

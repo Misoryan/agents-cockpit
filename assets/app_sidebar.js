@@ -30,9 +30,11 @@ function renderSessionTabs(){
   var rendered=0;
   openTabs.forEach(function(sid){
     var s=tabSession(sid); if(!s) return;
+    var model=(nativeStages[sid]&&nativeStages[sid].model) ? nShortModel(nativeStages[sid].model) : "";
+    var meta=sessionStateText(s)+" / "+(model||backendShort(s.backend));
     var btn=document.createElement("button"); btn.type="button"; btn.className="stab"+(sid===currentSid?" active":"");
     btn.title=(s.title||basename(s.dir)||sid)+"\n"+(s.dir||"");
-    btn.innerHTML='<span class="dot '+sessionDot(s)+'"></span><span class="st-main"><span class="st-title">'+esc(s.title||basename(s.dir)||sid)+'</span><span class="st-meta">'+esc(sessionStateText(s)+" / "+backendShort(s.backend))+'</span></span>';
+    btn.innerHTML='<span class="dot '+sessionDot(s)+'"></span><span class="st-main"><span class="st-title">'+esc(s.title||basename(s.dir)||sid)+'</span><span class="st-meta">'+esc(meta)+'</span></span>';
     var close=document.createElement("span"); close.className="st-close"; close.setAttribute("aria-label","Close tab"); close.textContent="x";
     close.addEventListener("click", function(ev){ ev.stopPropagation(); closeTab(sid); });
     btn.appendChild(close);
@@ -99,6 +101,7 @@ function nHasPendingUi(st, state){
 }
 function nEnsurePendingVisible(s){
   if(!s || s.sid!==currentSid || (s.state!=="confirm" && s.state!=="plan")) return;
+  if(typeof nativeViewIsWork==="function" && nativeViewIsWork()) return;
   var st=nativeStages[s.sid]; if(!st || nHasPendingUi(st, s.state)) return;
   var ws=nativeWs[s.sid], now=Date.now();
   if(ws && (ws.readyState===0 || ws.readyState===1)) return;
@@ -138,6 +141,9 @@ function rememberSessions(ss, skipPendingOpen){
   }
   if(_visibleCatchup && typeof nativeMaybeCatchupPoll==="function"){
     nativeMaybeCatchupPoll(_visibleCatchup.session, _visibleCatchup.prevSession);
+  }
+  if(_visibleCatchup && typeof nativeWorkMaybeRefresh==="function"){
+    nativeWorkMaybeRefresh(_visibleCatchup.session, _visibleCatchup.prevSession);
   }
   if(!skipPendingOpen && pendingOpenSid){ openSessionBySid(pendingOpenSid, true); pendingOpenSid=""; try{ history.replaceState(null,"",location.pathname); }catch(e){} }
 }

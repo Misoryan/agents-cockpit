@@ -119,6 +119,7 @@ class NativeSession:
         self._closed = False
         self.alive = True
         self._busy = False
+        self.current_turn_started_at = None
         self._proc = None            # 当前正在跑的 claude 子进程(interrupt 用;None=没在跑)
         self._interrupted = False    # 用户点了「打断」→ 子进程被 kill,本轮按打断收尾而非完成
         self.last_activity = time.time()
@@ -403,13 +404,15 @@ class NativeSession:
             try: sock.close()
             except OSError: pass
 
-    def replay_payload(self, after_seq=0):
+    def replay_payload(self, after_seq=0, view=None, turn=None):
         with self._lock:
-            events = self._events_after_seq_locked(after_seq)
+            view_name = str(view or "").lower()
+            events = list(self.events) if view_name in ("work", "turn", "work_turn", "chat_turn") else self._events_after_seq_locked(after_seq)
             model = self.model
         pending = self._pending_events_snapshot()
         return native_replay.replay_payload(self, events, pending, model=model,
-                                            after_seq=after_seq, state_fn=self.state)
+                                            after_seq=after_seq, state_fn=self.state,
+                                            view=view, turn=turn)
 
     def _pending_events_snapshot(self):
         with self._pending_lock:
@@ -488,6 +491,8 @@ class NativeSession:
                            "yolo": self.yolo,
                            "user": self.user, "uid": self.uid,
                            "claude_home": self.claude_home,
+                           "busy": bool(self._busy),
+                           "current_turn_started_at": self.current_turn_started_at,
                            "allow_tools": sorted(self._allow_tools),
                            "events": events,
                            "next_seq": next_seq}, f, ensure_ascii=False)
@@ -507,6 +512,8 @@ class NativeSession:
             ns.claude_sid = d.get("claude_sid")
             ns._load_events(d.get("events", []), d.get("next_seq"))
             ns._allow_tools = set(d.get("allow_tools") or [])
+            ns._busy = bool(d.get("busy"))
+            ns.current_turn_started_at = d.get("current_turn_started_at") if ns._busy else None
             return ns
         except (OSError, ValueError):
             return None

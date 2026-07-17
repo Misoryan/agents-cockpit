@@ -21,6 +21,9 @@ def main():
         session.model = "gpt-test"
         session.model_provider = "openai"
         session.service_tier = "auto"
+        session._busy = True
+        session.current_turn_started_at = 123.5
+        session._awaiting_plan_decision = True
         session.events = [{"type": "assistant", "seq": 1}]
         session.timeline = [{"type": "assistant", "seq": 1}, {"type": "result", "seq": 2}]
         session._next_seq = 3
@@ -31,6 +34,9 @@ def main():
         assert data["thread_id"] == "thread-1"
         assert data["last_turn_id"] == "turn-1"
         assert data["model_provider"] == "openai"
+        assert data["busy"] is True
+        assert data["current_turn_started_at"] == 123.5
+        assert data["awaiting_plan_decision"] is True
         assert [event["seq"] for event in data["timeline"]] == [1, 2]
 
         loaded = codex_state.load_state_data(td, "s-state")
@@ -46,6 +52,9 @@ def main():
         assert recovered.thread_id == "thread-override"
         assert recovered.last_turn_id == "turn-1"
         assert recovered.model == "gpt-test"
+        assert recovered._busy is True
+        assert recovered.current_turn_started_at == 123.5
+        assert recovered._awaiting_plan_decision is True
         assert recovered._next_seq == 3
 
         Path(td, "codex_s-local.json").write_text(json.dumps({

@@ -282,7 +282,10 @@ body.sb-collapsed #sidebar{display:none}
   body.sb-open #shade{display:block}
   #sbreopen{display:none!important}
   body.sb-collapsed #sidebar{display:flex}
-  #topstatus{display:none}
-  .stab{flex-basis:220px;max-width:220px;min-width:104px}
+  #topstatus{display:flex;max-width:86px;overflow:hidden}
+  #topstatus .topchip{max-width:82px;padding:2px 6px;font-size:10px}
+  #topstatus .topchip.nyolo{display:none!important}
+  .stab{flex-basis:170px;max-width:170px;min-width:92px}
+  .stab .st-meta{font-size:10px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}

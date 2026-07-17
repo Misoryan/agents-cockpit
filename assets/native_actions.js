@@ -235,13 +235,18 @@ function nativeSend(){
     return;
   }
   nCloseSlashMenu();
+  var workMode=(typeof nativeViewIsWork==="function" && nativeViewIsWork());
   var _w=nativeWs[currentSid];
-  if(!_w||_w.readyState>1){ nativeConnect(currentSid); }
+  if(!workMode && (!_w||_w.readyState>1)){ nativeConnect(currentSid); }
   var display=[];
   if(p) display.push({type:"text", text:p});
   display=display.concat(nImageBlocksForDisplay(images));
-  nHandle(currentSid, {type:"user", message:{role:"user", content:display}});
-  nStartThinking(st);
+  if(workMode && typeof nativeWorkMarkSubmitted==="function"){
+    nativeWorkMarkSubmitted(currentSid, p);
+  }else{
+    nHandle(currentSid, {type:"user", message:{role:"user", content:display}});
+    nStartThinking(st);
+  }
   inp.value=""; inp.style.height="auto";
   nClearAttachments();
   nSetGen(true);
@@ -272,6 +277,8 @@ function nToggleMode(which){
 }
 $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
 $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
+if($("nview-chat")) $("nview-chat").addEventListener("click", function(){ nativeSetViewMode("chat"); });
+if($("nview-work")) $("nview-work").addEventListener("click", function(){ nativeSetViewMode("work"); });
 
 var slashHelp=$("nativeslashhelp");
 if(slashHelp) slashHelp.addEventListener("click", function(){

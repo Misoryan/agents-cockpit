@@ -67,11 +67,16 @@ def main():
     assert 'id="lm-codex-service-tier"' in html
     assert 'id="lm-codex-writable-roots"' in html
     assert 'id="nativeslashhelp"' in html
+    assert 'id="nview-chat"' in html
+    assert 'id="nview-work"' in html
+    assert '<button type="button" class="nmode" id="nview-chat" aria-pressed="false">Chat</button>' in html
+    assert '<button type="button" class="nmode active" id="nview-work" aria-pressed="true">Work</button>' in html
     assert '&#22270;&#29255;' in html
     assert 'id="lm-codex-status"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
+    assert "查看完整 Chat View" not in js
     codex_native = (ROOT / "codex_native.py").read_text(encoding="utf-8")
     assert "_REPLAY_MAX_EVENTS = 400" in codex_native
     assert "def _repair_full_replay_from_thread(self):" in codex_native
@@ -95,6 +100,7 @@ def main():
         "/assets/native_text_cards.js",
         "/assets/native_tool_results.js",
         "/assets/native_replay.js",
+        "/assets/native_work.js",
         "/assets/native_forms.js",
         "/assets/native_pending_cards.js",
         "/assets/native_tool_cards.js",
@@ -174,6 +180,35 @@ def main():
         'reason==="foreground"',
         'reason==="switch"',
         "function nativeCatchupPoll(sid, reason)",
+        "function nativeSetViewMode(mode, persist)",
+        "var nativeViewMode=\"work\"",
+        "function nativeShowWorkSession(sid)",
+        "function nativeRenderWork(sid, payload, force)",
+        "function nativeWorkRenderSignature(work, pending)",
+        "function nativeWorkRememberOpenDetails(st)",
+        "function nativeWorkRestoreOpenDetails(st, open)",
+        "function nativeWorkTurnRows(turns)",
+        "function nWorkHistoryHtml(rows, total)",
+        "function nWorkProgressHtml(turn)",
+        "function nWorkErrorHtml(turn)",
+        "function nWorkChangedFilesHtml(turn, detailKey)",
+        "function nativeWorkToggleTurnChat(sid, btn)",
+        "function nativeWorkRenderTurnChat(sid, key, panel, payload)",
+        "nativeWorkTurnRows(turns)",
+        "nWorkHistoryHtml(historyRows, turns.length)",
+        "nativeWorkScrollTop(stickTop)",
+        "work-history",
+        "work-error",
+        "work-progress",
+        "work-progress-body",
+        "本轮失败",
+        "data-work-detail",
+        'data-work-action="chat-turn"',
+        '"&view=turn&turn="+encodeURIComponent(key)',
+        "work-file-details",
+        '"/api/nreplay?sid="+encodeURIComponent(sid)+"&view=work"',
+        '$("nview-chat")',
+        '$("nview-work")',
         "st.catchupInFlight",
         "st.lastCatchupPoll",
         "if(!ws || ws.readyState!==1)",

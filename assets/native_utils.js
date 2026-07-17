@@ -80,6 +80,7 @@ function nRenderModelBadge(m, ver){
   el.textContent=nShortModel(m);
   el.title="Model: "+m+(ver?(" (CLI "+ver+")"):"");
   el.style.display="";
+  if(typeof renderSessionTabs==="function"){ try{ renderSessionTabs(); }catch(e){} }
 }
 function nSyncModes(st){
   var bp=$("nmode-plan"), bt=$("nmode-task");

@@ -20,6 +20,7 @@ function dropNativeStage(sid){
   st.replayRunId=(st.replayRunId||0)+1;
   if(st.root.parentNode) st.root.parentNode.removeChild(st.root);
   delete nativeStages[sid];
+  if(typeof nativeDropWorkStage==="function") nativeDropWorkStage(sid);
   if(nativeReconnectTimers[sid]){ clearTimeout(nativeReconnectTimers[sid]); delete nativeReconnectTimers[sid]; }
   delete nativeReconnectState[sid];
   if(nativePollTimers[sid]){ clearTimeout(nativePollTimers[sid]); delete nativePollTimers[sid]; }
@@ -27,7 +28,12 @@ function dropNativeStage(sid){
   if(nativeWs[sid]){ try{ nativeWs[sid].close(); }catch(e){} delete nativeWs[sid]; }
   if(currentSid===sid) hideNative();
 }
-function hideNative(){ currentSid=null; nSetGen(false); setMainView("landing"); renderSessionTabs(); nUpdateScrollButton(); }
+function hideNative(){
+  var sid=currentSid;
+  currentSid=null;
+  if(sid && typeof nativeStopWorkPolling==="function") nativeStopWorkPolling(sid);
+  nSetGen(false); setMainView("landing"); renderSessionTabs(); nUpdateScrollButton();
+}
 function nAddRow(st, cls, html){
   if(cls!=="result") st.lastToolGroup=null;
   st.curTxt=null;

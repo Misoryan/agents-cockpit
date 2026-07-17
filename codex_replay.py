@@ -3,6 +3,8 @@
 import copy
 import time
 
+import work_summary
+
 
 def is_dangerous(text):
     value = str(text or "").lower()
@@ -315,12 +317,24 @@ def pending_events_snapshot(pending_items):
     return events
 
 
-def replay_payload(session, after_seq=0):
+def _work_replay_events(session):
+    with session._lock:
+        snapshot = list(session.timeline or session.events)
+    return [_public_event(event) for event in snapshot]
+
+
+def replay_payload(session, after_seq=0, view=None, turn=None):
     state = session._state_snapshot()
+    pending = session._pending_events_snapshot()
+    view = str(view or "").lower()
+    if view == "work":
+        return work_summary.replay_payload(_work_replay_events(session), state, pending)
+    if view in ("turn", "work_turn", "chat_turn"):
+        return work_summary.turn_events_payload(_work_replay_events(session), state, pending, turn=turn)
     return {
         "ok": True,
         "events": session._events_after_seq(after_seq),
         "snapshot": state,
-        "pending": session._pending_events_snapshot(),
+        "pending": pending,
         "last_seq": state.get("last_seq") or 0,
     }

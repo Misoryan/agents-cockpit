@@ -386,8 +386,10 @@ class CodexSession:
     def _split_words(self, text, expected=0):
         return self._slash._split_words(text, expected=expected)
 
-    def _mcp_result_events(self, call_id, name, input_obj, result, method):
-        return self._slash._mcp_result_events(call_id, name, input_obj, result, method)
+    def _mcp_result_events(self, call_id, name, input_obj, result, method, result_limit=5000):
+        return self._slash._mcp_result_events(
+            call_id, name, input_obj, result, method, result_limit=result_limit
+        )
 
     def read_mcp_resource(self, arg):
         return self._slash.read_mcp_resource(arg)

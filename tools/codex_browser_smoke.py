@@ -463,6 +463,20 @@ def _wait_dom_selector_count(page, sid, selector, minimum=1, timeout=10):
     return int(page.eval(expression, timeout=5) or 0)
 
 
+def _first_mcp_browse_command(page, sid):
+    escaped_sid = json.dumps(sid)
+    return page.eval(
+        """(function(){
+          var st=(window.nativeStages||{})[%s];
+          if(!st || !st.root) return "";
+          var btn=st.root.querySelector(".mcp-status-card .mcp-action");
+          if(!btn) return "";
+          return (btn.dataset && btn.dataset.mcpCommand) || "";
+        })()""" % escaped_sid,
+        timeout=5,
+    ) or ""
+
+
 def _shell_exec_stdin_command(token):
     py = sys.executable
     code = (
@@ -555,6 +569,20 @@ def run_smoke(args):
         _wait_dom_text(page_b, sid, mcp_marker, timeout=20)
         mcp_cards_primary = _wait_dom_selector_count(page_a, sid, ".mcp-status-card", timeout=20)
         mcp_cards_mirror = _wait_dom_selector_count(page_b, sid, ".mcp-status-card", timeout=20)
+        mcp_resource_command = _first_mcp_browse_command(page_a, sid)
+        mcp_resource_marker = "MCP Resources |"
+        mcp_resource_cards_primary = 0
+        mcp_resource_cards_mirror = 0
+        if mcp_resource_command:
+            _api_post_json("/api/nslash", user, {"sid": sid, "command": mcp_resource_command})
+            _wait_dom_text(page_a, sid, mcp_resource_marker, timeout=20)
+            _wait_dom_text(page_b, sid, mcp_resource_marker, timeout=20)
+            mcp_resource_cards_primary = _wait_dom_selector_count(
+                page_a, sid, ".mcp-resource-card", timeout=20
+            )
+            mcp_resource_cards_mirror = _wait_dom_selector_count(
+                page_b, sid, ".mcp-resource-card", timeout=20
+            )
 
         marker = "keep-dom-%d" % int(time.time() * 1000)
         marked = _mark_first_message_node(page_b, sid, marker)
@@ -602,6 +630,15 @@ def run_smoke(args):
             and mcp_marker in (primary.get("domText") or "")
             and mcp_cards_mirror >= 1
             and mcp_cards_primary >= 1
+            and (
+                not mcp_resource_command
+                or (
+                    mcp_resource_marker in (after.get("domText") or "")
+                    and mcp_resource_marker in (primary.get("domText") or "")
+                    and mcp_resource_cards_mirror >= 1
+                    and mcp_resource_cards_primary >= 1
+                )
+            )
             and after_catchup["lastSeq"] >= before["lastSeq"]
             and after["lastSeq"] >= after_catchup["lastSeq"]
             and catchup_dom_preserved
@@ -635,6 +672,9 @@ def run_smoke(args):
                 "seen_mirror": mcp_marker in (after.get("domText") or "") if after else False,
                 "cards_primary": mcp_cards_primary,
                 "cards_mirror": mcp_cards_mirror,
+                "resource_command": mcp_resource_command,
+                "resource_cards_primary": mcp_resource_cards_primary,
+                "resource_cards_mirror": mcp_resource_cards_mirror,
             },
             "dom_marker": marked,
             "dom_preserved_after_catchup": catchup_dom_preserved,

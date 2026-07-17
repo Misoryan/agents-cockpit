@@ -331,6 +331,12 @@ checkout. It is intentionally concise so future changes can stay incremental.
   two-tab browser path and requires the structured `.mcp-status-card` to appear
   in both the desktop primary tab and phone-like mirror tab before reconnect
   DOM-preservation checks.
+- If the MCP status card exposes a browser `Browse` action, the same smoke now
+  follows its exposed command and requires the resulting `.mcp-resource-card` to
+  synchronize to both tabs.
+- MCP status/resource summary payloads now stay parseable for specialized
+  browser cards by omitting oversized tool schemas and truncating long
+  descriptions structurally instead of cutting the final JSON string.
 
 ## Optional Follow-ups
 

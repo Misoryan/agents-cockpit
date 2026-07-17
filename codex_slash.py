@@ -416,7 +416,11 @@ class CodexSlashAdapter:
             return None
         return words
 
-    def _mcp_result_events(self, call_id, name, input_obj, result, method):
+    def _mcp_result_events(self, call_id, name, input_obj, result, method, result_limit=5000):
+        if result_limit is None:
+            result_text = codex_text.json_text(result or {})
+        else:
+            result_text = codex_text.compact_json(result or {}, result_limit)
         self._record_and_broadcast({
             "type": "assistant",
             "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": input_obj or {}}]},
@@ -424,7 +428,7 @@ class CodexSlashAdapter:
         self._record_and_broadcast({
             "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": call_id,
-                                      "content": codex_text.compact_json(result or {}, 5000)}]},
+                                      "content": result_text}]},
         })
         self._codex_notice("%s completed" % name, method, result, silent=True)
 

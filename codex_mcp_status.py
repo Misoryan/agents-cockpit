@@ -48,6 +48,13 @@ def _len(value):
     return 0
 
 
+def _short_text(value, limit=240):
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
 def _tools_list(tools):
     if isinstance(tools, dict):
         out = []
@@ -69,7 +76,7 @@ def resource_summary(item):
         "name": item.get("name") or item.get("title") or "",
         "uri": item.get("uri") or "",
         "mimeType": item.get("mimeType") or "",
-        "description": item.get("description") or "",
+        "description": _short_text(item.get("description")),
     }
 
 
@@ -80,7 +87,7 @@ def resource_template_summary(item):
         "name": item.get("name") or item.get("title") or "",
         "uriTemplate": item.get("uriTemplate") or "",
         "mimeType": item.get("mimeType") or "",
-        "description": item.get("description") or "",
+        "description": _short_text(item.get("description")),
     }
 
 
@@ -89,8 +96,7 @@ def tool_summary(item):
         return {}
     return {
         "name": item.get("name") or item.get("title") or "",
-        "description": item.get("description") or "",
-        "inputSchema": item.get("inputSchema") or {},
+        "description": _short_text(item.get("description")),
     }
 
 
@@ -145,7 +151,12 @@ def status_request_params(session, detail="full", cursor=None, limit=50):
 
 def emit_result_events(session, call_id, name, input_obj, result):
     if hasattr(session, "_mcp_result_events"):
-        session._mcp_result_events(call_id, name, input_obj, result, "mcpServerStatus/list")
+        try:
+            session._mcp_result_events(
+                call_id, name, input_obj, result, "mcpServerStatus/list", result_limit=None
+            )
+        except TypeError:
+            session._mcp_result_events(call_id, name, input_obj, result, "mcpServerStatus/list")
         return True
     if not hasattr(session, "_record_and_broadcast"):
         return False
@@ -158,7 +169,7 @@ def emit_result_events(session, call_id, name, input_obj, result):
         "message": {"content": [{
             "type": "tool_result",
             "tool_use_id": call_id,
-            "content": codex_text.compact_json(result or {}, 5000),
+            "content": codex_text.json_text(result or {}),
         }]},
     })
     return True

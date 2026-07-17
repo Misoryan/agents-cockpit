@@ -1,4 +1,5 @@
 """Check Codex MCP status helper formatting and slash calls."""
+import json
 import sys
 from pathlib import Path
 
@@ -76,8 +77,27 @@ def main():
     assert summary["name"] == "docs"
     assert summary["tools"] == 1
     assert summary["resourceList"][0]["uri"] == "file://guide.md"
+    assert "inputSchema" not in summary["toolList"][0]
     assert "private" in codex_mcp_status.status_notice_message(SAMPLE_RESPONSE)
     assert "login required" in codex_mcp_status.status_notice_message(SAMPLE_RESPONSE)
+
+    large_payload = codex_mcp_status.status_detail_payload({
+        "data": [{
+            "name": "large",
+            "authStatus": "unsupported",
+            "resources": [],
+            "resourceTemplates": [],
+            "tools": {
+                "huge": {
+                    "name": "huge",
+                    "description": "x" * 1000,
+                    "inputSchema": {"type": "object", "description": "y" * 1000},
+                },
+            },
+        }]
+    }, include_items=True)
+    assert "inputSchema" not in json.dumps(large_payload)
+    assert large_payload["servers"][0]["toolList"][0]["description"].endswith("...")
 
     session = FakeSession()
     assert codex_mcp_status.list_mcp_status(session, "tools") == {

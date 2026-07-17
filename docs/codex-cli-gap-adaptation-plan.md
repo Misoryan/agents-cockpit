@@ -325,7 +325,12 @@ output plus stdin across the primary and narrow mirror browser tabs before the
 disconnect/reconnect DOM-preservation checks.
 It also runs `/mcp-status tools` and requires the structured MCP status result
 card to appear in both tabs, so MCP inventory visibility is part of the
-multi-access browser gate instead of only a helper-level check.
+multi-access browser gate instead of only a helper-level check. When that card
+has a `Browse` action, the smoke follows the exposed command and also requires
+the resulting MCP resources card to synchronize across both tabs.
+The MCP status/resource payload is kept as valid JSON for specialized browser
+cards by stripping oversized tool schemas and shortening long descriptions
+before replay.
 
 Codex CLI 升级后：
 

@@ -1,4 +1,5 @@
 """Check Codex slash adapter delegation and state mutation behavior."""
+import json
 import os
 import sys
 from pathlib import Path
@@ -139,6 +140,9 @@ def main():
         "resource_templates": 0,
         "tools": 1,
     }
+    resources_payload = json.loads(session.records[-1]["message"]["content"][0]["content"])
+    assert resources_payload["server"] == "docs"
+    assert resources_payload["resources"][0]["uri"] == "file://guide.md"
     assert slash.handle_slash_command("/skills") == {
         "ok": True,
         "command": "skills",

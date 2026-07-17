@@ -845,4 +845,6 @@ Immediate next commit candidate:
 
 - Extended the same two-tab browser smoke to run `/mcp-status tools` before the reconnect phases.
 - The smoke now requires both primary and narrow mirror DOMs to contain the `MCP Status |` summary and at least one `.mcp-status-card`, proving the replayable MCP result-card renderer is visible in both access sources.
+- When the status card exposes a `Browse` action, the smoke follows that exposed command and requires the resulting `MCP Resources |` `.mcp-resource-card` to appear in both tabs as well.
+- MCP status/resource result events now keep parseable JSON for browser renderers and strip oversized tool schemas/descriptions from the summary payload, avoiding a truncated raw blob when real servers expose many tools.
 - This closes the first browser-level evidence gap for MCP status/resource card synchronization; richer resource-read button coverage can still be added with a controlled temporary MCP config.

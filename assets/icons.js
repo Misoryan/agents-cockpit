@@ -40,7 +40,11 @@ var _ICONS={
 "hourglass":"<path d=\"M5 22h14\"/><path d=\"M5 2h14\"/><path d=\"M17 22v-4.17a2 2 0 0 0-.59-1.41L12 12l-4.42 4.42a2 2 0 0 0-.58 1.41V22\"/><path d=\"M7 2v4.17a2 2 0 0 0 .59 1.41L12 12l4.42-4.42a2 2 0 0 0 .58-1.41V2\"/>",
 "lock":"<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>",
 "archive":"<rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\"/><path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\"/><path d=\"M10 12h4\"/>",
-"circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 8v4\"/><path d=\"M12 16h.01\"/>"
+"circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 8v4\"/><path d=\"M12 16h.01\"/>",
+"image-plus":"<path d='M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7'/><line x1='16' x2='22' y1='5' y2='5'/><line x1='19' x2='19' y1='2' y2='8'/><circle cx='9' cy='9' r='2'/><path d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/>",
+"bar-chart-3":"<path d='M3 3v18h18'/><path d='M18 17V9'/><path d='M13 17V5'/><path d='M8 17v-3'/>",
+"git-branch":"<line x1='6' x2='6' y1='3' y2='15'/><circle cx='18' cy='6' r='3'/><circle cx='6' cy='18' r='3'/><path d='M18 9a9 9 0 0 1-9 9'/>",
+"loader":"<line x1='12' x2='12' y1='2' y2='6'/><line x1='12' x2='12' y1='18' y2='22'/><line x1='4.93' x2='7.76' y1='4.93' y2='7.76'/><line x1='16.24' x2='19.07' y1='16.24' y2='19.07'/><line x1='2' x2='6' y1='12' y2='12'/><line x1='18' x2='22' y1='12' y2='12'/><line x1='4.93' x2='7.76' y1='19.07' y2='16.24'/><line x1='16.24' x2='19.07' y1='7.76' y2='4.93'/>"
 };
 function _I(n,cls){var p=_ICONS[n];return p?"<svg class=\""+(cls||"ic")+"\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\">"+p+"</svg>":"";}
 function renderIcs(root){(root||document).querySelectorAll("[data-lucide]").forEach(function(el){var n=el.getAttribute("data-lucide"),p=_ICONS[n];if(p==null)return;var c=el.getAttribute("class")||"";el.outerHTML="<svg class=\""+c+"\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\">"+p+"</svg>";});}

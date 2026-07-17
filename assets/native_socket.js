@@ -108,6 +108,8 @@ document.addEventListener("visibilitychange", function(){
     if(!ws || ws.readyState>1){
       nativeStartPolling(sid, true);
       nativeScheduleReconnect(sid, 30000);
+    }else if(nStageHasReplayContent(nativeStages[sid])){
+      nativeCatchupPoll(sid, "foreground");
     }
   }
   pollSessionSignals();
@@ -134,6 +136,7 @@ function showNativeSession(sid, title){
     if(nStageHasReplayContent(st)) nativeConnect(sid);
     else nativeScheduleReconnect(sid, 1200);
   }
+  if(nStageHasReplayContent(st)) nativeCatchupPoll(sid, "switch");
   nEnsurePendingVisible(nFindRunSession(sid));
   renderSessionTabs();
   setMainView("native"); nUpdateScrollButton(); closeSidebar();

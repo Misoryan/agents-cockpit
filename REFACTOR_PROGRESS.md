@@ -373,6 +373,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
 - Native WebSocket open/message/close callbacks now ignore superseded sockets,
   preventing an old forced-reconnect socket from triggering extra replay polls
   or reconnect timers after a replacement socket is already active.
+- Foreground visibility changes and switching back to an already-rendered Codex
+  session tab now force a silent `after=<lastSeq>` catch-up when the WebSocket
+  still looks open, improving mobile/background and multi-tab convergence
+  without clearing the existing message DOM.
 
 ## Optional Follow-ups
 

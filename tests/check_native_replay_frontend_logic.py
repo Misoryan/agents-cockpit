@@ -42,6 +42,7 @@ const {
   nJumpBottom,
   nScrollBottom,
   nativeConnect,
+  nativeCatchupPoll,
   nDiffResultHtml,
   nDiffFileSections,
   nDiffFileListHtml,
@@ -337,6 +338,29 @@ assert.strictEqual(nStructuredToolBody("Bash", {command: "echo ok"}), "");
   assert.strictEqual(idleUrls.length, 1, "idle activity should trigger catch-up");
   assert.ok(idleUrls[0].includes("/api/nreplay?sid=s4&after=7"));
   assert.deepStrictEqual(idleEvents, ["codex_notice:8", "state_snapshot:8"]);
+
+  let switchUrls = [];
+  let stSwitch = {
+    sid: "s-switch",
+    root: {children: [{classList: {contains: () => false}}]},
+    renderedEvents: {"seq:9": true},
+    lastSeq: 9,
+    replayActive: false,
+    replayWaiting: false,
+    lastCatchupPoll: Date.now(),
+    catchupInFlight: false
+  };
+  ctx.currentSid = "s-switch";
+  ctx.nativeStages = {"s-switch": stSwitch};
+  ctx.nativeWs = {"s-switch": {readyState: 1}};
+  ctx.api = function(url){
+    switchUrls.push(url);
+    return Promise.resolve({ok: true, events: [], pending: []});
+  };
+  nativeCatchupPoll("s-switch", "switch");
+  await Promise.resolve();
+  assert.strictEqual(switchUrls.length, 1, "tab switch catch-up should bypass active-state throttle");
+  assert.ok(switchUrls[0].includes("/api/nreplay?sid=s-switch&after=9"));
 
   let sockets = [];
   let stalePolls = 0;

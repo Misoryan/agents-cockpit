@@ -220,7 +220,7 @@ function nativeCatchupPoll(sid, reason){
     return;
   }
   if(st.catchupInFlight || st.replayActive || st.replayWaiting) return;
-  var now=Date.now(), minDelay=(reason==="activity")?0:((reason==="settled")?1200:6000);
+  var now=Date.now(), minDelay=(reason==="activity" || reason==="foreground" || reason==="switch")?0:((reason==="settled")?1200:6000);
   if(st.lastCatchupPoll && now-st.lastCatchupPoll<minDelay) return;
   st.lastCatchupPoll=now;
   st.catchupInFlight=true;

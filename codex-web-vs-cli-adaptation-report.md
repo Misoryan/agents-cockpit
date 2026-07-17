@@ -915,3 +915,10 @@ Immediate next commit candidate:
 - A stale socket close no longer starts replay polling or schedules another reconnect after an explicit reconnect has already installed a replacement socket.
 - A stale socket open closes itself without calling `nativeStopPolling()`, so an old browser connection cannot suppress catch-up for the active socket.
 - The frontend Node replay/socket check now covers stale socket open/message/close callbacks and verifies the current socket still handles messages and close recovery normally.
+
+## 75. 2026-07-17 foreground and tab-switch catch-up checkpoint
+
+- Returning a mobile/browser tab to the foreground now triggers a silent `/api/nreplay?after=<lastSeq>` catch-up when the native WebSocket still appears open and the session already has rendered content.
+- Switching back to an already-rendered Codex session tab now also runs the same silent catch-up path, so stale open sockets do not have to wait for the next sidebar activity poll before the visible pane converges.
+- `foreground` and `switch` catch-up reasons bypass the normal active-session throttle while still using the existing in-flight guard, replay de-duplication, and DOM-preserving silent replay.
+- The frontend Node replay check covers the new tab-switch catch-up reason with an already-throttled stage to prove the visible-session catch-up is immediate.

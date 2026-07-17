@@ -367,6 +367,10 @@ Native WebSocket callbacks now also check that the callback belongs to the
 current socket for that session. Superseded sockets ignore late open/message
 callbacks and their close callbacks no longer start replay polling or schedule
 extra reconnects after a replacement socket has already been installed.
+Foreground visibility changes and switching back to an already-rendered
+Codex session tab now also trigger silent `after=<lastSeq>` catch-up when
+the WebSocket still appears open, so stale-open mobile or tab-switch
+sessions converge without clearing the existing DOM.
 
 Codex CLI 升级后：
 

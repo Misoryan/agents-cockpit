@@ -11,7 +11,7 @@ def main():
 const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
-let ctx = {console, setTimeout, clearTimeout, window: {}, _I: () => ""};
+let ctx = {console, setTimeout, clearTimeout, requestAnimationFrame: (fn) => fn(), window: {}, _I: () => ""};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync("assets/native_utils.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_stage.js", "utf8"), ctx);
@@ -25,6 +25,10 @@ const {
   nReplayEventKey,
   nReplayBatchAsync,
   nResetReplayState,
+  nAtBottom,
+  nUpdateScrollButton,
+  nJumpBottom,
+  nScrollBottom,
   nDiffResultHtml,
   nDiffFileSections,
   nDiffFileListHtml,
@@ -47,6 +51,30 @@ assert.strictEqual(st.lastSeq, 1);
 
 assert.strictEqual(nMarkRendered(st, {type:"assistant", event_id:"evt-1"}), true);
 assert.strictEqual(nMarkRendered(st, {type:"assistant", event_id:"evt-1", replay:true}), false);
+
+let scrollShown = false;
+let nodes = {
+  nativemsgs: {scrollHeight: 1000, scrollTop: 780, clientHeight: 200, _nativeStickBottom: undefined},
+  scrollbottom: {classList: {toggle: (_cls, show) => { scrollShown = !!show; }}}
+};
+ctx.currentSid = "scroll-sid";
+ctx.$ = function(id){ return nodes[id]; };
+assert.strictEqual(nAtBottom(), true);
+nUpdateScrollButton();
+assert.strictEqual(nodes.nativemsgs._nativeStickBottom, true);
+nodes.nativemsgs.scrollHeight = 1400;
+nScrollBottom();
+assert.strictEqual(nodes.nativemsgs.scrollTop, 1400, "bottom-stuck users should follow large appended content");
+nodes.nativemsgs.scrollHeight = 1600;
+nodes.nativemsgs.scrollTop = 900;
+nUpdateScrollButton();
+assert.strictEqual(nodes.nativemsgs._nativeStickBottom, false);
+assert.strictEqual(scrollShown, true);
+nScrollBottom();
+assert.strictEqual(nodes.nativemsgs.scrollTop, 900, "scrolled-up users should not be forced to bottom");
+nJumpBottom();
+assert.strictEqual(nodes.nativemsgs._nativeStickBottom, true);
+assert.strictEqual(scrollShown, false);
 
 let unseen = nReplayUnseenEvents(st, [
   {type:"assistant", seq:1},

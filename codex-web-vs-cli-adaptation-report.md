@@ -901,3 +901,10 @@ Immediate next commit candidate:
 - `nResetReplayState()` now clears `replayActive` and queued live events as well as timers, preventing long-history loading from leaving the stage stuck in replay mode if a reset happens mid-pump.
 - `dropNativeStage()` now clears replay/thinking timers before removing the DOM node, reducing hidden timer work and stale writes after a session closes.
 - The Node frontend replay check now proves a 40-event replay stops after the first chunk when reset, which guards against duplicate/flickering chunks during reconnect and long-history recovery.
+
+## 73. 2026-07-17 scroll anchoring checkpoint
+
+- The native message pane now stores a `_nativeStickBottom` state when the user scrolls or clicks the scroll-to-bottom affordance.
+- `nScrollBottom()` uses that sticky state instead of only checking after DOM growth, so large replay, catch-up, command output, or MCP result chunks keep following when the user was at bottom before the update.
+- If the user has manually scrolled up, new replay/live chunks no longer force the viewport back to the bottom, reducing mobile and long-session jumpiness during multi-client updates.
+- The frontend Node replay check covers both behaviors with a fake scroll container.

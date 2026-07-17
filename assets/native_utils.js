@@ -104,11 +104,15 @@ function nRenderTasks(st){
   });
 }
 function nAtBottom(){ var m=$("nativemsgs"); if(!m) return true; return (m.scrollHeight - m.scrollTop - m.clientHeight) < 120; }
-function nUpdateScrollButton(){ var b=$("scrollbottom"), m=$("nativemsgs"); if(!b||!m) return; b.classList.toggle("show", currentSid && !nAtBottom()); }
-function nJumpBottom(){ var m=$("nativemsgs"); if(!m) return; m.scrollTop=m.scrollHeight; nUpdateScrollButton(); }
+function nUpdateScrollButton(){
+  var b=$("scrollbottom"), m=$("nativemsgs"); if(!b||!m) return;
+  var at=nAtBottom(); m._nativeStickBottom=at;
+  b.classList.toggle("show", currentSid && !at);
+}
+function nJumpBottom(){ var m=$("nativemsgs"); if(!m) return; m._nativeStickBottom=true; m.scrollTop=m.scrollHeight; nUpdateScrollButton(); }
 function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;
-  var stick=nAtBottom();
-  requestAnimationFrame(function(){ if(stick) m.scrollTop = m.scrollHeight; nUpdateScrollButton(); }); }
+  var stick=(m._nativeStickBottom!==false) || nAtBottom();
+  requestAnimationFrame(function(){ if(stick){ m.scrollTop = m.scrollHeight; m._nativeStickBottom=true; } nUpdateScrollButton(); }); }
 function nCoerceEpochMs(v){
   var n=Number(v);
   if(!isFinite(n) || n<=0) return 0;

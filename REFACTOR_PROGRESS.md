@@ -207,6 +207,10 @@ checkout. It is intentionally concise so future changes can stay incremental.
   resets `replayActive`/queued replay events when a stage is reset or dropped,
   so long-history replay pumps cannot keep rendering stale chunks after a
   reconnect, `replay_replace`, or closed session.
+- The native message pane now tracks whether the user is intentionally stuck to
+  the bottom. Large replay/catch-up/tool chunks keep following only when the
+  user was already at the bottom, while manual scroll-up keeps the viewport
+  anchored instead of jumping during multi-client updates.
 - `tools/codex_terminal_smoke.py` now validates the Codex terminal-interaction
   adapter path with two tracked processes, multiple stdin writes, resize,
   close-stdin, terminate, replayable `terminal_closed` events, and

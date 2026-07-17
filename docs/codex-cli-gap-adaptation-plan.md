@@ -132,6 +132,7 @@ Browser / Android WebView
 - `state_snapshot` 能收敛 stale thinking/turn UI。
 - open-WS catch-up polling 能在 socket 显示 open 但漏事件时静默补增量；Codex broadcast 会刷新 session activity，前端看到 `/api/sessions` 的 `last_output_ts` 增长后也会触发 catch-up，所以 idle 状态下的 rename/notice 类事件不必等 socket close 才恢复。
 - replay 批量渲染有 `replayRunId` 取消令牌；stage reset/drop 会停止旧 replay pump 并清理 `replayActive`/pending queue，避免长历史加载或 `replay_replace` 期间旧 chunk 继续写入导致重复和闪烁。
+- 消息窗滚动现在记录 stick-to-bottom 状态；大块 replay/catch-up/tool 输出只在用户原本处于底部时自动跟随，用户手动上滑查看旧内容时不会被新事件强制拉到底部。
 - `tools/codex_ws_smoke.py --clients 2 --launch-temp` 和 `tools/codex_browser_smoke.py` 已覆盖协议层、headless 双页层与默认窄屏/mobile mirror；browser smoke 会标记既有 DOM 节点，分别验证断线 catch-up 和强制 `nativeConnect(..., {force:true})` 重连后未被清空重建，同时检查窄屏 composer/input/submit 和移动抽屉布局仍可用。
 
 仍缺：

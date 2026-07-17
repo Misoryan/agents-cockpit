@@ -43,6 +43,7 @@ function nHandle(sid, obj){
     st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
     nReconcilePendingSnapshot(st, obj);
     nSettleIdleSnapshot(st, obj);
+    if(!obj.running) nMaybeCompleteTasks(st);
     if(currentSid===sid){
       nSyncModes(st);
       nSetGen(!!obj.running);
@@ -196,6 +197,7 @@ function nHandle(sid, obj){
     st.lastWasHumanUser=false;
     if(obj.error) nAddRow(st, "sys", _I('alert')+" "+nEsc(obj.error));
     nMetaRow(st, obj);
+    nMaybeCompleteTasks(st);
     nEndTurn(st);
     nSetGen(false);
     return;

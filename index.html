@@ -297,6 +297,7 @@
         #nativetasks .nt-item.in_progress{color:var(--ink)}
         #nativetasks .nt-item.in_progress .todo-ic{color:var(--purple);font-weight:700}
         #nativetasks .nt-item.completed{color:var(--green);text-decoration:line-through;opacity:.65}
+        #nativetasks.done{border-color:var(--green);background:var(--green-soft)}
         .nmsg.plan{align-self:flex-start;max-width:94%;background:#fff;border:1px solid var(--purple);border-radius:var(--radius-lg);padding:14px}
         .nmsg.plan .plan-head{font:600 13px/1 var(--sans);color:var(--purple);margin-bottom:9px;display:flex;align-items:center;gap:8px}
         .nmsg.plan .plan-body{font:13.5px/1.65 var(--sans);color:var(--ink)}
@@ -311,7 +312,7 @@
         .nmsg.plan .deny{background:#fff;color:var(--ink-2);border-color:var(--line-strong)}
         .nmsg.plan .deny:hover{background:var(--surface-hover)}
         #nativesend{padding:8px 14px calc(14px + env(safe-area-inset-bottom));background:var(--canvas);border-top:1px solid var(--line)}
-        #nativesend .nwrap{max-width:820px;width:100%;margin:0 auto;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:4px 6px 6px 10px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.05);transition:border-color .12s,box-shadow .12s}
+        #nativesend .nwrap{position:relative;max-width:820px;width:100%;margin:0 auto;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:4px 6px 6px 10px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.05);transition:border-color .12s,box-shadow .12s}
         #nativesend .nwrap:focus-within{border-color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.09)}
         #nativesend .ns-tools{display:flex;align-items:center;gap:6px;padding-top:2px}
         #nativesend .ns-spacer{flex:1}
@@ -322,7 +323,7 @@
         #nativeinput{width:100%;resize:none;min-height:46px;max-height:200px;padding:10px 4px;background:transparent;border:0;color:var(--ink);font:14.5px/1.5 var(--sans);overflow:hidden}
         #nativeinput:focus{outline:0}
         #nativeinput::placeholder{color:var(--faint)}
-        #slashmenu{position:absolute;left:10px;right:10px;bottom:calc(100% + 8px);display:none;flex-direction:column;gap:4px;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius);box-shadow:0 18px 50px rgba(0,0,0,.14);padding:7px;z-index:5}
+        #slashmenu{position:absolute;left:0;right:0;bottom:calc(100% + 10px);display:none;flex-direction:column;gap:4px;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius);box-shadow:0 18px 50px rgba(0,0,0,.14);padding:7px;z-index:80;max-height:min(420px,calc(100dvh - 190px));overflow-y:auto}
         #slashmenu.open{display:flex}
         #slashmenu .slashitem{display:flex;gap:9px;align-items:flex-start;text-align:left;background:#fff;color:var(--ink);border:1px solid transparent;border-radius:7px;padding:8px 9px;cursor:pointer}
         #slashmenu .slashitem:hover,#slashmenu .slashitem.active{background:var(--surface-hover);border-color:var(--line)}

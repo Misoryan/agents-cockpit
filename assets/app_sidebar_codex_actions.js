@@ -1,4 +1,8 @@
 "use strict";
+document.addEventListener("click", function(){
+  document.querySelectorAll(".cactions-pop.open").forEach(function(pop){ pop.classList.remove("open"); });
+  document.querySelectorAll(".more-actions.active").forEach(function(btn){ btn.classList.remove("active"); });
+});
 function runCodexAction(sid, command, btn, cwd){
   if(!command) return;
   if(btn){ btn.disabled=true; btn.dataset.oldText=btn.textContent; btn.textContent="\u5904\u7406\u4e2d"; }
@@ -16,16 +20,28 @@ function runCodexAction(sid, command, btn, cwd){
 }
 function appendCodexActionMenu(el, actions){
   var more=document.createElement("button");
-  more.className="cbtn ghost more-actions"; more.type="button"; more.textContent="\u66f4\u591a"; more.title="\u5c55\u5f00\u66f4\u591a Codex \u64cd\u4f5c";
-  actions.classList.add("collapsed");
+  more.className="cbtn ghost more-actions"; more.type="button"; more.textContent="\u00b7\u00b7\u00b7"; more.title="\u5c55\u5f00\u66f4\u591a Codex \u64cd\u4f5c";
+  actions.classList.add("cactions-pop");
+  actions.addEventListener("click", function(ev){ ev.stopPropagation(); });
   more.addEventListener("click", function(ev){
     ev.stopPropagation();
+    document.querySelectorAll(".cactions-pop.open").forEach(function(pop){
+      if(pop!==actions) pop.classList.remove("open");
+    });
+    document.querySelectorAll(".more-actions.active").forEach(function(btn){
+      if(btn!==more) btn.classList.remove("active");
+    });
+    var rect=more.getBoundingClientRect();
     var open=actions.classList.toggle("open");
-    more.textContent=open?"\u6536\u8d77":"\u66f4\u591a";
-    more.title=open?"\u6536\u8d77 Codex \u64cd\u4f5c":"\u5c55\u5f00\u66f4\u591a Codex \u64cd\u4f5c";
+    more.classList.toggle("active", open);
+    if(open){
+      var w=actions.offsetWidth||180, h=actions.offsetHeight||160;
+      actions.style.left=Math.max(8, Math.min(rect.right-w, window.innerWidth-w-8))+"px";
+      actions.style.top=Math.max(8, Math.min(rect.bottom+6, window.innerHeight-h-8))+"px";
+    }
   });
   el.appendChild(more);
-  el.appendChild(actions);
+  document.body.appendChild(actions);
 }
 function appendCodexRunActions(el, s){
   if(!isCodexBackend(s.backend)) return;

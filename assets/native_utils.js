@@ -89,6 +89,7 @@ function nSyncModes(st){
 /* 持久任务进度面板:从 st.todos(最新 TodoWrite 快照)重建,显示进度条 + 实时清单。空则隐藏。 */
 function nRenderTasks(st){
   var el=$("nativetasks"); if(!el) return;
+  if(st.taskHideTimer){ clearTimeout(st.taskHideTimer); st.taskHideTimer=null; }
   var todos=st.todos||[];
   if(!todos.length){ el.style.display="none"; el.innerHTML=""; return; }
   var done=0; todos.forEach(function(x){ if((x.status||"")==="completed") done++; });
@@ -102,6 +103,21 @@ function nRenderTasks(st){
   el.querySelector(".nt-toggle").addEventListener("click", function(){
     st.tasksCollapsed=!st.tasksCollapsed; nRenderTasks(st);
   });
+}
+function nTasksAllCompleted(st){
+  var todos=(st&&st.todos)||[];
+  return !!todos.length && todos.every(function(x){ return (x.status||"")==="completed"; });
+}
+function nMaybeCompleteTasks(st){
+  if(!nTasksAllCompleted(st)) return false;
+  nRenderTasks(st);
+  var el=$("nativetasks");
+  if(el) el.classList.add("done");
+  st.taskHideTimer=setTimeout(function(){
+    st.todos=null;
+    if(el){ el.classList.remove("done"); el.style.display="none"; el.innerHTML=""; }
+  }, 1400);
+  return true;
 }
 function nAtBottom(){ var m=$("nativemsgs"); if(!m) return true; return (m.scrollHeight - m.scrollTop - m.clientHeight) < 120; }
 function nUpdateScrollButton(){

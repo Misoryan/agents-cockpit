@@ -183,6 +183,7 @@ function matchConvs(d, q){
   return {sessions:ms, history:mh};
 }
 function renderSidebar(){
+  document.querySelectorAll(".cactions-pop").forEach(function(pop){ pop.remove(); });
   var list=$("dirlist"); var st=list.scrollTop;
   list.innerHTML="";
   var q=sbSearch.toLowerCase();

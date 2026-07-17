@@ -54,6 +54,9 @@ def main():
     assert 'id="set-args"' not in html
     assert 'id="lm-codex-field"' in html
     assert 'id="slashmenu"' in html
+    assert "#nativesend .nwrap{position:relative" in html
+    assert "max-height:min(420px,calc(100dvh - 190px))" in html
+    assert "#nativetasks.done" in html
     assert 'id="hist-archived"' in html
     assert '&#36827;&#34892;&#20013;' in html
     assert '&#24050;&#24402;&#26723;' in html
@@ -296,6 +299,9 @@ def main():
         "st.replaySigParts=_parts",
         "nReplayBatchAsync(sid, st, _unseen, {silent:true})",
         "function nSettleIdleSnapshot(st, obj)",
+        "function nTasksAllCompleted(st)",
+        "function nMaybeCompleteTasks(st)",
+        "if(!obj.running) nMaybeCompleteTasks(st)",
         "st.curTxt || st.turnCard",
         "nSettleIdleSnapshot(st, obj)",
         "window.NATIVE_DEBUG",
@@ -324,6 +330,8 @@ def main():
         'postJSON("/api/nslash", {sid:sid, command:command})',
         "function appendCodexActionMenu(el, actions)",
         'more.className="cbtn ghost more-actions"',
+        'actions.classList.add("cactions-pop")',
+        "document.body.appendChild(actions)",
         '{label:"\\u5206\\u53c9", title:"\\u5206\\u53c9\\u6b64 Codex \\u4f1a\\u8bdd", command:"/fork"}',
         '{label:"\\u56de\\u6eda", title:"\\u56de\\u6eda\\u4e00\\u8f6e Codex \\u5bf9\\u8bdd", command:"/rollback 1"}',
         '{label:"\\u91cd\\u547d\\u540d", title:"\\u91cd\\u547d\\u540d\\u6b64 Codex \\u4f1a\\u8bdd"',

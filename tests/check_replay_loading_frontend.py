@@ -66,7 +66,9 @@ def main():
     assert 'id="lm-codex-summary"' in html
     assert 'id="lm-codex-service-tier"' in html
     assert 'id="lm-codex-writable-roots"' in html
-    assert 'id="nativeslashhelp"' in html
+    assert 'id="nativeslashhelp"' not in html
+    assert 'id="nmode-task"' not in html
+    assert 'id="nmode-plan"' in html
     assert 'id="nview-chat"' in html
     assert 'id="nview-work"' in html
     assert '<button type="button" class="nmode" id="nview-chat" aria-pressed="false">Chat</button>' in html

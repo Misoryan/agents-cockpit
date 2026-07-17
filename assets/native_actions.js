@@ -276,7 +276,7 @@ function nToggleMode(which){
   postJSON("/api/nmode", payload);
 }
 $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
-$("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
+if($("nmode-task")) $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
 if($("nview-chat")) $("nview-chat").addEventListener("click", function(){ nativeSetViewMode("chat"); });
 if($("nview-work")) $("nview-work").addEventListener("click", function(){ nativeSetViewMode("work"); });
 

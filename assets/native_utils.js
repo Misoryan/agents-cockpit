@@ -143,7 +143,8 @@ function nAtBottom(){ var m=$("nativemsgs"); if(!m) return true; return (m.scrol
 function nUpdateScrollButton(){
   var b=$("scrollbottom"), m=$("nativemsgs"); if(!b||!m) return;
   var at=nAtBottom(); m._nativeStickBottom=at;
-  b.classList.toggle("show", currentSid && !at);
+  var workMode=(typeof nativeViewIsWork==="function" && nativeViewIsWork());
+  b.classList.toggle("show", currentSid && !at && !workMode);
 }
 function nJumpBottom(){ var m=$("nativemsgs"); if(!m) return; m._nativeStickBottom=true; m.scrollTop=m.scrollHeight; nUpdateScrollButton(); }
 function nScrollBottom(){ var m=$("nativemsgs"); if(!m) return;

@@ -164,7 +164,7 @@ function nScheduleInputAssist(inp){
     var m=nSlashMenu();
     if(m && m.classList.contains("open")) nCloseSlashMenu();
   }
-  if(value.indexOf("\n")>=0 || value.length>160 || inp.offsetHeight>70){
+  if(value.indexOf("\n")>=0 || value.length>160){
     nativeHeightTimer=setTimeout(function(){
       nativeHeightTimer=null;
       inp.style.height="auto";

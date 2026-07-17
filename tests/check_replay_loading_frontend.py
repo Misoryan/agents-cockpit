@@ -56,6 +56,8 @@ def main():
     assert 'id="slashmenu"' in html
     assert "#nativesend .nwrap{position:relative" in html
     assert "max-height:min(420px,calc(100dvh - 190px))" in html
+    assert "contain:layout style paint" in html
+    assert "content-visibility:auto" in html
     assert "#nativetasks.done" in html
     assert 'id="hist-archived"' in html
     assert '&#36827;&#34892;&#20013;' in html
@@ -224,6 +226,7 @@ def main():
         "function nScheduleInputAssist(inp)",
         "nativeInputAssistTimer=setTimeout",
         "nativeHeightTimer=setTimeout",
+        'if(value.indexOf("\\n")>=0 || value.length>160)',
         'addEventListener("input", function(){ nScheduleInputAssist(this); })',
         "function nTerminalCardHtml(pid, obj)",
         "function nTerminalStatus(card, msg, isError)",

@@ -12,7 +12,7 @@ routes cannot be added without an explicit risk classification.
 - Browser routes enter through `web.py`, which enforces browser auth and, when enabled, Origin/Referer checks before proxying to the manager.
 - Manager user routes require a resolved user context, then re-check session ownership, history ownership, or workspace roots at the handler boundary.
 - Internal gate/control routes are separated from browser routes and are expected to require internal Authorization.
-- Image upload is currently part of `/api/nsend`; `CodexSession.prepare_image_inputs()` owns MIME/size/storage validation for Codex image payloads.
+- Image upload is currently part of `/api/nsend`; `CodexSession.prepare_image_inputs()` owns MIME, magic-byte signature, size, count, and storage validation for Codex image payloads.
 
 ## Browser/Manager User POST Routes
 

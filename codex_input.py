@@ -21,6 +21,20 @@ MAX_IMAGES_PER_TURN = 8
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
+def image_bytes_match_mime(raw, mime):
+    raw = raw or b""
+    mime = str(mime or "").lower().strip()
+    if mime == "image/png":
+        return raw.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime in ("image/jpeg", "image/jpg"):
+        return raw.startswith(b"\xff\xd8\xff")
+    if mime == "image/gif":
+        return raw.startswith((b"GIF87a", b"GIF89a"))
+    if mime == "image/webp":
+        return len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    return False
+
+
 class CodexInputAdapter:
     def __init__(self, session):
         self.session = session
@@ -95,6 +109,8 @@ class CodexInputAdapter:
                 raise ValueError("image %d is empty" % (idx + 1))
             if len(raw) > MAX_IMAGE_BYTES:
                 raise ValueError("image %d exceeds %d MB" % (idx + 1, MAX_IMAGE_BYTES // (1024 * 1024)))
+            if not image_bytes_match_mime(raw, mime):
+                raise ValueError("image %d does not match declared type" % (idx + 1))
             image_id = uuid.uuid4().hex + IMAGE_MIME_EXT[mime]
             path = os.path.join(root, image_id)
             with open(path, "wb") as handle:

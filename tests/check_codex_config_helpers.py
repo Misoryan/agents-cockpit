@@ -331,7 +331,7 @@ def main():
         images = lifecycle.prepare_image_inputs([{
             "name": "screen.png",
             "type": "image/png",
-            "data_url": "data:image/png;base64,%s" % base64.b64encode(b"png").decode("ascii"),
+            "data_url": "data:image/png;base64,%s" % base64.b64encode(b"\x89PNG\r\n\x1a\nminimal").decode("ascii"),
         }])
         assert len(images) == 1
         assert images[0]["type"] == "localImage"

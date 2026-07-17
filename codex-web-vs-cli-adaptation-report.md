@@ -855,3 +855,9 @@ Immediate next commit candidate:
 - Added route-risk metadata in `manager_user_api.py`, `manager_internal_api.py`, and `web.py` for launch/resume/stop/send/slash/terminal/mode/approval/history/restart/gate/control paths.
 - Added `tools/check_state_changing_api_risks.py` plus a helper test so new mutating POST routes must update the matrix instead of silently expanding the exposed attack surface.
 - This advances Phase 5 hardening without changing route behavior; the next hardening slice can convert specific matrix gaps into stricter runtime checks.
+
+## 66. 2026-07-17 image upload runtime-guard checkpoint
+
+- Strengthened `codex_input.py` so Codex image uploads validate decoded bytes against the declared image MIME type before writing into the per-session upload directory.
+- PNG, JPEG, GIF, and WebP uploads now require matching magic-byte signatures in addition to the existing count, size, base64, and MIME allowlist checks.
+- Extended input/config helper tests to cover valid image signatures and MIME/content mismatch rejection, turning the `/api/nsend` `image_validation` matrix entry into a concrete runtime guard.

@@ -313,6 +313,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   internal state-changing POST routes classified by risk, area, and required
   guards, so launch/send/slash/terminal/history/upload/restart/gate/control
   routes cannot grow without an explicit coverage update.
+- Codex image uploads now verify decoded file signatures against the declared
+  image MIME type before storing local images, so `/api/nsend` image validation
+  covers count, size, base64 validity, MIME allowlist, and magic-byte mismatch.
 - `codex_inventory.py` now backs `/skills` and `/plugins [installed|available]`
   with read-only app-server inventory calls, strips local skill/plugin paths
   before replay, and renders `codex.skills` / `codex.plugins` as structured

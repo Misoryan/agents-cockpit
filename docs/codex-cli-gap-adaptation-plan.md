@@ -267,7 +267,7 @@ Browser / Android WebView
 
 - 增加 state-changing API 风险矩阵和测试：launch/send/slash/terminal/history/upload/restart/stop/gate/control。（第一刀已落地：`docs/state-changing-api-risk-matrix.md` 记录 browser/manager/internal POST 风险、职责和 required guards，`tools/check_state_changing_api_risks.py` 静态校验新增路由必须补分类。）
 - 将 hardened profile 从“文档建议 + verifier”推进到可选择配置模板或启动检查。
-- 审计 upload/image、workspace roots、per-user Codex/Claude home、MCP config 写入边界。
+- 审计 upload/image、workspace roots、per-user Codex/Claude home、MCP config 写入边界。（upload/image 第一刀已落地：`prepare_image_inputs()` 现在校验数量、大小、base64、MIME allowlist 和 magic-byte 签名一致性。）
 - 对 manager/internal endpoint 保持“必须内部 token + 预期来源 + 测试覆盖”。
 
 验收：hardened profile 下跨站 POST、缺 Origin、越界 workspace/upload、未授权 internal control 都被拒绝且有测试。

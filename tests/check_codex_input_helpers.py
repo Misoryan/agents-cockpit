@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import codex_input  # noqa: E402
 
 
+PNG_BYTES = b"\x89PNG\r\n\x1a\nminimal"
+
+
 class FakeClient:
     def __init__(self, root):
         self.root = root
@@ -71,7 +74,7 @@ def main():
             "name": "screen.png",
             "type": "image/png",
             "detail": "not-valid",
-            "data_url": "data:image/png;base64,%s" % base64.b64encode(b"png").decode("ascii"),
+            "data_url": "data:image/png;base64,%s" % base64.b64encode(PNG_BYTES).decode("ascii"),
         }])
         assert len(images) == 1
         assert images[0]["detail"] == "auto"
@@ -92,6 +95,13 @@ def main():
                               "unsupported image type")
         assert_raises_message(lambda: adapter.prepare_image_inputs([{"type": "image/png", "data": "not-b64"}]),
                               "invalid base64")
+        assert_raises_message(lambda: adapter.prepare_image_inputs([{
+            "type": "image/png",
+            "data": base64.b64encode(b"not really png").decode("ascii"),
+        }]), "does not match declared type")
+        assert codex_input.image_bytes_match_mime(b"\xff\xd8\xffjpeg", "image/jpeg")
+        assert codex_input.image_bytes_match_mime(b"GIF89a...", "image/gif")
+        assert codex_input.image_bytes_match_mime(b"RIFFxxxxWEBP...", "image/webp")
 
         files = adapter.search_files("readme", limit=10)["files"]
         assert files == [{

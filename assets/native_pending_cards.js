@@ -1,5 +1,26 @@
 "use strict";
 
+function nSnapshotPendingIdSet(obj){
+  var ids={}, pending=Array.isArray(obj&&obj.pending)?obj.pending:[];
+  pending.forEach(function(item){
+    var id=item&&(item.id||item.tool_use_id);
+    if(id) ids[String(id)]=true;
+  });
+  return ids;
+}
+function nReconcilePendingSnapshot(st, obj){
+  var root=st&&(st.turnCard||st.root);
+  if(!root || !root.querySelectorAll) return;
+  var ids=nSnapshotPendingIdSet(obj);
+  root.querySelectorAll('.nmsg.approval[data-tuid],.nmsg.plan[data-tuid],.nmsg.ask[data-tuid],.nmsg.form[data-tuid]').forEach(function(card){
+    var tuid=card.dataset&&card.dataset.tuid;
+    if(!tuid || !ids[String(tuid)]){
+      if(card.parentNode) card.parentNode.removeChild(card);
+      else if(card.remove) card.remove();
+    }
+  });
+}
+
 function nHandlePendingApproval(sid, st, obj){
   nFinalizeThinking(st); nStopThinking(st);
   st.lastPendingResync=0; st.pendingExpectedAt=0;

@@ -41,6 +41,7 @@ function nHandle(sid, obj){
     }
     st.planMode=!!obj.plan; st.taskMode=!!obj.task;
     st.lastSeq=Math.max(st.lastSeq||0, Number(obj.last_seq)||0);
+    nReconcilePendingSnapshot(st, obj);
     if(currentSid===sid){
       nSyncModes(st);
       nSetGen(!!obj.running);

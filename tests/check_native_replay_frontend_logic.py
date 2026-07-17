@@ -30,6 +30,7 @@ vm.runInContext(fs.readFileSync("assets/native_tool_helpers.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_tool_results.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_terminal_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_replay.js", "utf8"), ctx);
+vm.runInContext(fs.readFileSync("assets/native_pending_cards.js", "utf8"), ctx);
 vm.runInContext(fs.readFileSync("assets/native_socket.js", "utf8"), ctx);
 const {
   nMarkRendered,
@@ -43,6 +44,7 @@ const {
   nScrollBottom,
   nativeConnect,
   nativeCatchupPoll,
+  nReconcilePendingSnapshot,
   nDiffResultHtml,
   nDiffFileSections,
   nDiffFileListHtml,
@@ -89,6 +91,27 @@ assert.strictEqual(nodes.nativemsgs.scrollTop, 900, "scrolled-up users should no
 nJumpBottom();
 assert.strictEqual(nodes.nativemsgs._nativeStickBottom, true);
 assert.strictEqual(scrollShown, false);
+
+function fakePendingCard(cls, tuid){
+  return {
+    className: "nmsg " + cls,
+    dataset: {tuid},
+    removed: false,
+    parentNode: {removeChild: function(card){ card.removed = true; }}
+  };
+}
+let pendingCards = [
+  fakePendingCard("approval", "approve-1"),
+  fakePendingCard("ask", "ask-1"),
+  fakePendingCard("form", "form-1")
+];
+let pendingRoot = {querySelectorAll: () => pendingCards};
+nReconcilePendingSnapshot({root: pendingRoot}, {type:"state_snapshot", pending:[{id:"ask-1", kind:"ask"}]});
+assert.strictEqual(pendingCards[0].removed, true);
+assert.strictEqual(pendingCards[1].removed, false);
+assert.strictEqual(pendingCards[2].removed, true);
+nReconcilePendingSnapshot({root: pendingRoot}, {type:"state_snapshot", pending:[]});
+assert.strictEqual(pendingCards[1].removed, true, "empty snapshot pending list should clear stale pending cards");
 
 let unseen = nReplayUnseenEvents(st, [
   {type:"assistant", seq:1},

@@ -922,3 +922,10 @@ Immediate next commit candidate:
 - Switching back to an already-rendered Codex session tab now also runs the same silent catch-up path, so stale open sockets do not have to wait for the next sidebar activity poll before the visible pane converges.
 - `foreground` and `switch` catch-up reasons bypass the normal active-session throttle while still using the existing in-flight guard, replay de-duplication, and DOM-preserving silent replay.
 - The frontend Node replay check covers the new tab-switch catch-up reason with an already-throttled stage to prove the visible-session catch-up is immediate.
+
+## 76. 2026-07-17 pending-card snapshot reconciliation checkpoint
+
+- Frontend `state_snapshot` handling now reconciles visible approval/plan/ask/form cards against the server snapshot's `pending` id list.
+- If another device answers or approves while the current browser misses the live resolution event, the next replay/catch-up snapshot removes stale pending cards without clearing the rest of the conversation DOM.
+- Pending cards still de-duplicate by `data-tuid` when their explicit pending events arrive, so initial replay and live catch-up keep the same card contract.
+- The frontend Node replay check now covers both keeping a still-pending ask card and clearing stale approval/form cards when the snapshot no longer lists them.

@@ -377,6 +377,9 @@ checkout. It is intentionally concise so future changes can stay incremental.
   session tab now force a silent `after=<lastSeq>` catch-up when the WebSocket
   still looks open, improving mobile/background and multi-tab convergence
   without clearing the existing message DOM.
+- `state_snapshot` now reconciles approval/plan/ask/form cards against the
+  server pending id list, so a stale tab clears confirmations answered on
+  another device during the next catch-up without repainting the conversation.
 
 ## Optional Follow-ups
 

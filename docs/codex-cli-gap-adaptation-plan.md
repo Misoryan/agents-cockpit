@@ -371,6 +371,10 @@ Foreground visibility changes and switching back to an already-rendered
 Codex session tab now also trigger silent `after=<lastSeq>` catch-up when
 the WebSocket still appears open, so stale-open mobile or tab-switch
 sessions converge without clearing the existing DOM.
+`state_snapshot` handling now also reconciles approval/plan/ask/form
+cards against the server pending id list, so pending UI answered from
+another device is cleared by catch-up even if the live resolution event
+was missed.
 
 Codex CLI 升级后：
 

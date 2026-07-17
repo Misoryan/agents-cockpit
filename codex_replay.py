@@ -325,6 +325,10 @@ def _work_replay_events(session):
 
 def replay_payload(session, after_seq=0, view=None, turn=None):
     state = session._state_snapshot()
+    if isinstance(state, dict):
+        cfg_model = (getattr(session, "cfg", None) or {}).get("model") or ""
+        state["model"] = getattr(session, "model", "") or cfg_model
+        state["cwd"] = str(getattr(session, "cwd", "") or "")
     pending = session._pending_events_snapshot()
     view = str(view or "").lower()
     if view == "work":

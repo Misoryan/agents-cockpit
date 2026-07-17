@@ -387,9 +387,18 @@ function nWorkHistoryHtml(rows, total){
     rows.map(function(row){ return nWorkTurnHtml(row.turn,row.idx,total); }).join("")+
     '</div></details>';
 }
+function nWorkContextHtml(cwd, model){
+  var bits=[];
+  if(cwd) bits.push('<span class="work-ctx" title="'+nEscAttr(cwd)+'">'+_I('folder')+nEsc(basename(cwd))+'</span>');
+  if(model) bits.push('<span class="work-ctx" title="'+nEscAttr("Model: "+model)+'">'+_I('sparkles')+nEsc(nShortModel(model))+'</span>');
+  return bits.length?'<span class="work-context">'+bits.join("")+'</span>':"";
+}
 function nativeRenderWork(sid, payload, force){
   var st=nativeWorkStage(sid), work=(payload&&payload.work)||{}, pending=(payload&&payload.pending)||[];
-  var sig=nativeWorkRenderSignature(work, pending);
+  var snap=(payload&&payload.snapshot)||{}, s=nFindRunSession(sid);
+  var cwd=String(snap.cwd||(s&&s.dir)||"");
+  var model=String(snap.model||((nativeStages[sid]||{}).model)||"");
+  var sig=nativeWorkRenderSignature(work, pending)+"|"+cwd+"|"+model;
   if(!force && sig===st.lastSig){ nativeWorkSyncElapsed(st, work); return; }
   var stickTop=force || !st.lastSig || nativeWorkAtTop();
   var openDetails=nativeWorkRememberOpenDetails(st);
@@ -401,7 +410,7 @@ function nativeRenderWork(sid, payload, force){
   if(!totals.tools) turns.forEach(function(t){ totals.tools+=nWorkToolTotal(t); });
   if(!totals.files) turns.forEach(function(t){ totals.files+=nWorkFileTotal(t); });
   var html='<div class="work-board"><div class="work-hero '+nWorkSafeStatus(work.status||"idle")+'">'+
-    '<div><span class="work-kicker">Work View</span><h2>'+nEsc(status)+'</h2><p>过程内容已压缩：运行中显示最近动作和 AI 中途回复，完成后只显示数量概览。</p></div>'+
+    '<div><div class="work-head-row"><span class="work-kicker">Work View</span>'+nWorkContextHtml(cwd, model)+'</div><h2>'+nEsc(status)+'</h2><p>过程内容已压缩：运行中显示最近动作和 AI 中途回复，完成后只显示数量概览。</p></div>'+
     '<div class="work-metrics"><span>'+nEsc(String(work.turn_count||turns.length))+' turns</span><span>'+totals.tools+' actions</span><span>'+totals.files+' files</span>'+(elapsed?'<span class="work-elapsed">'+nEsc(elapsed)+'</span>':'')+'</div>'+
     '<button type="button" class="ghost" data-work-action="refresh">刷新</button></div>'+
     nWorkPendingHtml(pending)+

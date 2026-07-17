@@ -90,6 +90,8 @@ def replay_payload(session, events, pending, model="", after_seq=0, state_fn=Non
     snapshot = {
         "type": "state_snapshot",
         "state": state,
+        "model": model or "",
+        "cwd": str(getattr(session, "cwd", "") or ""),
         "running": bool(session._busy),
         "plan": bool(session.plan_mode),
         "task": bool(session.task_mode),

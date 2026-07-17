@@ -41,6 +41,7 @@ var nativeSlashCommands=[
 var nativeFileSearchTimer=null, nativeFileSearchToken=0;
 var nativeImageAttachments=[];
 var NATIVE_IMAGE_MAX_BYTES=8*1024*1024;
+var nativeInputRaf=0;
 function nSlashMenu(){ return $("slashmenu"); }
 function nCloseSlashMenu(){
   var m=nSlashMenu(); if(m) m.classList.remove("open");
@@ -122,10 +123,10 @@ function nRenderMentionResults(files, token){
   });
   m.classList.add("open");
 }
-function nRenderFileMentionMenu(){
+function nRenderFileMentionMenu(info){
   var s=currentSid?nFindRunSession(currentSid):null;
   if(s && !isCodexBackend(s.backend)){ nCloseSlashMenu(); return false; }
-  var info=nMentionInfo(); if(!info || !currentSid || info.query.length<1){ nCloseSlashMenu(); return false; }
+  info=info||nMentionInfo(); if(!info || !currentSid || info.query.length<1){ nCloseSlashMenu(); return false; }
   var token=++nativeFileSearchToken;
   if(nativeFileSearchTimer){ clearTimeout(nativeFileSearchTimer); }
   nativeFileSearchTimer=setTimeout(function(){
@@ -138,8 +139,22 @@ function nRenderFileMentionMenu(){
   return true;
 }
 function nRenderInputAssist(){
-  if(nRenderSlashMenu()) return;
-  nRenderFileMentionMenu();
+  var inp=$("nativeinput"); if(!inp) return;
+  var value=inp.value||"";
+  if(value.trim().charAt(0)==="/"){ nRenderSlashMenu(); return; }
+  var info=nMentionInfo();
+  if(info && info.query.length>=1){ nRenderFileMentionMenu(info); return; }
+  nCloseSlashMenu();
+}
+function nScheduleInputAssist(inp){
+  if(nativeInputRaf) cancelAnimationFrame(nativeInputRaf);
+  nativeInputRaf=requestAnimationFrame(function(){
+    nativeInputRaf=0;
+    if(!inp) return;
+    inp.style.height="auto";
+    inp.style.height=Math.min(inp.scrollHeight,200)+"px";
+    nRenderInputAssist();
+  });
 }
 function nCurrentCodexSession(){
   var s=currentSid?nFindRunSession(currentSid):null;
@@ -271,7 +286,7 @@ $("nativeinput").addEventListener("keydown", function(e){
     else{ nativeSend(); }
   }
 });
-$("nativeinput").addEventListener("input", function(){ this.style.height="auto"; this.style.height=Math.min(this.scrollHeight,200)+"px"; nRenderInputAssist(); });
+$("nativeinput").addEventListener("input", function(){ nScheduleInputAssist(this); });
 $("nativeinput").addEventListener("paste", function(e){
   var items=(e.clipboardData&&e.clipboardData.items)||[], files=[];
   for(var i=0;i<items.length;i+=1){

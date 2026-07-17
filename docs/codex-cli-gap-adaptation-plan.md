@@ -2,9 +2,16 @@
 
 更新时间：2026-07-17
 项目：`E:\tools\codex-web`
-当前基线：`main`（截至 2026-07-17 Codex MCP status visibility checkpoint）
+当前基线：`main` / `ad8f4bb`（截至 2026-07-17 stale-open browser catch-up checkpoint）
 Codex CLI：`codex-cli 0.142.4`
-协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=30/degraded=9/generic_visible=29；server requests supported=5/degraded=3/generic_visible=2；client requests supported=32/degraded=3/not_integrated=52。
+协议快照：`docs/app-server-protocol-matrix.md` 基于本机 app-server schema，记录 68 个 server notifications、10 个 server requests、87 个 client requests。当前标注为：server notifications supported=31/degraded=8/generic_visible=29；server requests supported=5/degraded=3/generic_visible=2；client requests supported=33/degraded=2/not_integrated=52。
+
+## 0. 本轮复核摘要
+
+- 本轮基于已推送的 `ad8f4bb` 重新校准：`codex --version` 仍为 `codex-cli 0.142.4`，协议矩阵重生成后无代码差异。
+- 结论没有变：Web 路线应继续以 `codex app-server --stdio` 为事实源，不回退到 ttyd/TUI iframe；当前适合做远程、多端、移动端可用的 Codex agent 会话，但还不是完整 CLI 替代品。
+- 当前最核心的适配目标是：多访问源同步不丢事件、不重复、不闪烁；用户能在 Web 中看清当前 Codex 配置、账号状态、工具执行结果和生命周期动作；安全边界在隧道/共享部署下可审计。
+- 下一步不应盲目补控件，而应按“同步稳定与安全兜底 -> CLI 高频可见性/discovery -> 工具/历史/lifecycle 产品化 -> 非会话 CLI 能力单独建模 -> 继续拆热点代码”的顺序推进。
 
 ## 1. 总体判断
 
@@ -47,7 +54,7 @@ Browser / Android WebView
 - 多用户路径已有：web login、per-user state/workspace/Codex home、session ownership、内部 gate auth。
 - Codex replay 已有稳定 `seq/event_id`、`after=<lastSeq>`、前端 live/replay 统一去重、state snapshot 收敛、open-WS catch-up。
 - Codex 启动/turn 配置覆盖 model、approval、sandbox、web search、reasoning effort/summary、service tier、workspace-write extra writable roots。
-- Slash 和 UI 覆盖 `/model`、`/compact`、`/approval`、`/sandbox`、`/search`、`/reasoning`、`/summary`、`/service-tier`、`/add-dir`、`/rename`、`/archive`、`/unarchive`、`/fork`、`/rollback`、`/goal`、`/steer`、`/mcp-status`、`/mcp-resources`、`/mcp-resource`、`/mcp-tool`。
+- Slash 和 UI 覆盖 `/model`、`/compact`、`/approval`、`/sandbox`、`/search`、`/reasoning`、`/summary`、`/service-tier`、`/add-dir`、`/rename`、`/archive`、`/unarchive`、`/fork`、`/rollback`、`/goal`、`/steer`、`/mcp-status`、`/mcp-resources`、`/mcp-resource`、`/mcp-tool`、`/skills`、`/plugins`、`/account-status`、`/exec`、`/exec-stream`。
 - `@` 文件提及走 app-server `fuzzyFileSearch`；图片输入发送为 `localImage`；terminalInteraction 走 `command/exec/write|resize|terminate`。
 - 动态 MCP 只通过 `[codex_dynamic_tools]` allowlist 透传，未映射工具显式失败，不伪造成功。
 
@@ -90,15 +97,15 @@ Browser / Android WebView
 
 - command/file/MCP/dynamic/webSearch 等 item 可见；diff-like 结果有 unified diff card；JSON-shaped result 有结构化 card。
 - sleep/contextCompaction/imageGeneration/imageView 有专用 compact card。
-- MCP 手动调用、status/resource 浏览和 dynamic allowlist passthrough 有真实或 helper 级验证路径。
-- terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器侧已有显式 `/exec <command>` buffered workflow 和 `/exec-stream <command>` streaming/stdin/terminate workflow 第一刀。
+- MCP 手动调用、status/resource 浏览、plugin/skills 只读 inventory、account status 只读卡片和 dynamic allowlist passthrough 有真实或 helper 级验证路径。
+- terminalInteraction 有 Web stdin/resize/terminate 路径、adapter smoke，standalone `command/exec` 已有 buffered/stream stdin/terminate 真实 app-server smoke；浏览器侧已有显式 `/exec <command>` buffered workflow 和 `/exec-stream <command>` streaming/stdin/terminate workflow 第一刀，并已进入双页 browser smoke。
 - `mcpServer/startupStatus/updated` 和 `mcpServer/oauthLogin/completed` 已变成可见 notice；`/mcp-status [full|tools]` 和 `/mcp-resources <server>` 可用 `mcpServerStatus/list` 浏览服务器、auth、tools、resources 和 templates，并同步成 replayable 专用 MCP result card，资源行可直接触发 `/mcp-resource`。
 
 仍缺：
 
-- command execution card 还不如 CLI 清晰：cwd、duration、stdout/stderr 分区、exit code、长输出折叠、失败摘要仍可加强。
-- 多文件/大 diff 缺文件级导航、折叠、定位和 patch summary。
-- terminalInteraction 仍缺真实 Codex 长时间命令、多轮 stdin、断线恢复、移动端输入的完整 E2E。
+- command execution card 已有 cwd、duration、stdout/stderr 分区、exit code 和长输出折叠；仍缺失败聚合摘要、复制/重跑入口、流式状态细节和移动端长输出体验。
+- 多文件/大 diff 已有文件 chip、patch summary、按文件分段和大 diff 折叠；仍缺文件级锚点导航、搜索/定位、与真实工作区文件打开动作的联动。
+- terminalInteraction 与 `/exec-stream` 已有真实 app-server 和浏览器双页路径；仍缺真实 Codex 长时间命令、多轮 stdin 后台恢复、移动端输入的完整 E2E。
 - MCP 已有 status/resource browser、结构化结果卡和资源读取按钮第一刀；仍缺真正的 OAuth/login 闭环、分页/搜索和 richer MCP admin 面板。
 
 ### 3.4 会话生命周期与历史
@@ -139,10 +146,11 @@ Browser / Android WebView
 - Web 自身有 login/logout、多用户隔离、per-user home/workspace、Origin/Referer 检查、hardened verifier。
 - `account/chatgptAuthTokens/refresh`、`attestation/generate` 不再假成功，而是给可见恢复步骤且不泄 token。
 - `plugin/installed`、`plugin/list`、`skills/list` 已通过 `/plugins`、`/plugins available`、`/skills` 提供只读 inventory，并以结构化 replay 卡片同步到多端。
+- `account/read`、`account/rateLimits/read`、`account/usage/read` 已通过 `/account-status` 提供脱敏只读状态；usage/rate-limit 的 auth-required 情况会显示 warning 而不是伪造成功。
 
 仍缺：
 
-- Codex CLI 的 `login/logout`、token refresh、attestation、usage/rate detail 还不是 Web 原生闭环。
+- Codex CLI 的 `login/logout`、token refresh、attestation 仍不是 Web 原生闭环；usage/rate detail 已有只读入口，但 auth 续期、重试和错误解释仍不完整。
 - `doctor`、`update`、`features`、plugin/skills 写入安装、`mcp` 管理、`sandbox`、`exec`、`review`、`apply`、`cloud` 等非会话 CLI 能力仍未产品化。
 - 这些能力不应直接塞进 CodexSession；需要单独的 admin/diagnostic 模块或明确不做。
 
@@ -164,11 +172,11 @@ Browser / Android WebView
 ### P1：CLI parity 用户体验缺口
 
 6. profile/config/account status 可见性仍需继续增强。
-   启动弹窗已有第一版只读 `config/read` 状态行，能展示 model/approval/sandbox/search/reasoning/service tier 和 model/profile 数量；后续还需要完整 layer/profile/account 状态页。
+   启动弹窗已有第一版只读 `config/read`/account/diagnostics 状态行，能展示 model/approval/sandbox/search/reasoning/service tier、model/profile 数量、Codex home 和 workspace roots；后续还需要完整 layer/profile/account 独立状态页。
 7. terminalInteraction 还缺真实复杂命令场景。
-   adapter 层 smoke 已有，但还需要用真实 Codex command exec 验证长命令、多次 stdin、移动端输入和异常断开。
+   adapter 层、standalone command/exec 和 browser `/exec-stream` smoke 已有，但还需要用真实 Codex coding turn 验证长命令、多次 stdin、移动端输入和异常断开。
 8. tool card 仍需继续接近 CLI 的摘要能力。
-   command card 已有 cwd 显示和 exit code/output-line 摘要第一刀；后续还需要 duration、stdout/stderr 分区、文件列表和大输出折叠。
+   command/diff/MCP/account/plugin/skills 卡片已有第一刀；后续重点是失败摘要、重跑/复制动作、文件级跳转、长输出 mobile UX 和真实资源读取闭环。
 9. history/lifecycle 的结果展示仍偏“能用”。
    Fork/Rollback/Compact/Goal 应显示更明确的结果对象和下一步动作。
 10. slash/command discovery 仍粗糙。
@@ -177,19 +185,32 @@ Browser / Android WebView
 ### P2：结构和维护性热点
 
 11. `codex_native.py` 仍是最大后端热点。
-    当前约 690 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history，但 `CodexSession` 仍保留 push 协调和大量兼容 wrapper。
+    当前约 717 行，虽然已拆出 client/config/events/forms/history/replay facade/requests/pending/terminal/turn/notification/state/input/slash/text/thread_history/broadcast/command_exec/mcp/account/inventory，但 `CodexSession` 仍保留大量兼容 wrapper、adapter wiring 和 session core 协调。
 12. replay/timeline 的主链路已收进 facade，但 session 仍保留较多兼容 wrapper。
     下一步应避免新增逻辑回流到 wrapper，可继续把 frontend renderer 或 push/notification 边界拆出，而不是继续扩大 `CodexSession`。
 13. `common.py` 仍是 818 行兼容 facade。
     已拆出多个 `common_*` helper，但 import-time config、常量 re-export 和跨域职责仍集中，未来服务化或测试隔离会受影响。
 14. `web.py` 仍混合 auth、static、proxy、restart/watchdog 和 Origin 检查。
-    475 行可接受，但安全 hardening 继续增加时，建议拆 `web_auth.py`、`web_proxy.py`、`web_lifecycle.py`。
+    当前约 502 行可接受，但安全 hardening 继续增加时，建议拆 `web_auth.py`、`web_proxy.py`、`web_lifecycle.py`。
 15. `manager_user_api.py` 的 POST 分发继续增长。
     当前按 path 大 if/elif 维护；后续状态变更 API 分级、权限、schema 校验增加时，需要 route table 或小 handler 分组。
 16. 前端仍有全局状态和大 renderer。
     `assets/native_events.js` 的 tool-use card 已拆到 `assets/native_tool_cards.js`，tool result/diff/json 渲染已拆到 `assets/native_tool_results.js`，pending approval/Plan/ask/form 事件处理已拆到 `assets/native_pending_cards.js`，terminalInteraction 卡已拆到 `assets/native_terminal_cards.js`，assistant text/thinking/Plan text 渲染已拆到 `assets/native_text_cards.js`，tool body/group helper 已拆到 `assets/native_tool_helpers.js`，sidebar Codex lifecycle actions 已拆到 `assets/app_sidebar_codex_actions.js`，sidebar row/list rendering 已拆到 `assets/app_sidebar_rows.js`；但 replay/socket 协调、push/notification 边界和 backend session core 仍是主要复杂点；新增 card/action/list UI 应继续进入专门 renderer，而不是堆回事件分发函数。
 17. `codex_client.py` 的 single-busy fallback 需要 trace fixture。
     对缺 thread/turn/item id 的通知，fallback 很实用，但多会话并发下必须用真实协议 trace 证明哪些方法允许 fallback，哪些应 buffer/丢弃/报 visible warning。
+
+### P2 结构热度计（2026-07-17）
+
+| 文件/区域 | 当前规模 | 问题判断 | 下一步拆分方式 |
+| --- | ---: | --- | --- |
+| `codex_native.py` | 717 行 | 仍是 Codex session core/wrapper/wiring 聚合点 | 只从仍含实质逻辑的 wrapper 下手，继续拆 backend session core seam，不做行为重写。 |
+| `codex_slash.py` / `codex_requests.py` / `codex_command_exec.py` | 489 / 462 / 392 行 | 已承接高价值 CLI parity，但会继续变重 | 新增 CLI 能力优先进独立 adapter，并补静态/helper smoke，避免回流 `CodexSession`。 |
+| `codex_client.py` | 403 行 | app-server JSON-RPC、路由、unrouted buffer、command exec output 混在一个 client | 先补真实 trace fixture，再决定哪些 fallback 允许保留，哪些需要 visible warning。 |
+| `manager_user_api.py` | 434 行 | 浏览器 API 仍是 path 分发大函数 | route table + 小 handler 分组，便于写入 API 风险分级和 schema 校验。 |
+| `web.py` | 502 行 | 登录、静态、代理、生命周期控制和 Origin 检查同文件 | hardening 继续增加前拆 `web_auth.py`、`web_proxy.py`、`web_lifecycle.py`。 |
+| `common.py` | 818 行 | 兼容 facade 仍有 import-time config 和大量 re-export | 新代码直接依赖 `common_*` helper，逐步减少从 `common.py` 取跨域职责。 |
+| `assets/native_tool_results.js` | 403 行 | 结果卡持续承接 command/diff/MCP/account/plugin 复杂度 | 继续按 result type 拆小 renderer，保留统一入口和 replay event contract。 |
+| `assets/native_actions.js` / `assets/native_replay.js` | 307 / 229 行 | 多端动作、catch-up、delegated action 是体验风险点 | 新 action 必须有 replay/second-client/static contract，避免单端假状态。 |
 
 ## 5. 适配路线图
 
@@ -240,7 +261,7 @@ Browser / Android WebView
 
 任务：
 
-- 做只读 profile/config/account status 面板：展示 `config/read`、model、approval、sandbox、web search、reasoning、service tier、writable roots、Codex home、workspace roots。（第一刀已落地：launch modal 显示只读 `config/read` 高频字段和 model/profile 数量。）
+- 做只读 profile/config/account status 面板：展示 `config/read`、model、approval、sandbox、web search、reasoning、service tier、writable roots、Codex home、workspace roots。（第一刀已落地：launch modal 显示只读 `config/read` 高频字段、model/profile 数量、脱敏 account summary 和 diagnostics；`/account-status` 提供只读 account/usage/rate-limit 卡片。）
 - 增强 slash palette：命令说明、参数模板、错误反馈、历史参数复用。
 - 优化 lifecycle 结果：fork 后一键打开，rollback 显示保留 turn，compact 显示 summary，goal 显示 status/budget/usage。
 
@@ -252,9 +273,9 @@ Browser / Android WebView
 
 任务：
 
-- command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区和大成功输出折叠。）
-- file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠。）
-- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke、standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke、显式 `/exec <command>` buffered 浏览器 workflow，以及 `/exec-stream <command>` streaming/stdin/terminate 浏览器 workflow 第一刀。）
+- command card 分区显示 command、cwd、status、duration、exit code、stdout/stderr、折叠大输出。（第一刀已落地：exit/duration/output lines、stdout/stderr 分区、大成功输出折叠；后续补失败摘要、复制/重跑、长输出移动端体验。）
+- file change/diff card 增加多文件导航、patch 摘要和大 diff 折叠。（已落地：文件 chip 列表、`+N more` 摘要、大 diff 默认折叠、patch summary 和按文件分段折叠；后续补文件级锚点、搜索/定位和打开工作区文件联动。）
+- terminalInteraction 加真实 app-server command exec E2E，覆盖长时间、多 stdin、resize、terminate、断线恢复。（已落地：终端输入卡片修复、resize UI、adapter smoke、standalone `command/exec` buffered/stream stdin/terminate 真实 app-server smoke、显式 `/exec <command>` buffered 浏览器 workflow、`/exec-stream <command>` streaming/stdin/terminate 浏览器 workflow，以及双页 browser smoke；后续补真实 Codex coding turn 和手机后台恢复。）
 - MCP 增加 startup status、resource browser、OAuth/login 降级提示。（第一刀已落地：startup/OAuth notification 可见，`/mcp-status` 与 `/mcp-resources` 调用 `mcpServerStatus/list` 展示 auth/tools/resources/templates，并产生多端 replayable 专用 result card；资源行可直接调用 `/mcp-resource`，真正 OAuth/login 闭环、分页/搜索仍待做。）
 
 验收：用户能从 Web 卡片判断工具做了什么、成功/失败原因和下一步，而不是只能读原始事件。
@@ -285,12 +306,12 @@ Browser / Android WebView
 
 ## 6. 推荐推进顺序
 
-1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar renderers、Codex broadcast/push helper + thread history action facade 已完成，下一步优先拆 notification adapter cleanup 或 backend session core seams 中最容易回归的部分，保持行为不变。
-2. 每一刀都跑完整轻量验证：`py_compile`、所有 helper tests、JS `node --check`、`git diff --check`。
-3. 跑行为 smoke：WS 双客户端、browser 双页、terminalInteraction；如时间允许补一次手机 visual checklist。
-4. 再做 Phase 3 的只读 profile/config/account status 面板，避免继续盲补 CLI 控件。
-5. 然后补 Phase 4 的 command/file card 体验和 terminalInteraction 真实 E2E。
-6. 最后收紧 Phase 5 hardened profile 和 state-changing API 分级。
+1. 继续 Phase 2 剩余结构收口：pending/form renderer、terminalInteraction card、text/thinking renderer、tool helpers、sidebar renderers、Codex broadcast/push helper、thread history action facade、command exec、MCP/account/inventory helper 已完成；下一步优先找 `CodexSession` wrapper 中仍有实质逻辑的 seam，保持行为不变地拆到 backend session core helper。
+2. 并行守住 Phase 0/5 验收：每一刀都跑完整轻量验证；涉及 replay/socket/terminal/MCP 的改动再跑 WS 双客户端、browser 双页、terminalInteraction/MCP smoke。
+3. 补真实手机/长会话 visual checklist：重点看后台/前台切换、滚动位置、pending card、长输出、窄屏输入和 WebSocket 1006/catch-up 日志。
+4. 推进 Phase 3：把 launch modal 的只读诊断升级成独立 profile/config/account status 面板，并增强 slash palette 的参数说明和错误纠正。
+5. 推进 Phase 4：围绕失败摘要、文件级 diff 导航、MCP OAuth/resource 搜索、真实 Codex 长命令 stdin/reconnect 做产品化补齐。
+6. 最后收紧 Phase 5：hardened profile 模板/启动检查、state-changing API runtime guard、workspace/upload/MCP 写边界审计。
 
 ## 7. 不建议做的事
 

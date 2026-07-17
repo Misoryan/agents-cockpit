@@ -879,3 +879,11 @@ Immediate next commit candidate:
 - Extended `tools/codex_browser_smoke.py` to simulate a WebSocket that remains open but stops delivering useful messages by silencing the mirror tab's live message handler.
 - The smoke sends a backend-confirmed `/rename`, verifies the primary tab sees it live, then forces the foreground `/api/nreplay?after=<lastSeq>` catch-up path on the stale-open mirror tab.
 - The mirror must receive the missed rename through catch-up while preserving the previously marked DOM node and prior text, giving rendered-browser evidence for the stale-open case in addition to closed-socket reconnect.
+
+## 70. 2026-07-17 comprehensive CLI-gap recalibration checkpoint
+
+- Recalibrated `docs/codex-cli-gap-adaptation-plan.md` against `main` / `ad8f4bb` after the stale-open browser catch-up checkpoint.
+- Regenerated the app-server protocol matrix with local `codex-cli 0.142.4`; counts are now server notifications supported=31/degraded=8/generic_visible=29, server requests supported=5/degraded=3/generic_visible=2, and client requests supported=33/degraded=2/not_integrated=52.
+- Updated the analysis to reflect the current browser `/exec-stream`, MCP resource card, account-status, plugin/skills inventory, command/diff card, image upload guard, terminal I/O guard, and web lifecycle Origin hardening slices.
+- Added a code-structure heat map covering `codex_native.py`, Codex adapters, `codex_client.py`, manager/web/common entry points, and the remaining frontend renderer/action hotspots.
+- The current adaptation plan stays focused on Web-specific strengths: multi-client replay/catch-up stability, truthful app-server-backed controls, visible tool/account/MCP state, and security hardening before deeper non-session CLI workflows.

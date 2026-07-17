@@ -71,7 +71,7 @@ def main():
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
     codex_native = (ROOT / "codex_native.py").read_text(encoding="utf-8")
-    assert "_REPLAY_MAX_EVENTS = 5000" in codex_native
+    assert "_REPLAY_MAX_EVENTS = 400" in codex_native
     assert "def _repair_full_replay_from_thread(self):" in codex_native
     assert "thread/read" in codex_native and "includeTurns" in codex_native
     assert "self._repair_full_replay_from_thread()" in codex_native

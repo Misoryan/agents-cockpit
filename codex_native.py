@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Codex app-server backed structured sessions for Agents Cockpit.
 
 This adapter keeps the browser-facing event shape close to native.py's Claude
@@ -35,7 +35,7 @@ from common import ws_send, ws_recv, STATE_DIR
 _CLIENT_LOCK = threading.Lock()
 _CLIENTS = {}
 
-_REPLAY_MAX_EVENTS = 5000
+_REPLAY_MAX_EVENTS = 400
 _REPLAY_STREAM_MAX_CHARS = 24000
 
 

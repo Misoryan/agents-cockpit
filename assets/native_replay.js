@@ -204,6 +204,7 @@ function nativeCatchupActiveState(s){
   return !!(s && (s.state==="running" || s.state==="confirm" || s.state==="plan"));
 }
 function nativeMaybeCatchupPoll(s, prevSession, reason){
+  if(typeof nativeViewIsWork==="function" && nativeViewIsWork()) return;
   if(!s || s.sid!==currentSid || !nativeStages[s.sid]) return;
   var st=nativeStages[s.sid];
   if(!nStageHasReplayContent(st) || st.replayActive || st.replayWaiting) return;
@@ -218,6 +219,7 @@ function nativeMaybeCatchupPoll(s, prevSession, reason){
   nativeCatchupPoll(s.sid, reason || (active?"active":(justSettled?"settled":"activity")));
 }
 function nativeCatchupPoll(sid, reason){
+  if(typeof nativeViewIsWork==="function" && nativeViewIsWork()) return;
   if(!sid || currentSid!==sid || !nativeStages[sid]) return;
   var st=nativeStages[sid], ws=nativeWs[sid];
   if(!ws || ws.readyState!==1){

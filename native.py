@@ -119,9 +119,11 @@ class NativeSession:
         self._closed = False
         self.alive = True
         self._busy = False
+        self.current_turn_started_at = None
         self._proc = None            # 当前正在跑的 claude 子进程(interrupt 用;None=没在跑)
         self._interrupted = False    # 用户点了「打断」→ 子进程被 kill,本轮按打断收尾而非完成
         self.last_activity = time.time()
+        self.last_completed_at = None
         self._lock = threading.Lock()   # 保护 events / claude_sid
         # 门控挂起态:tool_use_id -> {event, kind(approve|ask), allow, msg, ans}
         self._pending = {}
@@ -260,9 +262,8 @@ class NativeSession:
                          "name": tool_name, "input": inp,
                          "preview": preview, "danger": danger})
         # 顺手推送到手机:有人没盯着网页时也能收到「需确认」
-        self._push("confirm", ("⚠️ 高危需确认 · " if self._is_dangerous(tool_name, inp) else "⚠️ 需确认 · ")
-                   + os.path.basename(self.cwd),
-                   (preview or tool_name or "") + "\n" + self.cwd)
+        title, body = common.notify_copy("confirm", self.cwd, "Claude", preview or tool_name, danger=danger)
+        self._push("confirm", title, body)
         # pending_approval 不入 self.events(挂起态不 replay,见 replay 决定)
         got = entry["event"].wait(timeout=_GATE_TIMEOUT)
         with self._pending_lock:
@@ -286,8 +287,8 @@ class NativeSession:
             self._pending[tool_use_id] = entry
         self._broadcast({"type": "pending_ask", "tool_use_id": tool_use_id,
                          "question": question, "questions": questions})
-        self._push("confirm", "❓ 待回答 · " + os.path.basename(self.cwd),
-                   (question or "") + "\n" + self.cwd)
+        title, body = common.notify_copy("ask", self.cwd, "Claude", question)
+        self._push("confirm", title, body)
         got = entry["event"].wait(timeout=_GATE_TIMEOUT)
         with self._pending_lock:
             self._pending.pop(tool_use_id, None)
@@ -403,13 +404,15 @@ class NativeSession:
             try: sock.close()
             except OSError: pass
 
-    def replay_payload(self, after_seq=0):
+    def replay_payload(self, after_seq=0, view=None, turn=None):
         with self._lock:
-            events = self._events_after_seq_locked(after_seq)
+            view_name = str(view or "").lower()
+            events = list(self.events) if view_name in ("work", "turn", "work_turn", "chat_turn") else self._events_after_seq_locked(after_seq)
             model = self.model
         pending = self._pending_events_snapshot()
         return native_replay.replay_payload(self, events, pending, model=model,
-                                            after_seq=after_seq, state_fn=self.state)
+                                            after_seq=after_seq, state_fn=self.state,
+                                            view=view, turn=turn)
 
     def _pending_events_snapshot(self):
         with self._pending_lock:
@@ -488,8 +491,11 @@ class NativeSession:
                            "yolo": self.yolo,
                            "user": self.user, "uid": self.uid,
                            "claude_home": self.claude_home,
-                           "allow_tools": sorted(self._allow_tools),
-                           "events": events,
+                            "busy": bool(self._busy),
+                            "current_turn_started_at": self.current_turn_started_at,
+                            "last_completed_at": self.last_completed_at,
+                            "allow_tools": sorted(self._allow_tools),
+                            "events": events,
                            "next_seq": next_seq}, f, ensure_ascii=False)
         except OSError:
             pass
@@ -507,6 +513,9 @@ class NativeSession:
             ns.claude_sid = d.get("claude_sid")
             ns._load_events(d.get("events", []), d.get("next_seq"))
             ns._allow_tools = set(d.get("allow_tools") or [])
+            ns._busy = bool(d.get("busy"))
+            ns.current_turn_started_at = d.get("current_turn_started_at") if ns._busy else None
+            ns.last_completed_at = d.get("last_completed_at") or native_replay.completion_ts_from_events(ns.events)
             return ns
         except (OSError, ValueError):
             return None

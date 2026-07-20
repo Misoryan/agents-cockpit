@@ -6,6 +6,8 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -18,22 +20,29 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 
 
+import java.util.ArrayList;
+
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
     private static final String CHANNEL_ID = "agent_events";
     private static final int REQ_NOTIFY = 41;
+    private static final int REQ_FILE_CHOOSER = 42;
 
     private WebView webView;
     private FrameLayout rootView;
     private String baseUrl;
+    private boolean pageLoaded = false;
+    private ValueCallback<Uri[]> filePathCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,6 +50,7 @@ public class MainActivity extends Activity {
         baseUrl = normalizeBaseUrl(getString(R.string.cockpit_url));
         createNotificationChannel();
         requestNotificationPermission();
+        startKeepAliveService();
 
         Window window = getWindow();
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
@@ -71,7 +81,16 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(rootView);
         configureWebView();
-        loadUrlForIntent(getIntent());
+        if (savedInstanceState != null) {
+            WebBackForwardList restored = webView.restoreState(savedInstanceState);
+            if (restored == null || restored.getSize() == 0) {
+                loadUrlForIntent(getIntent());
+                return;
+            }
+            pageLoaded = true;
+        } else {
+            loadUrlForIntent(getIntent());
+        }
     }
 
     @Override
@@ -92,14 +111,39 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setUserAgentString(settings.getUserAgentString() + " AgentsCockpitAndroid/0.1");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            settings.setOffscreenPreRaster(true);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
 
         webView.addJavascriptInterface(new NotifyBridge(), "AndroidNotify");
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) {
+                    filePathCallback.onReceiveValue(null);
+                }
+                filePathCallback = callback;
+                Intent intent = buildFileChooserIntent(params);
+                try {
+                    startActivityForResult(intent, REQ_FILE_CHOOSER);
+                    return true;
+                } catch (ActivityNotFoundException e) {
+                    filePathCallback = null;
+                    callback.onReceiveValue(null);
+                    return false;
+                }
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                pageLoaded = true;
                 injectStatusBarSpacer();
             }
 
@@ -119,13 +163,102 @@ public class MainActivity extends Activity {
         });
     }
 
+    private Intent buildFileChooserIntent(WebChromeClient.FileChooserParams params) {
+        Intent intent = null;
+        if (params != null) {
+            try {
+                intent = params.createIntent();
+            } catch (Exception ignored) {
+            }
+        }
+        if (intent == null) {
+            intent = new Intent(Intent.ACTION_GET_CONTENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+        }
+        applyAcceptTypes(intent, params);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        boolean allowMultiple = params != null
+                && params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple);
+        return Intent.createChooser(intent, "Select image");
+    }
+
+    private void applyAcceptTypes(Intent intent, WebChromeClient.FileChooserParams params) {
+        ArrayList<String> accepts = new ArrayList<>();
+        if (params != null && params.getAcceptTypes() != null) {
+            for (String accept : params.getAcceptTypes()) {
+                if (accept != null) {
+                    String trimmed = accept.trim();
+                    if (!trimmed.isEmpty() && !accepts.contains(trimmed)) {
+                        accepts.add(trimmed);
+                    }
+                }
+            }
+        }
+        if (accepts.size() == 1) {
+            intent.setType(accepts.get(0));
+        } else if (accepts.size() > 1) {
+            intent.setType("*/*");
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, accepts.toArray(new String[0]));
+        } else if (intent.getType() == null || intent.getType().isEmpty() || "*/*".equals(intent.getType())) {
+            intent.setType("image/*");
+        }
+    }
+
+    private Uri[] collectFileChooserUris(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK) return null;
+        ArrayList<Uri> uris = new ArrayList<>();
+        if (data != null) {
+            ClipData clipData = data.getClipData();
+            if (clipData != null) {
+                for (int i = 0; i < clipData.getItemCount(); i += 1) {
+                    Uri uri = clipData.getItemAt(i).getUri();
+                    if (uri != null && !uris.contains(uri)) uris.add(uri);
+                }
+            }
+            Uri dataUri = data.getData();
+            if (dataUri != null && !uris.contains(dataUri)) uris.add(dataUri);
+        }
+        if (!uris.isEmpty()) return uris.toArray(new Uri[0]);
+        return WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+    }
+
     private void loadUrlForIntent(Intent intent) {
         String sid = intent == null ? "" : intent.getStringExtra("sid");
         String url = baseUrl;
         if (sid != null && !sid.isEmpty()) {
+            if (pageLoaded) {
+                openSessionInPage(sid);
+                return;
+            }
             url += "?open=" + Uri.encode(sid);
+        } else if (pageLoaded && webView != null && webView.getUrl() != null) {
+            return;
         }
         webView.loadUrl(url);
+    }
+
+    private void openSessionInPage(String sid) {
+        if (webView == null || sid == null || sid.isEmpty()) return;
+        String js = "(function(){if(window.openSessionBySid){openSessionBySid("
+                + JSONObject.quote(sid) + ",true);}})();";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            webView.evaluateJavascript(js, null);
+        } else {
+            webView.loadUrl("javascript:" + js);
+        }
+    }
+
+    private void startKeepAliveService() {
+        Intent service = new Intent(this, KeepAliveService.class);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(service);
+            } else {
+                startService(service);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void injectStatusBarSpacer() {
@@ -157,8 +290,8 @@ public class MainActivity extends Activity {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Agent events", NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("Codex / Claude confirmation and completion events");
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Agent 通知", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Codex / Claude 的确认、计划审阅和完成提醒");
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) manager.createNotificationChannel(channel);
     }
@@ -186,14 +319,71 @@ public class MainActivity extends Activity {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
         builder.setSmallIcon(icon)
-                .setContentTitle(title == null || title.isEmpty() ? "Agent event" : title)
+                .setLargeIcon(NotificationLogo.largeIcon(this))
+                .setColor(NotificationLogo.ACCENT_COLOR)
+                .setContentTitle(title == null || title.isEmpty() ? "Agent 通知" : title)
                 .setContentText(body == null ? "" : body)
                 .setStyle(new Notification.BigTextStyle().bigText(body == null ? "" : body))
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .setPriority(priority);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setBadgeIconType(Notification.BADGE_ICON_LARGE);
+        }
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify((sid + kind).hashCode(), builder.build());
+        if (manager != null) {
+            AndroidNoticeStore.mark(this, sid, kind);
+            manager.notify((sid + kind).hashCode(), builder.build());
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        startKeepAliveService();
+        if (webView != null) {
+            webView.onResume();
+            webView.resumeTimers();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            CookieManager.getInstance().flush();
+        }
+        startKeepAliveService();
+        super.onPause();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        if (webView != null) {
+            webView.saveState(outState);
+        }
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQ_FILE_CHOOSER) {
+            ValueCallback<Uri[]> callback = filePathCallback;
+            filePathCallback = null;
+            if (callback != null) {
+                callback.onReceiveValue(collectFileChooserUris(resultCode, data));
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+            filePathCallback = null;
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -212,7 +402,7 @@ public class MainActivity extends Activity {
                 JSONObject json = new JSONObject(payload == null ? "{}" : payload);
                 String kind = json.optString("kind", "event");
                 String sid = json.optString("sid", "");
-                String title = json.optString("title", "Agent event");
+                String title = json.optString("title", "Agent 通知");
                 String body = json.optString("body", "");
                 runOnUiThread(() -> showNotification(kind, sid, title, body));
             } catch (Exception ignored) {
@@ -220,8 +410,3 @@ public class MainActivity extends Activity {
         }
     }
 }
-
-
-
-
-

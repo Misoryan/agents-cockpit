@@ -1,9 +1,9 @@
 "use strict";
-function nAddHumanRow(st, text){
+function nAddHumanRow(st, text, ts){
   text=String(text==null?"":text).trim();
   if(!text) return;
   if(st.lastWasHumanUser && st.lastHumanText===text) return;
-  nAddRow(st,"user",nEsc(text));
+  nAddRow(st,"user",nEsc(text),ts);
   st.lastWasHumanUser=true; st.lastHumanText=text;
 }
 function nImageLabel(img){
@@ -18,7 +18,7 @@ function nImageUrl(sid, img){
   if(img.image_id) return "/api/nimage?sid="+encodeURIComponent(sid)+"&id="+encodeURIComponent(img.image_id);
   return "";
 }
-function nAddHumanContent(st, text, images, sid){
+function nAddHumanContent(st, text, images, sid, ts){
   text=String(text==null?"":text).trim();
   images=images||[];
   var key=text+"|"+images.map(nImageLabel).join(",");
@@ -32,7 +32,7 @@ function nAddHumanContent(st, text, images, sid){
       return '<div class="nimgcard">'+thumb+'<div class="nimgcap">'+nEsc(label)+'</div></div>';
     }).join("")+'</div>';
   }
-  nAddRow(st,"user",html);
+  nAddRow(st,"user",html,ts);
   st.lastWasHumanUser=true; st.lastHumanText=key;
 }
 function nAskQuestions(obj){

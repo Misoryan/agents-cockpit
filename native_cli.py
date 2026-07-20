@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Claude CLI process execution helpers for NativeSession."""
 import json
-import os
 import subprocess
 import threading
 import time
@@ -77,6 +76,7 @@ def dump_failure(session, tag, result_ev, stderr_text):
 def run_cli(session, prompt, is_overloaded_fn, short_err_fn):
     session._busy = True
     session.last_activity = time.time()
+    session.current_turn_started_at = session.last_activity
     success = False
     try:
         result_ev, _ran_clean, stderr_text = session._run_one_round(prompt)
@@ -101,7 +101,11 @@ def run_cli(session, prompt, is_overloaded_fn, short_err_fn):
         traceback.print_exc()
         session._record_and_broadcast({"type": "result", "error": "claude CLI 执行异常,见 manager 日志"})
     finally:
+        finished_at = time.time()
         session._busy = False
+        session.current_turn_started_at = None
+        if not session._closed:
+            session.last_completed_at = finished_at
         session._proc = None
         if session._interrupted and not session._closed:
             session._interrupted = False
@@ -109,7 +113,7 @@ def run_cli(session, prompt, is_overloaded_fn, short_err_fn):
         elif success and not session._closed:
             with session._lock:
                 webhook_body = common.notify_result_text(session.events)
-            session._push("done", "✅ 已完成 · " + os.path.basename(session.cwd),
-                          session.cwd + " · 等待下一条指令",
+            title, body = common.notify_copy("done", session.cwd, "Claude")
+            session._push("done", title, body,
                           webhook_body=webhook_body or (session.cwd + " · 已完成但没有文本结果"))
         session._persist()

@@ -157,6 +157,7 @@ class CodexTurnRunner:
                 session._client().register_turn(session.last_turn_id, session)
             session._persist()
         except Exception as exc:
+            session.last_completed_at = time.time()
             session._busy = False
             session.current_turn_started_at = None
             session._record_and_broadcast({"type": "result", "error": "Codex turn failed: %s" % exc})

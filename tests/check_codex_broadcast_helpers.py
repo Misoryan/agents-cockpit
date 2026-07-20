@@ -88,6 +88,15 @@ def test_transient_skips_replay_and_persist():
     assert len(sent) == 2
 
 
+def test_status_broadcast_does_not_refresh_activity():
+    session = FakeSession()
+    adapter = CodexBroadcastAdapter(session, lambda *_: None, FakeNotify(), time_fn=lambda: 123.5)
+
+    adapter.broadcast({"type": "codex_usage", "usage": {}})
+
+    assert session.last_activity == 0.0
+
+
 def test_send_one_prunes_failed_socket():
     session = FakeSession()
     adapter = CodexBroadcastAdapter(
@@ -119,6 +128,7 @@ def test_push_notify_throttle_and_disabled():
 if __name__ == "__main__":
     test_broadcast_prunes_dead_clients_and_persists()
     test_transient_skips_replay_and_persist()
+    test_status_broadcast_does_not_refresh_activity()
     test_send_one_prunes_failed_socket()
     test_push_notify_throttle_and_disabled()
     print("codex broadcast helper checks passed")

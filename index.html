@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#ffffff">
 <title>Agents Cockpit</title>
+<link rel="icon" href="/assets/agent-cockpit-logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
@@ -21,28 +22,40 @@
 </div>
 
 <div id="mobilebar">
-  <button class="mbbtn" id="menubtn" title="Menu"><i class="ic" data-lucide="menu"></i></button>
+  <button class="mbbtn" id="menubtn" title="Menu" aria-controls="sidebar" aria-expanded="false"><i class="ic" data-lucide="menu"></i></button>
   <div class="mbttl">Agents Cockpit <small id="runcnt"></small></div>
   <div id="sessiontabs" class="tabs-empty" aria-label="Open sessions"></div>
+  <button class="mbbtn sessionquick" id="sessionquick" title="切换已开启会话" aria-label="切换已开启会话" aria-controls="session-switcher" aria-expanded="false">
+    <span class="sq-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+    <span class="sq-count" id="sessionquick-count">0</span>
+  </button>
   <div id="topstatus">
     <span class="topchip" id="nativemodel" title="Model" style="display:none"></span>
     <span class="topchip nyolo" id="nativeyolo" title="Auto approve" style="display:none">Auto</span>
   </div>
-  <button class="mbbtn" id="mbnew" title="New"><i class="ic" data-lucide="plus"></i></button>
+  <button class="mbbtn" id="mbnew" title="New"><i class="ic" data-lucide="plus"></i><span class="mbnew-label">&#26032;&#24314;</span></button>
 </div>
 
 <div id="app">
   <aside id="sidebar">
     <div class="sb-head">
-      <span class="logo"><b>Agent</b> Cockpit</span>
+      <span class="logo"><img class="logo-mark" src="/assets/agent-cockpit-logo.svg" alt="" aria-hidden="true"><span><b>Agent</b> Cockpit</span></span>
       <button class="iconbtn" id="sb-close" title="收起侧边栏"><i class="ic" data-lucide="panel-left-close"></i></button>
     </div>
-    <button class="sb-new" id="newbtn"><i class="ic" data-lucide="square-pen"></i> 新建对话</button>
-    <input class="sb-search" id="sb-search" placeholder="搜索目录 / 对话">
-    <div class="sb-history-filter" aria-label="History filter">
-      <button type="button" id="hist-active" class="active">&#36827;&#34892;&#20013;</button>
-      <button type="button" id="hist-archived">&#24050;&#24402;&#26723;</button>
+    <button class="sb-new" id="newbtn"><i class="ic" data-lucide="square-pen"></i> &#26032;&#24314;&#20219;&#21153;</button>
+    <input class="sb-search" id="sb-search" placeholder="&#25628;&#32034;&#30446;&#24405; / &#20219;&#21153;">
+    <div class="sb-open-section" id="open-section" style="display:none">
+      <div class="sb-section-title" id="open-section-title">&#24050;&#24320;&#21551;</div>
+      <div class="sb-open-list" id="openlist"></div>
     </div>
+    <div class="sb-section-head" id="history-section-head">
+      <div class="sb-section-title" id="history-section-title">&#39033;&#30446;</div>
+      <div class="sb-history-filter" aria-label="&#21382;&#21490;&#35760;&#24405;&#33539;&#22260;">
+        <button type="button" id="hist-active" class="active">&#26368;&#36817;</button>
+        <button type="button" id="hist-archived">&#24402;&#26723;</button>
+      </div>
+    </div>
+    <div class="sb-section-hint" id="history-section-hint"></div>
     <div class="sb-list" id="dirlist"></div>
     <div class="sb-account">
       <div class="who" title="当前登录用户">用户 <b id="account-user">—</b></div>
@@ -57,10 +70,20 @@
   <main id="main">
     <section class="main-view active" id="landing">
       <div class="welcome">
+        <div class="welcome-kicker">Web Workbench</div>
+        <img class="welcome-logo" src="/assets/agent-cockpit-logo.svg" alt="" aria-hidden="true">
         <h1><b>Agent</b> Cockpit</h1>
-        <p>从左侧选一个目录点「＋」立即开始，或点「新建」浏览目录。</p>
+        <p>选择项目目录，开启一个聚焦的 Work 会话。会话状态、审批提醒和用量数据会在这里保持同步。</p>
+        <div class="welcome-actions">
+          <button id="landing-open-sidebar"><i class="ic" data-lucide="folder-open"></i>打开项目侧栏</button>
+          <button class="ghost" id="landing-usage">查看完整用量</button>
+        </div>
         <div id="summary" class="summary"></div>
-        <button class="ghost" id="landing-usage">查看完整用量</button>
+        <div class="welcome-steps" aria-label="快速开始">
+          <span class="welcome-step">1 选目录</span>
+          <span class="welcome-step">2 开任务</span>
+          <span class="welcome-step">3 看进度</span>
+        </div>
         <div class="hint">运行中的会话会在对应目录上显示绿色徽标。</div>
         <div class="author">Made by <b>Misoryan</b></div>
       </div>
@@ -75,268 +98,6 @@
     </section>
 
     <section class="main-view" id="nativestage">
-      <style>
-        #nativestage{flex-direction:column;flex:1 1 auto;min-height:0}
-        .nathead{display:none}
-        .nathead .nt{flex:1;font-weight:600;font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.01em}
-        .nathead .nmodel{flex:0 0 auto;font:11px/1.4 var(--mono);color:var(--muted);background:var(--surface-soft);border:1px solid var(--line);padding:3px 9px;border-radius:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .nathead .nyolo{color:var(--amber);background:var(--amber-soft);border-color:transparent}
-        .nathead .ghost{padding:7px 12px;font-size:12.5px}
-        #nativemsgs{flex:1 1 auto;overflow-y:auto;padding:20px 16px 24px;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box;display:flex;flex-direction:column;gap:14px;contain:layout style paint}
-        #nativemsgs>.nmsg{content-visibility:auto;contain-intrinsic-size:0 180px}
-        #nativemsgs>.nmsg.turn{content-visibility:auto;contain-intrinsic-size:0 520px}
-        #nativemsgs>.nmsg.replay-progress{content-visibility:visible}
-        #scrollbottom{position:absolute;right:calc(50% - 410px + 18px);bottom:calc(96px + env(safe-area-inset-bottom));width:38px;height:38px;display:none;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-strong);background:#fff;color:var(--ink);box-shadow:0 8px 24px rgba(0,0,0,.16);z-index:8;cursor:pointer;padding:0}
-        #scrollbottom.show{display:flex}
-        #scrollbottom:hover{background:var(--surface-hover)}
-        #scrollbottom .ic{width:18px;height:18px;margin:0}
-        @media (max-width:900px){#scrollbottom{right:16px;bottom:calc(96px + env(safe-area-inset-bottom))}}
-        .nmsg{padding:0;word-break:break-word;line-height:1.65;animation:nfade .14s ease}
-        @keyframes nfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-        .nmsg.user{align-self:flex-end;max-width:78%;background:var(--user-bubble);color:var(--ink);border:0;border-radius:var(--radius-lg);padding:10px 14px}
-        .nmsg.assistant{align-self:flex-start;max-width:100%;background:transparent;border:0;padding:2px 0}
-        .nmsg.assistant .ntxt{font:14.5px/1.7 var(--sans);color:var(--ink);white-space:normal;word-break:break-word}
-        .nmsg.assistant .ntxt p{margin:10px 0}
-        .nmsg.assistant .ntxt h1,.nmsg.assistant .ntxt h2,.nmsg.assistant .ntxt h3{margin:16px 0 6px;font-weight:700;line-height:1.3;color:var(--ink)}
-        .nmsg.assistant .ntxt h1{font-size:20px}.nmsg.assistant .ntxt h2{font-size:17px}.nmsg.assistant .ntxt h3{font-size:15px}
-        .nmsg.assistant .ntxt code{background:var(--surface-soft);border:1px solid var(--line);padding:1px 6px;border-radius:5px;font:13px var(--mono);color:var(--ink)}
-        .nmsg.assistant .ntxt pre{background:var(--surface-soft);border:1px solid var(--line);padding:13px;border-radius:var(--radius-sm);overflow:auto;margin:12px 0;font:13px/1.55 var(--mono);white-space:pre}
-        .nmsg.assistant .ntxt pre code{background:none;border:0;padding:0;color:var(--ink);font:inherit}
-        .nmsg.assistant .ntxt pre code.hljs{background:none;border:0;padding:0;color:inherit;display:inline}
-        .nmsg.assistant .ntxt .codebar{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-bottom:0;border-radius:var(--radius-sm) var(--radius-sm) 0 0;padding:5px 10px;margin:12px 0 0;font:11px var(--sans)}
-        .nmsg.assistant .ntxt .codebar .codelang{color:var(--muted);font-weight:600}
-        .nmsg.assistant .ntxt .codebar .codecopy{background:#fff;border:1px solid var(--line-strong);color:var(--ink-2);border-radius:5px;padding:2px 11px;cursor:pointer;font:11px var(--sans)}
-        .nmsg.assistant .ntxt .codebar .codecopy:hover{background:var(--surface-hover)}
-        .nmsg.assistant .ntxt .codebar+pre{margin-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
-        .nmsg.assistant .ntxt ul,.nmsg.assistant .ntxt ol{margin:10px 0;padding-left:24px}
-        .nmsg.assistant .ntxt li{margin:4px 0}
-        .nmsg.assistant .ntxt strong{color:var(--ink);font-weight:700}
-        .nmsg.assistant .ntxt a{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
-        .nmsg.assistant .ntxt blockquote{border-left:3px solid var(--line-strong);margin:10px 0;padding:2px 14px;color:var(--muted)}
-        .nmsg.sys{align-self:center;background:var(--surface-soft);border:1px solid var(--line);color:var(--muted);font-size:12px;border-radius:var(--radius-sm);padding:5px 13px}
-        .nmsg.replay-progress{align-self:center;min-width:min(360px,90%);background:#fff;border:1px solid var(--line-strong);box-shadow:0 10px 28px rgba(0,0,0,.08);color:var(--ink);font-size:12px;border-radius:var(--radius);padding:10px 12px}
-        .nmsg.replay-progress .rp-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:7px;font-weight:650}
-        .nmsg.replay-progress .rp-meta{color:var(--muted);font:11px var(--mono);font-weight:400}
-        .nmsg.replay-progress .rp-bar{height:6px;background:var(--surface-hover);border-radius:999px;overflow:hidden}
-        .nmsg.replay-progress .rp-fill{height:100%;width:0;background:var(--accent);transition:width .12s ease}
-        .nmsg.replay-progress.done{border-color:var(--green);color:var(--green)}
-        .nmsg.replay-progress.waiting .rp-fill{width:42%;background:linear-gradient(90deg,var(--accent),var(--surface-hover),var(--accent));background-size:180% 100%;animation:rpWait 1.1s linear infinite}
-        .nmsg.replay-progress.empty{color:var(--muted)}
-        @keyframes rpWait{from{background-position:0 0}to{background-position:180% 0}}
-        .nmsg.meta{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:6px 11px;font:11px/1.5 var(--mono);color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:0}
-        .nmsg.meta.warn{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
-        .nmsg.meta .msep{color:var(--line-strong);margin:0 6px}
-        .nmsg.meta .merr{color:var(--red)}
-        .nmsg.tool,.nmsg.result,.nmsg.think{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12.5px;padding:11px 13px}
-        .nmsg.tool .tname{color:var(--ink);font-weight:650;font:13px var(--sans)}
-        .nmsg.tool .tcmd{font:13px var(--mono);color:var(--ink);background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:7px 9px;margin:8px 0 0;white-space:pre-wrap;word-break:break-all}
-        .nmsg.tool .tcmeta{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 8px;margin-top:6px;font:11px/1.35 var(--mono);color:var(--muted)}
-        .nmsg.tool .tcmeta b{font-weight:500;color:var(--ink);word-break:break-all}
-        .nmsg.tool .tres{margin-top:8px}
-        .nmsg.tool .tres pre{margin:0}
-        .nmsg.tool.tool-group .tool-group-body{display:flex;flex-direction:column;gap:10px;margin-top:8px}
-        .nmsg.tool.tool-group .tool-entry{border-top:1px solid var(--line);padding-top:10px}
-        .nmsg.tool.tool-group .tool-entry:first-child{border-top:0;padding-top:0}
-        .nmsg.tool.tool-group .tool-entry-idx{color:var(--faint);font:11px var(--mono);margin-bottom:3px}
-        .nmsg.tool .tcdesc{color:var(--muted);font-weight:400;font-size:11px;margin-left:7px;white-space:normal;word-break:break-word}
-        .nmsg.tool details.tres-det,.nmsg.result details.tres-det{margin-top:4px}
-        .nmsg.tool details.tres-det>summary,.nmsg.result details.tres-det>summary{color:var(--muted);font-weight:500;font-size:11px;cursor:pointer}
-        .nmsg.tool details.tres-det>summary:hover,.nmsg.result details.tres-det>summary:hover{color:var(--ink)}
-        .nmsg.tool details.tres-det>pre,.nmsg.result details.tres-det>pre{margin-top:5px}
-        .nmsg.tool .cmd-section,.nmsg.result .cmd-section{margin-top:7px}
-        .nmsg.tool .cmd-section-label,.nmsg.result .cmd-section-label{display:inline-block;margin-bottom:3px;font:10px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
-        .nmsg.tool .cmd-section pre,.nmsg.result .cmd-section pre{margin:0;background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:8px 10px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}
-        .nmsg.tool .cmd-stderr pre,.nmsg.result .cmd-stderr pre{background:var(--red-soft);border-color:rgba(220,38,38,.20);color:var(--red)}
-        .nmsg.tool .diff{font:12px/1.55 var(--mono)}
-        .nmsg.tool .diff-file{color:var(--ink);margin-bottom:5px;font-weight:650}
-        .nmsg.tool .diff-del{background:var(--red-soft);border-left:3px solid var(--red);color:var(--red);padding:6px 9px;margin:0 0 2px;border-radius:4px;white-space:pre-wrap;word-break:break-all}
-        .nmsg.tool .diff-add{background:var(--green-soft);border-left:3px solid var(--green);color:var(--green);padding:6px 9px;margin:0;border-radius:4px;white-space:pre-wrap;word-break:break-all}
-        .nmsg.tool .diff-cnt{color:var(--muted);font-weight:400;font-size:11px}
-        .nmsg.tool .diff-sec{margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
-        .nmsg.tool .diff-sec:first-child{border-top:0;margin-top:0;padding-top:0}
-        .nmsg.tool .diff-idx{display:inline-block;color:var(--ink);font-size:11px;font-weight:650;margin-bottom:3px}
-        .nmsg.result .diff-patch-summary,.nmsg.tool .diff-patch-summary{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0 2px;color:var(--muted);font:11px var(--mono)}
-        .nmsg.result .diff-patch-summary span,.nmsg.tool .diff-patch-summary span{background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:3px 7px}
-        .nmsg.result .diff-file-list,.nmsg.tool .diff-file-list{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0 6px}
-        .nmsg.result .diff-file-chip,.nmsg.tool .diff-file-chip{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#fff;border:1px solid var(--line);border-radius:999px;color:var(--ink);font:11px var(--mono);padding:3px 7px}
-        .nmsg.result .diff-file-chip-stat,.nmsg.tool .diff-file-chip-stat{margin-left:5px;color:var(--muted)}
-        .nmsg.result .diff-file-chip-status,.nmsg.tool .diff-file-chip-status{margin-left:5px;color:var(--blue);text-transform:uppercase;font-size:10px}
-        .nmsg.result .diff-file-more,.nmsg.tool .diff-file-more{color:var(--muted);font:11px var(--mono);padding:3px 2px}
-        .nmsg.result .diff-file-sections,.nmsg.tool .diff-file-sections{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-        .nmsg.result .diff-file-section,.nmsg.tool .diff-file-section{border:1px solid var(--line);border-radius:7px;background:#fff;overflow:hidden}
-        .nmsg.result .diff-file-section>summary,.nmsg.tool .diff-file-section>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:6px 8px;cursor:pointer;color:var(--ink);font:11px var(--mono);background:var(--surface-soft)}
-        .nmsg.result .diff-file-title,.nmsg.tool .diff-file-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .nmsg.result .diff-file-stat,.nmsg.tool .diff-file-stat{color:var(--muted);white-space:nowrap}
-        .nmsg.result .diff-unified,.nmsg.tool .diff-unified{font:12px/1.45 var(--mono);background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:8px 10px;max-height:360px;overflow:auto}
-        .nmsg.result .diff-file-section .diff-unified,.nmsg.tool .diff-file-section .diff-unified{margin:0;border:0;border-top:1px solid var(--line);border-radius:0}
-        .nmsg.result .diff-unified .du-line,.nmsg.tool .diff-unified .du-line{display:block;white-space:pre;min-height:1.45em}
-        .nmsg.result .diff-unified .du-add,.nmsg.tool .diff-unified .du-add{background:var(--green-soft);color:var(--green)}
-        .nmsg.result .diff-unified .du-del,.nmsg.tool .diff-unified .du-del{background:var(--red-soft);color:var(--red)}
-        .nmsg.result .diff-unified .du-hunk,.nmsg.tool .diff-unified .du-hunk{color:var(--purple);font-weight:650}
-        .nmsg.result .diff-unified .du-file,.nmsg.tool .diff-unified .du-file{color:var(--ink);font-weight:650}
-        .nmsg.result .json-preview,.nmsg.tool .json-preview{display:flex;flex-direction:column;gap:4px;margin-top:7px;color:var(--ink);font:12px/1.45 var(--sans)}
-        .nmsg.result .json-preview>div,.nmsg.tool .json-preview>div{background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:6px 8px;white-space:pre-wrap;word-break:break-word}
-        .nmsg.result .json-result,.nmsg.tool .json-result{font:12px/1.45 var(--mono);background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px;max-height:360px;overflow:auto}
-        .nmsg.result .mcp-status-card,.nmsg.result .mcp-resource-card,.nmsg.tool .mcp-status-card,.nmsg.tool .mcp-resource-card{display:flex;flex-direction:column;gap:8px;margin-top:7px}
-        .nmsg.result .mcp-server-card,.nmsg.tool .mcp-server-card{border:1px solid var(--line);border-radius:8px;background:#fff;padding:8px 9px}
-        .nmsg.result .mcp-card-head,.nmsg.tool .mcp-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
-        .nmsg.result .mcp-card-head b,.nmsg.tool .mcp-card-head b{display:block;color:var(--ink);font-weight:700}
-        .nmsg.result .mcp-card-head span,.nmsg.tool .mcp-card-head span{color:var(--muted);font:11px var(--mono)}
-        .nmsg.result .mcp-counts,.nmsg.tool .mcp-counts{display:flex;flex-wrap:wrap;gap:5px}
-        .nmsg.result .mcp-counts span,.nmsg.tool .mcp-counts span{background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:2px 6px;color:var(--muted)}
-        .nmsg.result .mcp-section,.nmsg.tool .mcp-section{margin-top:8px;display:flex;flex-direction:column;gap:5px}
-        .nmsg.result .mcp-section h4,.nmsg.tool .mcp-section h4{margin:0;color:var(--muted);font:11px var(--mono);text-transform:uppercase;letter-spacing:.04em}
-        .nmsg.result .mcp-row,.nmsg.tool .mcp-row{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:7px;background:var(--surface-soft);padding:7px 8px}
-        .nmsg.result .mcp-row.passive,.nmsg.tool .mcp-row.passive{background:#fff}
-        .nmsg.result .mcp-row-main,.nmsg.tool .mcp-row-main{min-width:0;display:flex;flex-direction:column;gap:2px}
-        .nmsg.result .mcp-row-main b,.nmsg.tool .mcp-row-main b{color:var(--ink);font-weight:650}
-        .nmsg.result .mcp-row-main span,.nmsg.tool .mcp-row-main span{color:var(--muted);font:11px var(--mono);word-break:break-all}
-        .nmsg.result .mcp-row-main small,.nmsg.tool .mcp-row-main small{color:var(--muted);font:11px/1.35 var(--sans)}
-        .nmsg.result .mcp-action,.nmsg.tool .mcp-action{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 8px;font:11px var(--sans);font-weight:650;color:var(--ink);cursor:pointer;white-space:nowrap}
-        .nmsg.result .mcp-action:hover,.nmsg.tool .mcp-action:hover{border-color:var(--accent);color:var(--accent)}
-        .nmsg.result .mcp-empty,.nmsg.tool .mcp-empty,.nmsg.result .mcp-more,.nmsg.tool .mcp-more{color:var(--muted);font:11px var(--mono);padding:3px 0}
-        .nmsg.result .mcp-raw>summary,.nmsg.tool .mcp-raw>summary{cursor:pointer;color:var(--muted);font-size:11px;margin-top:4px}
-        .nmsg.tool .special-card{display:flex;flex-direction:column;gap:7px;background:var(--surface-soft);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
-        .nmsg.tool .special-title{font:13px var(--sans);font-weight:700;color:var(--ink)}
-        .nmsg.tool .special-prompt,.nmsg.tool .special-path{white-space:pre-wrap;word-break:break-word;color:var(--ink)}
-        .nmsg.tool .special-kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;font:12px/1.4 var(--sans)}
-        .nmsg.tool .special-kv span{color:var(--muted)} .nmsg.tool .special-kv b{font-weight:600;color:var(--ink);word-break:break-word}
-        .nmsg.tool .tool-arg-preview{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 10px;font:12px/1.4 var(--sans);background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 8px}
-        .nmsg.tool .tool-arg-preview span{color:var(--muted)} .nmsg.tool .tool-arg-preview b{font-weight:600;color:var(--ink);word-break:break-word}
-        .nmsg.tool .tool-args>summary{cursor:pointer;color:var(--muted);font-size:11px}.nmsg.tool .tool-args pre{margin:5px 0 0;max-height:220px;overflow:auto}
-        .nmsg.tool .web-card{font:12px/1.5 var(--mono)}
-        .nmsg.tool .web-url{color:var(--ink);word-break:break-all;text-decoration:underline}
-        .nmsg.tool .web-q{color:var(--muted);margin-top:4px;font-family:var(--sans)}
-        .nmsg.tool .glob-card{font:12px/1.5 var(--mono);color:var(--ink);word-break:break-all}
-        .nmsg.tool .todo,.nmsg.form .todo{margin:3px 0;display:flex;flex-direction:column;gap:3px}
-        .nmsg.tool .todo-item,.nmsg.form .todo-item{display:flex;align-items:flex-start;gap:8px;font:13px/1.45 var(--sans);padding:2px 0}
-        .nmsg.tool .todo-item .todo-ic,.nmsg.form .todo-item .todo-ic{flex:0 0 auto;width:15px;text-align:center}
-        .nmsg.tool .todo-item.pending,.nmsg.form .todo-item.pending{color:var(--muted)}
-        .nmsg.tool .todo-item.in_progress,.nmsg.form .todo-item.in_progress{color:var(--ink)}
-        .nmsg.tool .todo-item.in_progress .todo-ic,.nmsg.form .todo-item.in_progress .todo-ic{color:var(--purple);font-weight:700}
-        .nmsg.tool .todo-item.completed,.nmsg.form .todo-item.completed{color:var(--green);text-decoration:line-through;opacity:.65}
-        .nmsg.thinking-ind{display:flex;align-items:center;gap:9px;color:var(--muted);font-style:italic;padding:6px 0;font-size:13px}
-        .ti-dot{width:7px;height:7px;border-radius:50%;background:var(--purple);animation:pulse 1.4s infinite}
-        .nmsg.ask{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 13px}
-        .nmsg.ask .aq{padding:2px 0 8px;color:var(--ink);font-size:13px}
-        .nmsg.ask .ainp{width:100%;background:#fff;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);padding:8px 10px;font:13px var(--sans);resize:vertical}
-        .nmsg.ask .ainp:focus{outline:0;border-color:var(--faint)}
-        .nmsg.ask .abtns{margin-top:8px}
-        .nmsg.ask .asend{padding:7px 18px}
-        .nmsg.ask .qitem{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
-        .nmsg.ask .qitem:first-child{border-top:0;padding-top:0;margin-top:0}
-        .nmsg.ask .qhead{font:700 11px/1.2 var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
-        .nmsg.ask .qopts{display:flex;flex-direction:column;gap:6px;margin:8px 0}
-        .nmsg.ask .qopt{display:block;width:100%;text-align:left;background:#fff;color:var(--ink);border:1px solid var(--line-strong);border-radius:var(--radius-sm);padding:9px 11px;cursor:pointer;font:13px var(--sans)}
-        .nmsg.ask .qopt:hover{background:var(--surface-hover)}
-        .nmsg.ask .qopt.selected{background:var(--surface-hover);border-color:var(--ink);box-shadow:0 0 0 1px var(--ink) inset}
-        .nmsg.ask .qlabel{display:block;font-weight:700}
-        .nmsg.ask .qdesc{display:block;color:var(--muted);font-size:12px;line-height:1.4;margin-top:3px}
-        .nmsg.ask .qfree{margin-top:7px}
-        .nmsg.terminal{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12.5px;padding:11px 13px}
-        .nmsg.terminal .terminal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
-        .nmsg.terminal .terminal-title{color:var(--ink);font-weight:700;font-size:13px}
-        .nmsg.terminal .terminal-pid{color:var(--muted);font:11px var(--mono);word-break:break-all}
-        .nmsg.terminal .terminal-prompt{margin:0 0 8px;background:var(--surface-soft);border:1px solid var(--line);border-radius:6px;padding:7px 9px;white-space:pre-wrap;word-break:break-word}
-        .nmsg.terminal .terminal-input{width:100%;background:#fff;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);padding:8px 10px;font:13px var(--mono);resize:vertical}
-        .nmsg.terminal .terminal-input:focus{outline:0;border-color:var(--faint)}
-        .nmsg.terminal .terminal-size{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font:11px var(--mono)}
-        .nmsg.terminal .terminal-size input{width:70px;border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;font:12px var(--mono);color:var(--ink)}
-        .nmsg.terminal .terminal-actions{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
-        .nmsg.terminal button{padding:7px 13px;border-radius:6px;border:1px solid var(--line-strong);cursor:pointer;background:#fff;font:600 12px/1 var(--sans)}
-        .nmsg.terminal .tsend{background:var(--ink);color:white;border-color:var(--ink)}
-        .nmsg.terminal .tkill{color:var(--red);border-color:rgba(220,38,38,.28)}
-        .nmsg.terminal .terminal-status{min-height:16px;margin-top:7px;color:var(--muted);font:11px var(--mono)}
-        .nmsg.terminal .terminal-status.error{color:var(--red)}
-        .nmsg.form{align-self:flex-start;max-width:94%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 13px}
-        .nmsg.form .fhead{font:700 13px/1.3 var(--sans);color:var(--ink);margin-bottom:5px}
-        .nmsg.form .fmsg{font-size:13px;color:var(--ink);margin-bottom:9px;line-height:1.55}
-        .nmsg.form .fmeta{font:11px/1.4 var(--mono);color:var(--muted);margin-bottom:9px}
-        .nmsg.form .fitem{border-top:1px solid var(--line);padding-top:9px;margin-top:9px}
-        .nmsg.form .fitem:first-child{border-top:0;padding-top:0;margin-top:0}
-        .nmsg.form label{display:block;font-size:12px;font-weight:700;color:var(--ink);margin-bottom:5px}
-        .nmsg.form label .req{color:var(--amber)}
-        .nmsg.form .fdesc{font-size:11px;color:var(--muted);margin:0 0 6px}
-        .nmsg.form input,.nmsg.form textarea,.nmsg.form select{width:100%;background:#fff;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink);padding:8px 10px;font:13px var(--sans)}
-        .nmsg.form input:focus,.nmsg.form textarea:focus,.nmsg.form select:focus{outline:0;border-color:var(--faint)}
-        .nmsg.form textarea{resize:vertical}
-        .nmsg.form .fcheck{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:13px}
-        .nmsg.form .fcheck input{width:auto}
-        .nmsg.form .fopts{display:flex;flex-direction:column;gap:6px}
-        .nmsg.form .ferr{color:var(--red);font-size:12px;margin-top:7px}
-        .nmsg.form .abtns{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
-        .nmsg.form .allow{background:var(--accent);color:#fff;border-color:var(--accent)}
-        .nmsg.form .deny{background:#fff;color:var(--red);border-color:var(--line-strong)}
-        .nmsg.form .deny:hover{background:var(--red-soft);border-color:var(--red)}
-        .nmsg.turn{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--line);border-radius:var(--radius-lg);padding:13px;display:flex;flex-direction:column;gap:10px}
-        .nmsg.turn.done{border-color:var(--green)}
-        .nmsg.turn>.nmsg{align-self:stretch;max-width:none;border:0;background:none;padding:0;border-radius:0}
-        .nmsg.turn>.nmsg.tool,.nmsg.turn>.nmsg.think,.nmsg.turn>.nmsg.result{background:var(--surface-soft);border:1px solid var(--line);padding:9px 11px;border-radius:var(--radius-sm)}
-        .nmsg.turn>details{background:var(--surface-soft);border:1px solid var(--line);padding:9px 11px;border-radius:var(--radius-sm);font-size:12px}
-        .nmsg.turn>details pre{margin:6px 0 0;max-height:240px}
-        .nmsg details summary{cursor:pointer;color:var(--ink);font-weight:600}
-        .nmsg details summary:hover{color:var(--ink)}
-        .nmsg pre{margin:6px 0 0;background:var(--surface-soft);border:1px solid var(--line);padding:9px;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.45 var(--mono);color:var(--ink);white-space:pre-wrap}
-        .nmsg.approval{align-self:flex-start;max-width:92%;background:#fff;border:1px solid var(--amber);border-radius:var(--radius-sm);padding:11px 13px}
-        .nmsg.approval.danger{border-color:var(--red)}
-        .nmsg.approval .abtns{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
-        .nmsg.approval button{padding:7px 15px;border-radius:6px;border:1px solid var(--line-strong);cursor:pointer;font-weight:600;font-size:13px}
-        .nmsg.approval .allow{background:var(--accent);color:#fff;border-color:var(--accent)}
-        .nmsg.approval .allow:hover{background:var(--accent-hover)}
-        .nmsg.approval .always{background:#fff;color:var(--ink-2);border-color:var(--line-strong)}
-        .nmsg.approval .always:hover{background:var(--surface-hover)}
-        .nmsg.approval .deny{background:#fff;color:var(--red);border-color:var(--line-strong)}
-        .nmsg.approval .deny:hover{background:var(--red-soft);border-color:var(--red)}
-        #nativetasks{max-width:820px;width:100%;margin:0 auto;box-sizing:border-box;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:9px 13px}
-        #nativetasks .nt-head{display:flex;align-items:center;gap:10px;font:600 13px/1 var(--sans);color:var(--ink)}
-        #nativetasks .nt-toggle{cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;min-width:0}
-        #nativetasks .nt-bar{flex:1;max-width:180px;height:6px;background:var(--surface-hover);border-radius:3px;overflow:hidden}
-        #nativetasks .nt-fill{height:100%;background:var(--accent);width:0;transition:width .3s}
-        #nativetasks .nt-cnt{font:11px/1 var(--mono);color:var(--muted);flex:0 0 auto}
-        #nativetasks .nt-list{margin-top:9px;display:flex;flex-direction:column;gap:4px}
-        #nativetasks .nt-item{display:flex;gap:8px;font:13px/1.45 var(--sans)}
-        #nativetasks .nt-item .todo-ic{flex:0 0 auto;width:15px;text-align:center}
-        #nativetasks .nt-item.pending{color:var(--muted)}
-        #nativetasks .nt-item.in_progress{color:var(--ink)}
-        #nativetasks .nt-item.in_progress .todo-ic{color:var(--purple);font-weight:700}
-        #nativetasks .nt-item.completed{color:var(--green);text-decoration:line-through;opacity:.65}
-        #nativetasks.done{border-color:var(--green);background:var(--green-soft)}
-        .nmsg.plan{align-self:flex-start;max-width:94%;background:#fff;border:1px solid var(--purple);border-radius:var(--radius-lg);padding:14px}
-        .nmsg.plan .plan-head{font:600 13px/1 var(--sans);color:var(--purple);margin-bottom:9px;display:flex;align-items:center;gap:8px}
-        .nmsg.plan .plan-body{font:13.5px/1.65 var(--sans);color:var(--ink)}
-        .nmsg.plan .plan-body p{margin:7px 0}
-        .nmsg.plan .plan-body pre{margin:7px 0;background:var(--surface-soft);border:1px solid var(--line);padding:9px;border-radius:6px;overflow:auto;font:12px/1.5 var(--mono);color:var(--ink)}
-        .nmsg.plan .plan-body code{font:12px var(--mono)}
-        .nmsg.plan .plan-body ul,.nmsg.plan .plan-body ol{margin:7px 0;padding-left:22px}
-        .nmsg.plan .abtns{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
-        .nmsg.plan .abtns button{padding:8px 17px;border-radius:6px;border:1px solid var(--line-strong);cursor:pointer;font:600 13px/1 var(--sans)}
-        .nmsg.plan .allow{background:var(--accent);color:#fff;border-color:var(--accent)}
-        .nmsg.plan .allow:hover{background:var(--accent-hover)}
-        .nmsg.plan .deny{background:#fff;color:var(--ink-2);border-color:var(--line-strong)}
-        .nmsg.plan .deny:hover{background:var(--surface-hover)}
-        #nativesend{padding:8px 14px calc(14px + env(safe-area-inset-bottom));background:var(--canvas);border-top:1px solid var(--line)}
-        #nativesend .nwrap{position:relative;max-width:820px;width:100%;margin:0 auto;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius-lg);padding:4px 6px 6px 10px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.05);transition:border-color .12s,box-shadow .12s}
-        #nativesend .nwrap:focus-within{border-color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.09)}
-        #nativesend .ns-tools{display:flex;align-items:center;gap:6px;padding-top:2px}
-        #nativesend .ns-spacer{flex:1}
-        #nativesend .nmode{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;font:12px/1.4 var(--sans);background:#fff;color:var(--muted);border:1px solid var(--line-strong);border-radius:14px;cursor:pointer}
-        #nativesend .nmode:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--ink-2)}
-        #nativesend .nmode.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-        #nativesend .nmode .ic{width:13px;height:13px;margin-right:0}
-        #nativeinput{width:100%;resize:none;min-height:46px;max-height:200px;padding:10px 4px;background:transparent;border:0;color:var(--ink);font:14.5px/1.5 var(--sans);overflow:hidden}
-        #nativeinput:focus{outline:0}
-        #nativeinput::placeholder{color:var(--faint)}
-        #slashmenu{position:absolute;left:0;right:0;bottom:calc(100% + 10px);display:none;flex-direction:column;gap:4px;background:#fff;border:1px solid var(--line-strong);border-radius:var(--radius);box-shadow:0 18px 50px rgba(0,0,0,.14);padding:7px;z-index:80;max-height:min(420px,calc(100dvh - 190px));overflow-y:auto}
-        #slashmenu.open{display:flex}
-        #slashmenu .slashitem{display:flex;gap:9px;align-items:flex-start;text-align:left;background:#fff;color:var(--ink);border:1px solid transparent;border-radius:7px;padding:8px 9px;cursor:pointer}
-        #slashmenu .slashitem:hover,#slashmenu .slashitem.active{background:var(--surface-hover);border-color:var(--line)}
-        #slashmenu .slashcmd{font:12.5px var(--mono);font-weight:700;color:var(--ink);min-width:118px}
-        #slashmenu .slashdesc{font:12px/1.35 var(--sans);color:var(--muted)}
-        #nativesubmit{flex:0 0 auto;width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:50%;cursor:pointer}
-        #nativesubmit:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
-        #nativesubmit:disabled{opacity:.4;cursor:default}
-        #nativesubmit .ic{width:17px;height:17px;margin-right:0}
-      </style>
       <div class="nathead">
         <button class="ghost" id="nativeback"><i class="ic" data-lucide="arrow-left"></i> 返回</button>
         <span class="nt" id="nativettl">原生会话</span>
@@ -348,11 +109,9 @@
         <div class="nwrap">
           <div id="slashmenu" role="listbox" aria-label="Codex &#25351;&#20196;&#21015;&#34920;"></div>
           <div id="nattachpreview" class="nattach-preview" aria-live="polite"></div>
-          <textarea id="nativeinput" placeholder="给 agent 发消息…  Enter 发送 · Shift+Enter 换行" rows="1"></textarea>
+          <textarea id="nativeinput" placeholder="描述任务，或输入 / 命令" rows="1"></textarea>
           <div class="ns-tools">
             <button type="button" class="nmode" id="nmode-plan" aria-pressed="false" title="开启后 agent 先只读调研并出计划,你批准后再执行(安全)"><i class="ic" data-lucide="clipboard-list"></i>计划</button>
-            <button type="button" class="nmode" id="nmode-task" aria-pressed="false" title="开启后 agent 用任务清单跟踪多步骤工作并实时显示进度"><i class="ic" data-lucide="list-checks"></i>任务</button>
-            <button type="button" class="nmode" id="nativeslashhelp" title="&#25171;&#24320; Codex &#25351;&#20196;&#21015;&#34920;"><i class="ic" data-lucide="terminal"></i>&#25351;&#20196;</button>
             <button type="button" class="nmode" id="nativeattach" title="&#19978;&#20256;&#22270;&#29255;&#32473; Codex"><i class="ic" data-lucide="image-plus"></i>&#22270;&#29255;</button>
             <input type="file" id="nativeimagefile" accept="image/*" multiple style="display:none">
             <span class="ns-spacer"></span>
@@ -365,6 +124,21 @@
 </div>
 
 <div id="shade"></div>
+<div id="session-switcher" class="session-switcher" aria-hidden="true">
+  <button type="button" class="session-switcher-scrim" id="session-switcher-scrim" aria-label="关闭会话切换"></button>
+  <section class="session-switcher-panel" role="dialog" aria-modal="true" aria-labelledby="session-switcher-title">
+    <div class="session-switcher-grabber" aria-hidden="true"></div>
+    <div class="session-switcher-head">
+      <div>
+        <div class="session-switcher-kicker">Open Sessions</div>
+        <h2 id="session-switcher-title">已开启会话</h2>
+        <p>直接切换，不需要展开项目文件夹。</p>
+      </div>
+      <button type="button" class="ghost session-switcher-close" id="session-switcher-close">关闭</button>
+    </div>
+    <div class="session-switcher-list" id="session-switcher-list"></div>
+  </section>
+</div>
 <div id="sbreopen"><i class="ic" data-lucide="chevron-right"></i></div>
 <div id="noticearea" aria-live="polite"></div>
 
@@ -468,6 +242,7 @@
 <script src="/assets/native_text_cards.js"></script>
 <script src="/assets/native_tool_results.js"></script>
 <script src="/assets/native_replay.js"></script>
+<script src="/assets/native_work.js"></script>
 <script src="/assets/native_forms.js"></script>
 <script src="/assets/native_pending_cards.js"></script>
 <script src="/assets/native_tool_cards.js"></script>

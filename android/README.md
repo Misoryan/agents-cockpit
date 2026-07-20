@@ -2,6 +2,8 @@
 
 This folder contains a small native Android wrapper for Agents Cockpit. The WebView loads the existing `web.py` UI, and `index.html` calls the `AndroidNotify` JavaScript bridge whenever a session enters `confirm`, `plan`, or `done` state.
 
+The wrapper also starts a foreground keep-alive service. It keeps the process warm, saves/restores WebView state, and polls `/api/sessions` with the WebView login cookie so confirmation / plan / done notifications can still arrive when Android freezes the page in the background.
+
 ## Configure
 
 Edit `app/src/main/res/values/strings.xml`:
@@ -37,5 +39,6 @@ E:\tools\codex-web\.local\android-sdk
 ## Notes
 
 - Android 13+ asks for notification permission on first launch.
+- Android will show an ongoing "Agents Cockpit 保持连接" notification while background keep-alive is active. Disable battery optimization for the app if your ROM still kills foreground services aggressively.
 - Cleartext HTTP is enabled for LAN testing. Prefer HTTPS or a trusted tunnel if exposing the cockpit outside your LAN.
-- Because this is a WebView shell, notifications are emitted by the loaded page. If Android kills or freezes the WebView in the background, notification delivery can be delayed; a future fully native background WebSocket service would be more reliable.
+- Because this is still a WebView shell, Android may reclaim it under extreme memory pressure. The foreground service prevents the common "background for a while then refresh and lose page-emitted notifications" case; a future native WebSocket client could make this fully independent of WebView lifecycle.

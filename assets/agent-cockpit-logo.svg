@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Agents Cockpit logo</title>
+  <desc id="desc">A rounded command cockpit mark with orbiting agent panels.</desc>
+  <defs>
+    <linearGradient id="shell" x1="14" y1="8" x2="82" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0A84FF"/>
+      <stop offset=".52" stop-color="#32D74B"/>
+      <stop offset="1" stop-color="#1D1D1F"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="28" y1="18" x2="70" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity=".68"/>
+    </linearGradient>
+    <filter id="shadow" x="-12" y="-8" width="120" height="120" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0A3A5F" flood-opacity=".22"/>
+    </filter>
+  </defs>
+  <rect x="8" y="8" width="80" height="80" rx="24" fill="url(#shell)" filter="url(#shadow)"/>
+  <path d="M22 61c4-24 18-38 42-42 7-1 12 4 11 11-4 24-18 38-42 42-7 1-12-4-11-11Z" fill="#fff" opacity=".16"/>
+  <path d="M24 52c6-14 15-23 29-29 9-4 18 5 14 14-6 14-15 23-29 29-9 4-18-5-14-14Z" fill="none" stroke="#fff" stroke-opacity=".48" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M30 64V35c0-5 4-9 9-9h21c5 0 9 4 9 9v26c0 5-4 9-9 9H41l-11 9V64Z" fill="url(#glass)"/>
+  <path d="M40 43h18M40 53h12" fill="none" stroke="#1D1D1F" stroke-opacity=".72" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="64" cy="28" r="7" fill="#FFFFFF"/>
+  <circle cx="64" cy="28" r="3" fill="#0A84FF"/>
+  <circle cx="29" cy="65" r="5" fill="#32D74B"/>
+</svg>

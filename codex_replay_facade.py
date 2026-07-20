@@ -141,5 +141,5 @@ class CodexReplayFacade:
     def events_after_seq(self, after_seq=0):
         return codex_replay.events_after_seq(self.session, after_seq)
 
-    def replay_payload(self, after_seq=0):
-        return codex_replay.replay_payload(self.session, after_seq)
+    def replay_payload(self, after_seq=0, view=None, turn=None):
+        return codex_replay.replay_payload(self.session, after_seq, view=view, turn=turn)

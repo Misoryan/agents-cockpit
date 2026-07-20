@@ -35,14 +35,20 @@ def main():
         assert _seqs(inc["events"]) == [2]
         assert inc["last_seq"] == 2
 
+        ns._busy = True
+        ns.current_turn_started_at = 456.25
         ns._persist()
         saved = json.loads(Path(td, "native_s-replay.json").read_text(encoding="utf-8"))
         assert saved["next_seq"] == 3
         assert _seqs(saved["events"]) == [1, 2]
+        assert saved["busy"] is True
+        assert saved["current_turn_started_at"] == 456.25
 
         recovered = NativeSession.recover("s-replay", ".", user="alice", state_dir=td)
         assert recovered is not None
         assert _seqs(recovered.replay_payload()["events"]) == [1, 2]
+        assert recovered._busy is True
+        assert recovered.current_turn_started_at == 456.25
         third = recovered._record_event({"type": "result", "subtype": "success"})
         assert third["seq"] == 3
         assert third["event_id"] == "s-replay:3"

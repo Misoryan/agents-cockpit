@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Codex app-server request, approval, ask, and form helpers."""
-import os
 import threading
 import time
 
@@ -8,6 +7,7 @@ import codex_events
 import codex_forms
 import codex_pending
 import codex_text
+import common_notify
 
 
 DYNAMIC_TOOL_REJECTION = (
@@ -170,7 +170,8 @@ def await_approval(session, req_id, method, params, name, preview, timeout=600):
         "preview": preview,
         "danger": danger,
     })
-    session._push("confirm", "Codex needs confirmation - " + os.path.basename(session.cwd), str(preview or name))
+    title, body = common_notify.notify_copy("confirm", session.cwd, "Codex", preview or name, danger=danger)
+    session._push("confirm", title, body)
     entry["event"].wait(timeout=timeout)
     with session._pending_lock:
         session._pending.pop(req_id, None)
@@ -211,7 +212,8 @@ def await_user_input(session, req_id, method, params, timeout=600):
     if params.get("autoResolutionMs") is not None:
         event["auto_resolution_ms"] = params.get("autoResolutionMs")
     session._broadcast(event)
-    session._push("confirm", "Codex waits for input - " + os.path.basename(session.cwd), question_text)
+    title, body = common_notify.notify_copy("ask", session.cwd, "Codex", question_text)
+    session._push("confirm", title, body)
     wait_timeout = timeout
     try:
         if params.get("autoResolutionMs"):
@@ -252,7 +254,8 @@ def await_form_input(session, req_id, method, params, timeout=600):
         "fields": fields,
         "schema_detail": schema_detail,
     })
-    session._push("confirm", "Codex waits for form input - " + os.path.basename(session.cwd), message)
+    title, body = common_notify.notify_copy("form", session.cwd, "Codex", message)
+    session._push("confirm", title, body)
     entry["event"].wait(timeout=timeout)
     with session._pending_lock:
         session._pending.pop(req_id, None)

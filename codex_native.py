@@ -197,6 +197,7 @@ class CodexSession:
         self.thread_id = None
         self.last_turn_id = None
         self.current_turn_started_at = None
+        self.last_completed_at = None
         self.model = ""
         self.model_provider = ""
         self.service_tier = ""
@@ -700,10 +701,10 @@ class CodexSession:
             self._persist()
         return True
 
-    def replay_payload(self, after_seq=0):
+    def replay_payload(self, after_seq=0, view=None, turn=None):
         if not after_seq:
             self._repair_full_replay_from_thread()
-        return self._replay.replay_payload(after_seq)
+        return self._replay.replay_payload(after_seq, view=view, turn=turn)
 
     def add_client(self, sock, after_seq=0):
         if not after_seq:

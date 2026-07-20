@@ -3,6 +3,8 @@
 import json
 import os
 
+import codex_replay
+
 
 class CodexSessionState:
     def __init__(self, session, replay_max_events):
@@ -26,6 +28,10 @@ class CodexSessionState:
             "model": session.model,
             "model_provider": session.model_provider,
             "service_tier": session.service_tier,
+            "busy": bool(session._busy),
+            "current_turn_started_at": session.current_turn_started_at,
+            "last_completed_at": getattr(session, "last_completed_at", None),
+            "awaiting_plan_decision": bool(getattr(session, "_awaiting_plan_decision", False)),
             "events": session.events[-50:],
             "timeline": session.timeline[-self.replay_max_events:],
             "next_seq": session._next_seq,
@@ -48,8 +54,14 @@ class CodexSessionState:
         session.model = data.get("model") or ""
         session.model_provider = data.get("model_provider") or ""
         session.service_tier = data.get("service_tier") or ""
+        session._busy = bool(data.get("busy"))
+        session.current_turn_started_at = data.get("current_turn_started_at") if session._busy else None
+        session.last_completed_at = data.get("last_completed_at")
+        session._awaiting_plan_decision = bool(data.get("awaiting_plan_decision"))
         session.events = drop_noise_fn(data.get("events") or [])
         session.timeline = drop_noise_fn(data.get("timeline") or list(session.events))
+        if not session.last_completed_at:
+            session.last_completed_at = codex_replay.completion_ts_from_events(session.timeline or session.events)
         try:
             seqs = [int(event.get("seq") or 0) for event in session.timeline]
             seqs.append(int(data.get("next_seq") or 1) - 1)

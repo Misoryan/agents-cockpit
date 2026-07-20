@@ -74,6 +74,8 @@ def main():
         {"seq": 3, "text": " world"},
     ]
     inc_stream = codex_replay.events_after_seq(session, 2)
+    assert len(inc_stream) == 1
+    assert inc_stream[0].pop("ts") > 0
     assert inc_stream == [{
         "type": "stream_event",
         "event": {"delta": {"type": "text_delta", "text": " world"}},
@@ -103,6 +105,19 @@ def main():
     assert len(other.events) == 2
     assert other.events[0]["seq"] == 1
     assert other._next_seq == 3
+
+    # 回归:mid-turn repair 重排历史不得回退 _next_seq(否则 result 拿低 seq,前端 catchup 漏收)
+    midturn = FakeSession()
+    midturn._next_seq = 94  # 流式事件已消耗到 seq 93
+    midturn.timeline = [{"type": "assistant", "seq": 50, "event_id": "x"}]
+    codex_replay.adopt_history_replay(midturn, [{"type": "assistant"}, {"type": "result"}], 10)
+    assert midturn._next_seq >= 94, midturn._next_seq
+    # 带 seq 重录(repair 回灌 local_tail)必须推进高水位
+    codex_replay.record_timeline(midturn, {"type": "assistant", "seq": 93, "event_id": "y"}, 10, 100)
+    assert midturn._next_seq >= 94
+    fresh = codex_replay.record_timeline(midturn, {"type": "result"}, 10, 100)
+    assert fresh["seq"] >= 94, fresh["seq"]
+    assert codex_replay.event_after_seq(fresh, 93)
 
     assert codex_replay.event_after_seq({"seq": 2}, 1)
     assert codex_replay.event_after_seq({"seq": 1, "merged_seq": 3}, 2)
@@ -141,6 +156,130 @@ def main():
     assert payload["events"] == [{"seq": 99, "type": "assistant"}]
     assert payload["pending"] == pending
     assert payload["last_seq"] == payload["snapshot"]["last_seq"]
+
+    work_session = FakeSession()
+    codex_replay.record_timeline(work_session, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "fix it"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(work_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "cmd-1", "name": "PowerShell",
+                                  "input": {"command": "echo ok", "cwd": "E:/repo"}}]},
+    }, 20, 100)
+    codex_replay.record_timeline(work_session, _tool_result("cmd-1", "ok\nexit code: 0\nduration ms: 10"), 20, 100)
+    codex_replay.record_timeline(work_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "text", "text": "done"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(work_session, {"type": "result", "duration_ms": 10}, 20, 100)
+    work_payload = codex_replay.replay_payload(work_session, view="work")
+    assert work_payload["events"] == []
+    assert work_payload["work"]["turn_count"] == 1
+    assert work_payload["work"]["turns"][0]["user_text"] == "fix it"
+    assert work_payload["work"]["tool_total"] == 1
+    assert work_payload["work"]["turns"][0]["tool_total"] == 1
+    assert work_payload["work"]["turns"][0]["tool_summary"] == [{"name": "PowerShell", "count": 1}]
+    assert work_payload["work"]["turns"][0]["tools"] == []
+    assert work_payload["work"]["turns"][0]["latest_tool"] is None
+    assert work_payload["work"]["turns"][0]["assistant_text"] == "done"
+    assert work_payload["work"]["turns"][0]["assistant_text_hidden"] is True
+    assert work_payload["work"]["turns"][0]["assistant_text_chars"] == 4
+    turn_payload = codex_replay.replay_payload(work_session, view="turn", turn="turn-1")
+    assert turn_payload["ok"] is True
+    assert [event["type"] for event in turn_payload["events"]] == ["user", "assistant", "user", "assistant", "result"]
+    assert codex_replay.replay_payload(work_session, view="turn", turn="missing")["ok"] is False
+
+    read_session = FakeSession()
+    codex_replay.record_timeline(read_session, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "inspect file"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(read_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "read-1", "name": "Read",
+                                  "input": {"file_path": "src/app.py", "offset": 1, "limit": 20}}]},
+    }, 20, 100)
+    codex_replay.record_timeline(read_session, _tool_result(
+        "read-1",
+        "diff --git a/src/app.py b/src/app.py\n--- a/src/app.py\n+++ b/src/app.py\n@@\n-old\n+new",
+    ), 20, 100)
+    codex_replay.record_timeline(read_session, {"type": "result", "duration_ms": 5}, 20, 100)
+    read_work = codex_replay.replay_payload(read_session, view="work")["work"]
+    read_turn = read_work["turns"][0]
+    assert read_work["file_total"] == 0
+    assert read_turn["file_total"] == 0
+    assert read_turn["changed_files"] == []
+    assert read_turn["diff_total"] == 0
+
+    diff_session = FakeSession()
+    codex_replay.record_timeline(diff_session, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "patch file"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(diff_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "cmd-diff", "name": "PowerShell",
+                                  "input": {"command": "git diff", "cwd": "E:/repo"}}]},
+    }, 20, 100)
+    codex_replay.record_timeline(diff_session, _tool_result("cmd-diff",
+        "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@\n-old\n+new\n+again\n"
+        "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@\n-gone\n+back"), 20, 100)
+    codex_replay.record_timeline(diff_session, {"type": "result", "duration_ms": 5}, 20, 100)
+    diff_work = codex_replay.replay_payload(diff_session, view="work")["work"]
+    diff_turn = diff_work["turns"][0]
+    assert diff_work["file_total"] == 2
+    assert diff_turn["file_total"] == 2
+    assert diff_turn["diff_added"] == 3
+    assert diff_turn["diff_deleted"] == 2
+    assert diff_turn["diff_total"] == 5
+    assert diff_turn["changed_files"] == [
+        {"path": "a.py", "added": 2, "deleted": 1, "total": 3},
+        {"path": "b.py", "added": 1, "deleted": 1, "total": 2},
+    ]
+
+    running_session = FakeSession()
+    codex_replay.record_timeline(running_session, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "run tests"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(running_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "cmd-2", "name": "PowerShell",
+                                  "input": {"command": "pytest tests", "cwd": "E:/repo"}}]},
+    }, 20, 100)
+    codex_replay.record_timeline(running_session, _tool_result("cmd-2", "ok\nexit code: 0\nduration ms: 15"), 20, 100)
+    running_session._busy = True
+    running_session.current_turn_started_at = 95.0
+    running_payload = codex_replay.replay_payload(running_session, view="work")
+    running_turn = running_payload["work"]["turns"][0]
+    assert running_turn["status"] == "running"
+    assert running_turn["elapsed_ms"] == 5000
+    assert running_turn["tool_total"] == 1
+    assert running_turn["latest_tool"]["name"] == "PowerShell"
+    assert running_turn["latest_tool"]["label"] == "pytest tests"
+    assert running_turn["latest_tool"]["input"] == {"command": "pytest tests", "cwd": "E:/repo"}
+    assert running_turn["latest_tool"]["result"] == "ok\nexit code: 0\nduration ms: 15"
+    assert running_turn["latest_tool"]["preview"] == "ok\nexit code: 0\nduration ms: 15"
+    assert running_turn["tools"] == [running_turn["latest_tool"]]
+
+    stream_work = FakeSession()
+    codex_replay.record_timeline(stream_work, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "summarize"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(stream_work, {
+        "type": "stream_event",
+        "event": {"delta": {"type": "text_delta", "text": "streamed "}},
+    }, 20, 100)
+    codex_replay.record_timeline(stream_work, {
+        "type": "stream_event",
+        "event": {"delta": {"type": "text_delta", "text": "summary"}},
+    }, 20, 100)
+    codex_replay.record_timeline(stream_work, {"type": "result", "duration_ms": 5}, 20, 100)
+    stream_turn = codex_replay.replay_payload(stream_work, view="work")["work"]["turns"][0]
+    assert stream_turn["assistant_text"] == "streamed summary"
+    assert stream_turn["assistant_text_hidden"] is True
 
     print("codex replay helper checks passed")
 

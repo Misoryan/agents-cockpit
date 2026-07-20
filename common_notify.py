@@ -53,6 +53,47 @@ def notify_result_text(events, limit=3500):
     return ""
 
 
+def notify_project(cwd):
+    raw = str(cwd or "").strip()
+    if not raw:
+        return "当前会话"
+    norm = raw.rstrip("\\/")
+    base = norm.replace("\\", "/").split("/")[-1]
+    return base or norm or raw
+
+
+def notify_compact(text, limit=260):
+    value = " ".join(str(text or "").split())
+    if limit and len(value) > limit:
+        value = value[:max(0, limit - 3)].rstrip() + "..."
+    return value
+
+
+def notify_copy(kind, cwd, actor="Agent", detail="", danger=False):
+    """Compose short, action-first notification copy for push and desktop banners."""
+    project = notify_project(cwd)
+    if kind == "plan":
+        title, hint = "计划待审阅 · " + project, "点击打开会话审阅计划"
+    elif kind in ("ask", "form"):
+        title, hint = "需要输入 · " + project, "点击打开会话回复"
+    elif kind == "done":
+        title, hint = "任务完成 · " + project, "等待下一条指令"
+    elif kind == "confirm":
+        title = ("高危操作待确认 · " if danger else "需要确认 · ") + project
+        hint = "点击打开会话处理确认"
+    else:
+        title, hint = "Agent 通知 · " + project, "点击打开会话查看"
+    lines = [str(actor or "Agent").strip()]
+    compact_detail = notify_compact(detail)
+    if compact_detail:
+        lines.append(compact_detail)
+    if hint:
+        lines.append(hint)
+    if cwd:
+        lines.append(str(cwd))
+    return title, "\n".join(line for line in lines if line)
+
+
 def ps_quote(value):
     return str(value).replace("\r", " ").replace("\n", " ").replace("'", "''")
 

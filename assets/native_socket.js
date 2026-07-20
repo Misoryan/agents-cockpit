@@ -89,7 +89,7 @@ function nativeConnect(sid, opts){
       rs.lastLog=now;
     }
     nativeWs[sid]=null;
-    if(currentSid===sid && nativeStages[sid]){
+    if(currentSid===sid && nativeStages[sid] && !(typeof nativeViewIsWork==="function" && nativeViewIsWork())){
       nativeStartPolling(sid, true);
       nativeScheduleReconnect(sid, 30000);
     }
@@ -105,7 +105,9 @@ document.addEventListener("visibilitychange", function(){
   var sid=currentSid;
   if(sid && nativeStages[sid]){
     var ws=nativeWs[sid];
-    if(!ws || ws.readyState>1){
+    if(typeof nativeViewIsWork==="function" && nativeViewIsWork()){
+      if(typeof nativeWorkPollOnce==="function") nativeWorkPollOnce(sid);
+    }else if(!ws || ws.readyState>1){
       nativeStartPolling(sid, true);
       nativeScheduleReconnect(sid, 30000);
     }else if(nStageHasReplayContent(nativeStages[sid])){
@@ -128,16 +130,23 @@ function showNativeSession(sid, title){
   if(st.planMode==null){ st.planMode = localStorage.getItem("acPlan_"+sid)==="1"; }
   if(st.taskMode==null){ st.taskMode = localStorage.getItem("acTask_"+sid)==="1"; }
   nSyncModes(st); nRenderTasks(st);
+  if(typeof nativeRenderViewToggle==="function") nativeRenderViewToggle();
   // 后端(尤其重启后)模式可能已丢,把当前开关推回去重同步
   postJSON("/api/nmode",{sid:sid, plan:st.planMode, task:st.taskMode});
-  st.root.style.display="flex";
-  if(!nStageHasReplayContent(st)) nativeStartPolling(sid, true);
-  if(!nativeWs[sid] || nativeWs[sid].readyState>1){
-    if(nStageHasReplayContent(st)) nativeConnect(sid);
-    else nativeScheduleReconnect(sid, 1200);
+  if(typeof nativeViewIsWork==="function" && nativeViewIsWork()){
+    if(typeof nativeShowWorkSession==="function") nativeShowWorkSession(sid);
+  }else{
+    if(typeof nativeHideWorkSession==="function") nativeHideWorkSession(sid);
+    if(typeof nativeHideAllWorkStages==="function") nativeHideAllWorkStages();
+    st.root.style.display="flex";
+    if(!nStageHasReplayContent(st)) nativeStartPolling(sid, true);
+    if(!nativeWs[sid] || nativeWs[sid].readyState>1){
+      if(nStageHasReplayContent(st)) nativeConnect(sid);
+      else nativeScheduleReconnect(sid, 1200);
+    }
+    if(nStageHasReplayContent(st)) nativeCatchupPoll(sid, "switch");
+    nEnsurePendingVisible(nFindRunSession(sid));
   }
-  if(nStageHasReplayContent(st)) nativeCatchupPoll(sid, "switch");
-  nEnsurePendingVisible(nFindRunSession(sid));
   renderSessionTabs();
   setMainView("native"); nUpdateScrollButton(); closeSidebar();
   setTimeout(function(){ $("nativeinput").focus({preventScroll:true}); }, 60);

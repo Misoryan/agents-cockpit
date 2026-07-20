@@ -101,7 +101,7 @@ function nHandle(sid, obj){
   }
   if(t==="user"){
     var bs=((obj.message||{}).content);
-    if(typeof bs==="string"){ nAddHumanRow(st,bs); return; }
+    if(typeof bs==="string"){ nAddHumanRow(st,bs,obj.ts); return; }
     if(!Array.isArray(bs)) bs = bs?[bs]:[];
     var humanParts=[], humanImages=[];
     bs.forEach(function(b){
@@ -114,7 +114,7 @@ function nHandle(sid, obj){
         nRenderToolResult(st, b.tool_use_id, txt, b);
       }
     });
-    if(humanParts.length || humanImages.length){ nAddHumanContent(st,humanParts.join("\n"), humanImages, sid); }
+    if(humanParts.length || humanImages.length){ nAddHumanContent(st,humanParts.join("\n"), humanImages, sid, obj.ts); }
     return;
   }
   if(t==="pending_approval"){

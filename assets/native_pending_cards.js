@@ -26,7 +26,7 @@ function nHandlePendingApproval(sid, st, obj){
   st.lastPendingResync=0; st.pendingExpectedAt=0;
   // ExitPlanMode becomes a dedicated plan review card instead of a generic approval.
   if(obj.name==="ExitPlanMode"){
-    emitAndroidSessionNotice("plan", sid, "Codex plan needs review", "Tap to review and decide whether to continue.");
+    emitAndroidSessionNotice("plan", sid, "计划待审阅", "Codex · 点击审阅计划并决定是否继续");
     var oldPlan=(st.turnCard||st.root).querySelector('.nmsg.plan[data-tuid="'+obj.tool_use_id+'"],.nmsg.approval[data-tuid="'+obj.tool_use_id+'"]');
     if(oldPlan) oldPlan.remove();
     var pcard=document.createElement("div"); pcard.className="nmsg plan"; pcard.dataset.tuid=obj.tool_use_id;
@@ -38,7 +38,7 @@ function nHandlePendingApproval(sid, st, obj){
     pcard.querySelector(".deny").addEventListener("click", function(){ nApprove(sid, obj.tool_use_id, false); pcard.remove(); });
     nTurnCard(st).appendChild(pcard); st.curTxt=null; nScrollBottom(); return;
   }
-  emitAndroidSessionNotice("confirm", sid, (obj.danger?"Dangerous action needs confirmation":"Action needs confirmation"), obj.preview||obj.name||"Tap to confirm.");
+  emitAndroidSessionNotice("confirm", sid, (obj.danger?"高危操作待确认":"需要确认"), "Codex · "+(obj.preview||obj.name||"点击处理确认"));
   var old=(st.turnCard||st.root).querySelector('.nmsg.approval[data-tuid="'+obj.tool_use_id+'"],.nmsg.plan[data-tuid="'+obj.tool_use_id+'"]');
   if(old) old.remove();
   var dng=obj.danger?" danger":"";
@@ -57,14 +57,14 @@ function nHandlePendingApproval(sid, st, obj){
 
 function nHandlePendingAsk(sid, st, obj){
   nFinalizeThinking(st); nStopThinking(st);
-  emitAndroidSessionNotice("confirm", sid, "Agent waits for input", obj.question||"Tap to answer.");
+  emitAndroidSessionNotice("confirm", sid, "需要输入", "Codex · "+(obj.question||"点击回复"));
   st.lastPendingResync=0; st.pendingExpectedAt=0;
   nRenderAsk(sid, st, obj);
 }
 
 function nHandlePendingForm(sid, st, obj){
   nFinalizeThinking(st); nStopThinking(st);
-  emitAndroidSessionNotice("confirm", sid, "Form input required", obj.message||"Tap to fill the form.");
+  emitAndroidSessionNotice("confirm", sid, "需要输入", "Codex · "+(obj.message||"点击填写表单"));
   st.lastPendingResync=0; st.pendingExpectedAt=0;
   nRenderForm(sid, st, obj);
 }

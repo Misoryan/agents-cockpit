@@ -106,6 +106,19 @@ def main():
     assert other.events[0]["seq"] == 1
     assert other._next_seq == 3
 
+    # 回归:mid-turn repair 重排历史不得回退 _next_seq(否则 result 拿低 seq,前端 catchup 漏收)
+    midturn = FakeSession()
+    midturn._next_seq = 94  # 流式事件已消耗到 seq 93
+    midturn.timeline = [{"type": "assistant", "seq": 50, "event_id": "x"}]
+    codex_replay.adopt_history_replay(midturn, [{"type": "assistant"}, {"type": "result"}], 10)
+    assert midturn._next_seq >= 94, midturn._next_seq
+    # 带 seq 重录(repair 回灌 local_tail)必须推进高水位
+    codex_replay.record_timeline(midturn, {"type": "assistant", "seq": 93, "event_id": "y"}, 10, 100)
+    assert midturn._next_seq >= 94
+    fresh = codex_replay.record_timeline(midturn, {"type": "result"}, 10, 100)
+    assert fresh["seq"] >= 94, fresh["seq"]
+    assert codex_replay.event_after_seq(fresh, 93)
+
     assert codex_replay.event_after_seq({"seq": 2}, 1)
     assert codex_replay.event_after_seq({"seq": 1, "merged_seq": 3}, 2)
     assert not codex_replay.event_after_seq({"seq": 1}, 2)
@@ -177,6 +190,28 @@ def main():
     assert [event["type"] for event in turn_payload["events"]] == ["user", "assistant", "user", "assistant", "result"]
     assert codex_replay.replay_payload(work_session, view="turn", turn="missing")["ok"] is False
 
+    read_session = FakeSession()
+    codex_replay.record_timeline(read_session, {
+        "type": "user",
+        "message": {"content": [{"type": "text", "text": "inspect file"}]},
+    }, 20, 100)
+    codex_replay.record_timeline(read_session, {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "read-1", "name": "Read",
+                                  "input": {"file_path": "src/app.py", "offset": 1, "limit": 20}}]},
+    }, 20, 100)
+    codex_replay.record_timeline(read_session, _tool_result(
+        "read-1",
+        "diff --git a/src/app.py b/src/app.py\n--- a/src/app.py\n+++ b/src/app.py\n@@\n-old\n+new",
+    ), 20, 100)
+    codex_replay.record_timeline(read_session, {"type": "result", "duration_ms": 5}, 20, 100)
+    read_work = codex_replay.replay_payload(read_session, view="work")["work"]
+    read_turn = read_work["turns"][0]
+    assert read_work["file_total"] == 0
+    assert read_turn["file_total"] == 0
+    assert read_turn["changed_files"] == []
+    assert read_turn["diff_total"] == 0
+
     diff_session = FakeSession()
     codex_replay.record_timeline(diff_session, {
         "type": "user",
@@ -191,7 +226,10 @@ def main():
         "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@\n-old\n+new\n+again\n"
         "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@\n-gone\n+back"), 20, 100)
     codex_replay.record_timeline(diff_session, {"type": "result", "duration_ms": 5}, 20, 100)
-    diff_turn = codex_replay.replay_payload(diff_session, view="work")["work"]["turns"][0]
+    diff_work = codex_replay.replay_payload(diff_session, view="work")["work"]
+    diff_turn = diff_work["turns"][0]
+    assert diff_work["file_total"] == 2
+    assert diff_turn["file_total"] == 2
     assert diff_turn["diff_added"] == 3
     assert diff_turn["diff_deleted"] == 2
     assert diff_turn["diff_total"] == 5

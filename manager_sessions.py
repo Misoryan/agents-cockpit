@@ -298,6 +298,11 @@ def reattach_one(ctx, sid, entry):
             native.last_activity = float(entry.get("last_activity"))
         except Exception:
             pass
+    if entry.get("last_completed_at") is not None:
+        try:
+            native.last_completed_at = float(entry.get("last_completed_at"))
+        except Exception:
+            pass
     with lock:
         sessions[sid] = {
             "dir": entry.get("dir", getattr(native, "cwd", "")),

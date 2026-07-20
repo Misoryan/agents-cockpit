@@ -138,36 +138,77 @@ api("/api/backends").then(function(r){ if(r.backends && r.backends.length){ avai
 
 /* ---- notifications (in-site only) ---- */
 var noticeTimers={};
-function removeNotice(key){ var el=document.querySelector('[data-notice-key="'+key+'"]'); if(el) el.remove(); if(noticeTimers[key]) clearTimeout(noticeTimers[key]); delete noticeTimers[key]; }
+function removeNotice(key, immediate){
+  var el=document.querySelector('[data-notice-key="'+key+'"]');
+  if(noticeTimers[key]) clearTimeout(noticeTimers[key]); delete noticeTimers[key];
+  if(!el) return;
+  if(immediate){ el.remove(); return; }
+  if(el.classList.contains("leaving")) return;
+  el.classList.add("leaving"); el.setAttribute("aria-hidden", "true");
+  setTimeout(function(){ if(el.parentNode) el.remove(); }, 190);
+}
 function emitAndroidNotice(kind, s, title, body){
   try{
+    s=s||{};
     if(window.AndroidNotify && typeof window.AndroidNotify.notify==="function"){
       window.AndroidNotify.notify(JSON.stringify({kind:kind, sid:s.sid||"", title:title||"", body:body||"", backend:s.backend||"", dir:s.dir||"", state:s.state||""}));
     }
   }catch(e){}
 }
 function emitAndroidSessionNotice(kind, sid, title, body){ emitAndroidNotice(kind, {sid:sid||"", state:kind}, title, body); }
-function showSiteNotice(kind, s, title, body){
-  var key=s.sid+"-"+kind; removeNotice(key);
+function noticeKindMeta(kind){
+  if(kind==="confirm") return {kicker:"需要你确认", label:"需要确认", action:"处理", icon:_I('alert'), timeout:70000, role:"alert"};
+  if(kind==="plan") return {kicker:"计划审阅", label:"计划待审阅", action:"审阅", icon:_I('clipboard-list'), timeout:70000, role:"alert"};
+  if(kind==="done") return {kicker:"已完成", label:"任务完成", action:"查看", icon:_I('circle-check'), timeout:14000, role:"status"};
+  if(kind==="new") return {kicker:"新会话", label:"已创建", action:"打开", icon:_I('sparkles'), timeout:18000, role:"status"};
+  return {kicker:"Agent 通知", label:"通知", action:"打开", icon:_I('bell'), timeout:18000, role:"status"};
+}
+function noticeSessionTitle(s){ return String((s&&s.title)||basename(s&&s.dir)||"未命名任务").trim(); }
+function noticeProjectName(s){
+  var dir=(s&&s.dir)||"";
+  return String(basename(dir)||dir||"当前会话").trim();
+}
+function noticePayload(kind, s, detail){
+  var meta=noticeKindMeta(kind);
+  var task=noticeSessionTitle(s);
+  var project=noticeProjectName(s);
+  var backend=backendLabel((s&&s.backend)||"codex");
+  var hint=detail||({confirm:"点击处理确认请求",plan:"点击审阅计划并决定是否继续",done:"等待下一条指令",new:"点击打开新会话"}[kind]||"点击打开会话");
+  return {
+    meta:meta,
+    title:meta.label+" · "+task,
+    body:backend+" · "+project+"\n"+hint,
+  };
+}
+function openNoticeSession(s, key){
+  removeNotice(key);
+  if(s&&s.sid) openSessionBySid(s.sid);
+}
+function showSiteNotice(kind, s, title, body, payload){
+  var key=((s&&s.sid)||"notice")+"-"+kind; removeNotice(key, true);
+  payload=payload||{meta:noticeKindMeta(kind), title:title, body:body};
+  var meta=payload.meta||noticeKindMeta(kind);
   var box=document.createElement("div"); box.className="notice "+kind; box.setAttribute("data-notice-key", key);
-  box.innerHTML='<div class="nt">'+({confirm:_I('alert')+' ',plan:_I('clipboard-list')+' ',done:_I('circle-check')+' ',new:_I('sparkles')+' '}[kind]||_I('bell')+' ')+esc(title)+'</div><div class="nb">'+esc(body)+'</div>';
-  var acts=document.createElement("div"); acts.className="na";
-  var open=document.createElement("button"); open.textContent="打开";
-  var close=document.createElement("button"); close.className="ghost"; close.textContent="关闭";
-  open.addEventListener("click", function(ev){ ev.stopPropagation(); removeNotice(key); openSessionBySid(s.sid); });
+  box.setAttribute("role", meta.role||"status"); box.tabIndex=0;
+  box.innerHTML='<div class="notice-accent" aria-hidden="true"></div><div class="notice-icon" aria-hidden="true">'+(meta.icon||_I('bell'))+'</div><div class="notice-main"><div class="notice-kicker">'+esc(meta.kicker||"通知")+'</div><div class="notice-title">'+esc(title||payload.title||"通知")+'</div><div class="notice-body">'+esc(body||payload.body||"")+'</div></div>';
+  var acts=document.createElement("div"); acts.className="notice-actions";
+  var open=document.createElement("button"); open.textContent=meta.action||"打开";
+  var close=document.createElement("button"); close.className="ghost"; close.textContent="稍后"; close.setAttribute("aria-label", "关闭通知");
+  open.addEventListener("click", function(ev){ ev.stopPropagation(); openNoticeSession(s, key); });
   close.addEventListener("click", function(ev){ ev.stopPropagation(); removeNotice(key); });
-  box.addEventListener("click", function(){ removeNotice(key); openSessionBySid(s.sid); });
+  box.addEventListener("click", function(){ openNoticeSession(s, key); });
+  box.addEventListener("keydown", function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); openNoticeSession(s, key); } });
   acts.appendChild(open); acts.appendChild(close); box.appendChild(acts);
-  var area=$("noticearea"); area.appendChild(box);
-  while(area.children.length>4) removeNotice(area.children[0].getAttribute("data-notice-key"));
-  noticeTimers[key]=setTimeout(function(){ removeNotice(key); }, (kind==="confirm"||kind==="plan")?60000:22000);
+  var area=$("noticearea"); if(!area) return;
+  area.appendChild(box);
+  while(area.children.length>3){
+    var old=area.children[0], oldKey=old&&old.getAttribute("data-notice-key");
+    if(oldKey) removeNotice(oldKey, true); else if(old) old.remove(); else break;
+  }
+  noticeTimers[key]=setTimeout(function(){ removeNotice(key); }, meta.timeout||18000);
 }
 function emitAiNotice(kind, s){
-  var name=backendLabel(s.backend||"codex")+" · "+(s.title||basename(s.dir));
-  var title, body;
-  if(kind==="confirm"){ title=name+" 需要确认"; body=(s.dir||"")+" · 点击处理确认"; }
-  else if(kind==="plan"){ title=name+" Plan 待确认"; body=(s.dir||"")+" · 点击查看计划"; }
-  else { title=name+" 已完成"; body=(s.dir||"")+" · 等待下一条指令"; }
-  showSiteNotice(kind, s, title, body);
-  emitAndroidNotice(kind, s, title, body);
+  var payload=noticePayload(kind, s);
+  showSiteNotice(kind, s, payload.title, payload.body, payload);
+  emitAndroidNotice(kind, s, payload.title, payload.body);
 }

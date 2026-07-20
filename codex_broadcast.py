@@ -5,6 +5,22 @@ import threading
 import time
 
 
+ACTIVITY_EVENT_TYPES = {
+    "assistant",
+    "user",
+    "result",
+    "interrupted",
+    "rate_limited",
+    "pending_approval",
+    "pending_ask",
+    "pending_form",
+    "stream_event",
+    "compacted",
+    "terminal_closed",
+    "thread_forked",
+}
+
+
 def push_notify_worker(notify_module, title, body, event, webhook_body=None):
     try:
         notify_module.push_notify(title, body, event, webhook_body=webhook_body)
@@ -43,12 +59,17 @@ class CodexBroadcastAdapter:
     def broadcast_transient(self, event):
         self.send_to_clients(event)
 
+    @staticmethod
+    def updates_activity(event):
+        return isinstance(event, dict) and event.get("type") in ACTIVITY_EVENT_TYPES
+
     def broadcast(self, event):
         event = self.session._replay.prepare_broadcast(event)
-        try:
-            self.session.last_activity = self.time_fn()
-        except Exception:
-            pass
+        if self.updates_activity(event):
+            try:
+                self.session.last_activity = self.time_fn()
+            except Exception:
+                pass
         self.send_to_clients(event)
         self.session._persist_if_due(event)
         return event

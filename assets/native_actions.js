@@ -219,10 +219,31 @@ function nClearAttachments(){
   nativeImageAttachments=[]; nRenderAttachments();
   var f=$("nativeimagefile"); if(f) f.value="";
 }
+function nativeSlashFeedback(sid, command, message, isError){
+  if(!sid || typeof nativeRenderWork!=="function") return false;
+  nativeRenderWork(sid, {ok:true, work:{status:isError?"error":"idle", running:false, turn_count:1, tool_total:0, file_total:0, turns:[{
+    status:isError?"error":"done", user_text:command, assistant_text:isError?"":message, error:isError?message:"",
+    tool_total:0, file_total:0, tools:[], files:[], changed_files:[]
+  }]}}, true);
+  return true;
+}
 function nativeSlashCommand(command, st){
-  postJSON("/api/nslash", {sid:currentSid, command:command}).then(function(r){
-    if(r && r.error){ nAddRow(st, "sys", "\u26a0\ufe0f Slash \u547d\u4ee4\u5931\u8d25: "+nEsc(r.error)); }
-  }).catch(function(e){ nAddRow(st, "sys", "\u26a0\ufe0f Slash \u547d\u4ee4\u7f51\u7edc\u9519\u8bef: "+nEsc(e&&e.message||e)); });
+  var sid=currentSid;
+  var workMode=(typeof nativeViewIsWork==="function" && nativeViewIsWork());
+  postJSON("/api/nslash", {sid:sid, command:command}).then(function(r){
+    if(r && r.error){
+      if(!(workMode && nativeSlashFeedback(sid, command, "Slash command failed: "+r.error, true))){
+        nAddRow(st, "sys", "\u26a0\ufe0f Slash \u547d\u4ee4\u5931\u8d25: "+nEsc(r.error));
+      }
+      return;
+    }
+    if(workMode && currentSid===sid && typeof nativeWorkPollOnce==="function") nativeWorkPollOnce(sid, true);
+  }).catch(function(e){
+    var msg="Slash command network error: "+(e&&e.message||e);
+    if(!(workMode && nativeSlashFeedback(sid, command, msg, true))){
+      nAddRow(st, "sys", "\u26a0\ufe0f Slash \u547d\u4ee4\u7f51\u7edc\u9519\u8bef: "+nEsc(e&&e.message||e));
+    }
+  });
 }
 function nativeSend(){
   var inp=$("nativeinput"), p=inp.value.trim(), images=nativeImageAttachments.slice();
@@ -251,8 +272,24 @@ function nativeSend(){
   nClearAttachments();
   nSetGen(true);
   postJSON("/api/nsend", {sid:currentSid, prompt:p, images:images, plan:!!st.planMode, task:!!st.taskMode}).then(function(r){
-    if(r && r.error){ nFinalizeThinking(st); nStopThinking(st); nAddRow(st, "sys", "\u26a0\ufe0f \u53d1\u9001\u5931\u8d25: "+nEsc(r.error)+"\uff08\u82e5\u521a\u66f4\u65b0\u4ee3\u7801,\u8bf7\u300c\u8bbe\u7f6e \u2192 \u91cd\u542f\u540e\u7aef\u5c42\u300d\u52a0\u8f7d native.py \u540e\u5237\u65b0\u9875\u9762\uff09"); nEndTurn(st); nSetGen(false); }
-  }).catch(function(e){ nFinalizeThinking(st); nStopThinking(st); nAddRow(st, "sys", "\u26a0\ufe0f \u7f51\u7edc\u9519\u8bef: "+nEsc(e&&e.message||e)); nEndTurn(st); nSetGen(false); });
+    if(r && r.error){
+      nFinalizeThinking(st); nStopThinking(st);
+      if(workMode && typeof nativeRenderWork==="function"){
+        nativeRenderWork(currentSid, {ok:true, work:{status:"error", running:false, turns:[{status:"error", user_text:p, error:"Send failed: "+r.error, tool_total:0, file_total:0}]}}, true);
+      }else{
+        nAddRow(st, "sys", "\u26a0\ufe0f \u53d1\u9001\u5931\u8d25: "+nEsc(r.error)+"\uff08\u82e5\u521a\u66f4\u65b0\u4ee3\u7801,\u8bf7\u300c\u8bbe\u7f6e \u2192 \u91cd\u542f\u540e\u7aef\u5c42\u300d\u52a0\u8f7d native.py \u540e\u5237\u65b0\u9875\u9762\uff09");
+      }
+      nEndTurn(st); nSetGen(false);
+    }
+  }).catch(function(e){
+    nFinalizeThinking(st); nStopThinking(st);
+    if(workMode && typeof nativeRenderWork==="function"){
+      nativeRenderWork(currentSid, {ok:true, work:{status:"error", running:false, turns:[{status:"error", user_text:p, error:"Network error: "+(e&&e.message||e), tool_total:0, file_total:0}]}}, true);
+    }else{
+      nAddRow(st, "sys", "\u26a0\ufe0f \u7f51\u7edc\u9519\u8bef: "+nEsc(e&&e.message||e));
+    }
+    nEndTurn(st); nSetGen(false);
+  });
 }
 
 $("nativeback").addEventListener("click", hideNative);
@@ -277,9 +314,6 @@ function nToggleMode(which){
 }
 $("nmode-plan").addEventListener("click", function(){ nToggleMode("plan"); });
 if($("nmode-task")) $("nmode-task").addEventListener("click", function(){ nToggleMode("task"); });
-if($("nview-chat")) $("nview-chat").addEventListener("click", function(){ nativeSetViewMode("chat"); });
-if($("nview-work")) $("nview-work").addEventListener("click", function(){ nativeSetViewMode("work"); });
-
 var slashHelp=$("nativeslashhelp");
 if(slashHelp) slashHelp.addEventListener("click", function(){
   var inp=$("nativeinput"); if(!inp) return;

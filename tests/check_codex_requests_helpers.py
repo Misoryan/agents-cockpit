@@ -106,6 +106,9 @@ def main():
     assert session.broadcasts[0]["type"] == "pending_approval"
     assert session.broadcasts[0]["danger"] is True
     assert session.pushes[0][0] == "confirm"
+    assert session.pushes[0][1].startswith("高危操作待确认 · ")
+    assert "Codex" in session.pushes[0][2]
+    assert "点击打开会话处理确认" in session.pushes[0][2]
     assert "approve-1" not in session._pending
 
     questions = [{"id": "q1", "question": "Pick?"}]

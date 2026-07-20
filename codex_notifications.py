@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Codex notification adapter and helper implementation."""
-import os
 import time
 
 from codex_client import CodexAppServerClient
@@ -89,7 +88,6 @@ def goal_summary(goal):
 def handle_notification(session, method, params):
     if not method:
         return
-    session.last_activity = time.time()
     if method == "thread/started":
         session._apply_thread_response({"thread": params.get("thread") or {}})
     elif method == "turn/started":
@@ -114,8 +112,12 @@ def handle_notification(session, method, params):
     elif method == "thread/status/changed":
         status = params.get("status")
         if status == "idle" or (isinstance(status, dict) and status.get("type") == "idle"):
+            was_busy = bool(session._busy)
             session._busy = False
             session.current_turn_started_at = None
+            if was_busy:
+                session.last_completed_at = time.time()
+                session._persist()
     elif method == "thread/settings/updated":
         on_thread_settings_updated(session, params.get("threadSettings") or {})
     elif method == "item/agentMessage/delta":
@@ -153,6 +155,7 @@ def handle_notification(session, method, params):
     elif method == "thread/compacted":
         if getattr(session, "_compact_in_progress", False):
             session._compact_in_progress = False
+            session.last_completed_at = time.time()
             session._busy = False
             session.current_turn_started_at = None
         session._record_and_broadcast({"type": "compacted"})
@@ -206,6 +209,7 @@ def handle_notification(session, method, params):
 
 
 def on_turn_completed(session, turn):
+    session.last_completed_at = time.time()
     session._busy = False
     session.current_turn_started_at = None
     session.last_turn_id = turn.get("id") or session.last_turn_id
@@ -223,7 +227,8 @@ def on_turn_completed(session, turn):
         if not event.get("error") and not session._closed:
             with session._lock:
                 webhook_body = common.notify_result_text(session.events)
-            session._push("done", "Codex done - " + os.path.basename(session.cwd), session.cwd,
+            title, body = common.notify_copy("done", session.cwd, "Codex")
+            session._push("done", title, body,
                           webhook_body=webhook_body or (session.cwd + " - done without final text"))
     session._persist()
 
@@ -241,8 +246,8 @@ def on_item_completed(session, item):
         if text:
             if codex_text.extract_proposed_plan(text):
                 session._awaiting_plan_decision = True
-                session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
-                              session.cwd + " - tap to review the plan")
+                title, body = common.notify_copy("plan", session.cwd, "Codex")
+                session._push("plan", title, body)
             session._record_and_broadcast({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     elif typ == "reasoning":
         content = "\n".join((item.get("summary") or []) + (item.get("content") or []))
@@ -255,8 +260,8 @@ def on_item_completed(session, item):
         event = codex_text.plan_text_event(text)
         if event:
             session._awaiting_plan_decision = True
-            session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
-                          session.cwd + " - tap to review the plan")
+            title, body = common.notify_copy("plan", session.cwd, "Codex")
+            session._push("plan", title, body)
             session._record_and_broadcast(event)
     else:
         result = session._tool_result_from_item(item)
@@ -273,8 +278,8 @@ def flush_pending_plan_items(session):
         event = codex_text.plan_text_event(text)
         if event:
             session._awaiting_plan_decision = True
-            session._push("plan", "Codex Plan needs review - " + os.path.basename(session.cwd),
-                          session.cwd + " - tap to review the plan")
+            title, body = common.notify_copy("plan", session.cwd, "Codex")
+            session._push("plan", title, body)
             session._record_and_broadcast(event)
 
 

@@ -53,6 +53,12 @@ def main():
     ]
     assert common_notify.notify_result_text(events) == "hello world"
     assert common_notify.notify_result_text(events, limit=8).endswith("truncated)")
+    title, body = common_notify.notify_copy("confirm", r"E:\repo", "Codex", "rm -rf x", danger=True)
+    assert title == "高危操作待确认 · repo"
+    assert body.splitlines()[:3] == ["Codex", "rm -rf x", "点击打开会话处理确认"]
+    title, body = common_notify.notify_copy("done", r"E:\repo", "Claude")
+    assert title == "任务完成 · repo"
+    assert "等待下一条指令" in body
     assert common_notify.ps_quote("a'b\nc") == "a''b c"
     assert common_notify.webhook_is_feishu("https://open.feishu.cn/open-apis/bot/v2/hook/x")
     assert not common_notify.webhook_is_feishu("https://example.com/hook")
@@ -93,6 +99,7 @@ def main():
         assert common._notify_enabled_for("done")
         assert not common._notify_enabled_for("confirm")
         assert common.notify_result_text(events) == "hello world"
+        assert common.notify_copy("plan", r"E:\repo", "Codex")[0] == "计划待审阅 · repo"
         assert not common.push_notify("title", "body", "confirm")
     finally:
         common.NOTIFY_ENABLED = old_enabled

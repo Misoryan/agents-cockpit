@@ -89,7 +89,7 @@ function nativeConnect(sid, opts){
       rs.lastLog=now;
     }
     nativeWs[sid]=null;
-    if(currentSid===sid && nativeStages[sid] && (!window.nativeViewIsWork || !nativeViewIsWork())){
+    if(currentSid===sid && nativeStages[sid] && !(typeof nativeViewIsWork==="function" && nativeViewIsWork())){
       nativeStartPolling(sid, true);
       nativeScheduleReconnect(sid, 30000);
     }
@@ -105,7 +105,7 @@ document.addEventListener("visibilitychange", function(){
   var sid=currentSid;
   if(sid && nativeStages[sid]){
     var ws=nativeWs[sid];
-    if(window.nativeViewIsWork && nativeViewIsWork()){
+    if(typeof nativeViewIsWork==="function" && nativeViewIsWork()){
       if(typeof nativeWorkPollOnce==="function") nativeWorkPollOnce(sid);
     }else if(!ws || ws.readyState>1){
       nativeStartPolling(sid, true);
@@ -133,7 +133,7 @@ function showNativeSession(sid, title){
   if(typeof nativeRenderViewToggle==="function") nativeRenderViewToggle();
   // 后端(尤其重启后)模式可能已丢,把当前开关推回去重同步
   postJSON("/api/nmode",{sid:sid, plan:st.planMode, task:st.taskMode});
-  if(window.nativeViewIsWork && nativeViewIsWork()){
+  if(typeof nativeViewIsWork==="function" && nativeViewIsWork()){
     if(typeof nativeShowWorkSession==="function") nativeShowWorkSession(sid);
   }else{
     if(typeof nativeHideWorkSession==="function") nativeHideWorkSession(sid);

@@ -17,10 +17,22 @@ class FakeNative:
         self.thread_id = "thread-1"
         self.convo_title = "Native title"
         self.last_activity = 123.5
+        self.last_completed_at = 120.0
+        self.current_turn_started_at = 119.0
         self.yolo = True
 
     def state(self):
         return "running"
+
+
+class FakeIdleNative(FakeNative):
+    def __init__(self):
+        super().__init__()
+        self.last_activity = 999.0
+        self.last_completed_at = 120.0
+
+    def state(self):
+        return "idle"
 
 
 def main():
@@ -88,7 +100,26 @@ def main():
         assert projected["session_id"] == "thread-1"
         assert projected["state"] == "running"
         assert projected["yolo"] is True
+        assert projected["current_turn_started_at"] == 119.0
+        assert projected["last_completed_at"] == 120.0
         assert projected["last_output_ts"] == 123.5
+
+        idle_projected = common_browse.session_obj(
+            "sid-idle",
+            {
+                "dir": str(root),
+                "title": "Idle",
+                "mode": "normal",
+                "started": 42,
+                "backend": "codex_native",
+                "native": FakeIdleNative(),
+            },
+            normalize_backend_fn=lambda backend: backend or "claude_native",
+            is_codex_backend_fn=lambda backend: backend == "codex_native",
+        )
+        assert idle_projected["state"] == "idle"
+        assert idle_projected["last_input_ts"] == 999.0
+        assert idle_projected["last_output_ts"] == 120.0
 
         fallback = common_browse.session_obj(
             "sid-2",

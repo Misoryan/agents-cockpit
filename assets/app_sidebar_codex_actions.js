@@ -20,7 +20,7 @@ function runCodexAction(sid, command, btn, cwd){
 }
 function appendCodexActionMenu(el, actions){
   var more=document.createElement("button");
-  more.className="cbtn ghost more-actions"; more.type="button"; more.textContent="\u00b7\u00b7\u00b7"; more.title="\u5c55\u5f00\u66f4\u591a Codex \u64cd\u4f5c";
+  more.className="cbtn ghost more-actions"; more.type="button"; more.textContent="\u00b7\u00b7\u00b7"; more.title="\u5c55\u5f00\u66f4\u591a\u64cd\u4f5c";
   actions.classList.add("cactions-pop");
   actions.addEventListener("click", function(ev){ ev.stopPropagation(); });
   more.addEventListener("click", function(ev){
@@ -43,9 +43,8 @@ function appendCodexActionMenu(el, actions){
   el.appendChild(more);
   document.body.appendChild(actions);
 }
-function appendCodexRunActions(el, s){
+function fillCodexRunActions(actions, s){
   if(!isCodexBackend(s.backend)) return;
-  var actions=document.createElement("div"); actions.className="cactions";
   [
     {label:"\u91cd\u547d\u540d", title:"\u91cd\u547d\u540d\u6b64 Codex \u4f1a\u8bdd", build:function(){
       var value=prompt("\u4f1a\u8bdd\u540d\u79f0", s.title||basename(s.dir)||"");
@@ -68,7 +67,12 @@ function appendCodexRunActions(el, s){
     });
     actions.appendChild(btn);
   });
-  appendCodexActionMenu(el, actions);
+}
+function appendCodexRunActions(el, s){
+  if(!isCodexBackend(s.backend)) return;
+  var actions=document.createElement("div"); actions.className="cactions";
+  fillCodexRunActions(actions, s);
+  if(actions.children.length) appendCodexActionMenu(el, actions);
 }
 function runCodexHistoryAction(h, action, btn, extra){
   var be=h.backend||"codex";
@@ -92,10 +96,9 @@ function runCodexHistoryAction(h, action, btn, extra){
     if(btn){ btn.disabled=false; btn.textContent=btn.dataset.oldText||btn.textContent; }
   });
 }
-function appendCodexHistoryActions(el, h){
+function fillCodexHistoryActions(actions, h){
   var be=h.backend||"codex";
   if(!isCodexBackend(be)) return;
-  var actions=document.createElement("div"); actions.className="cactions";
   [
     {label:"\u91cd\u547d\u540d", title:"\u91cd\u547d\u540d\u6b64 Codex \u5386\u53f2\u4f1a\u8bdd", action:"rename", extra:function(){
       var value=prompt("\u4f1a\u8bdd\u540d\u79f0", h.title||"");
@@ -120,5 +123,11 @@ function appendCodexHistoryActions(el, h){
     });
     actions.appendChild(btn);
   });
-  appendCodexActionMenu(el, actions);
+}
+function appendCodexHistoryActions(el, h){
+  var be=h.backend||"codex";
+  if(!isCodexBackend(be)) return;
+  var actions=document.createElement("div"); actions.className="cactions";
+  fillCodexHistoryActions(actions, h);
+  if(actions.children.length) appendCodexActionMenu(el, actions);
 }

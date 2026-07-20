@@ -51,16 +51,16 @@ def main():
     assert session._awaiting_plan_decision is True
     assert session.pushes[0][:3] == (
         "plan",
-        "Codex Plan needs review - repo",
-        r"E:\repo - tap to review the plan",
+        "计划待审阅 · repo",
+        "Codex\n点击打开会话审阅计划\n" + r"E:\repo",
     )
     assert session.records[0]["message"]["content"][0]["text"] == "<proposed_plan>\ndo it\n</proposed_plan>"
 
     session = FakeSession()
     session._plan_output = {"p2": "continue"}
     codex_session_events.flush_pending_plan_items(session)
-    assert session.pushes[0][1] == "Codex Plan needs review - repo"
-    assert session.pushes[0][2].endswith("tap to review the plan")
+    assert session.pushes[0][1] == "计划待审阅 · repo"
+    assert "点击打开会话审阅计划" in session.pushes[0][2]
 
     session = FakeSession()
     session._compact_in_progress = True

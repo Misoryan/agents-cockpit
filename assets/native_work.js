@@ -1,12 +1,7 @@
 "use strict";
-function nativeViewIsWork(){ return nativeViewMode==="work"; }
-function nativeSetViewMode(mode, persist){
-  mode = mode==="work" ? "work" : "chat";
-  nativeViewMode = mode;
-  if(persist!==false){
-    try{ localStorage.setItem("acNativeView", mode); }catch(e){}
-    if(typeof acPrefSet==="function") acPrefSet("acNativeView", mode, "acNativeView");
-  }
+function nativeViewIsWork(){ return true; }
+function nativeSetViewMode(_mode, persist){
+  nativeViewMode = "work";
   nativeRenderViewToggle();
   if(currentSid){
     var s=nFindRunSession(currentSid);
@@ -14,25 +9,25 @@ function nativeSetViewMode(mode, persist){
   }
 }
 function nativeRenderViewToggle(){
-  var chat=$("nview-chat"), work=$("nview-work");
-  if(chat){ chat.classList.toggle("active", nativeViewMode!=="work"); chat.setAttribute("aria-pressed", nativeViewMode==="work"?"false":"true"); }
-  if(work){ work.classList.toggle("active", nativeViewMode==="work"); work.setAttribute("aria-pressed", nativeViewMode==="work"?"true":"false"); }
+  nativeViewMode = "work";
+  if(document && document.body) document.body.classList.add("work-only");
 }
 function nativeWorkStage(sid){
   if(nativeWorkStages[sid]) return nativeWorkStages[sid];
   var d=document.createElement("div");
   d.className="work-stage";
-  d.style.cssText="display:none;width:100%;flex-direction:column;gap:12px";
+  d.style.cssText="display:none;width:100%;flex-direction:column;gap:16px";
   d.dataset.sid=sid;
   d.addEventListener("click", function(e){
     var btn=e.target && e.target.closest ? e.target.closest("[data-work-action]") : null;
     if(!btn) return;
     var action=btn.dataset ? btn.dataset.workAction : "";
-    if(action==="chat-turn"){ nativeWorkToggleTurnChat(sid, btn); }
-    if(action==="refresh"){ nativeWorkPollOnce(sid, true); }
+    if(action==="trace-turn") nativeWorkToggleTurnTrace(sid, btn);
+    if(action==="file-diff") nativeWorkToggleFileDiff(sid, btn);
+    if(action==="refresh") nativeWorkPollOnce(sid, true);
   });
   $("nativemsgs").appendChild(d);
-  nativeWorkStages[sid]={sid:sid, root:d, lastSig:"", pollTimer:null, elapsedTimer:null, elapsedBaseMs:null, fetchId:0, lastPrompt:""};
+  nativeWorkStages[sid]={sid:sid, root:d, lastSig:"", pollTimer:null, elapsedTimer:null, elapsedBaseMs:null, fetchId:0, lastPrompt:"", lastSignalPollAt:0, turnPayloads:{}};
   return nativeWorkStages[sid];
 }
 function nativeDropWorkStage(sid){
@@ -46,7 +41,7 @@ function nativeDropWorkStage(sid){
 function nativeHideAllWorkStages(){
   Object.keys(nativeWorkStages).forEach(function(sid){ if(nativeWorkStages[sid].root) nativeWorkStages[sid].root.style.display="none"; });
 }
-function nativeCloseChatTransport(sid){
+function nativeCloseLiveTransport(sid){
   if(typeof nativeStopPolling==="function") nativeStopPolling(sid);
   if(nativeReconnectTimers[sid]){ clearTimeout(nativeReconnectTimers[sid]); delete nativeReconnectTimers[sid]; }
   var ws=nativeWs[sid];
@@ -61,7 +56,7 @@ function nativeShowWorkSession(sid){
   nativeHideAllWorkStages();
   var st=nativeWorkStage(sid);
   st.root.style.display="flex";
-  nativeCloseChatTransport(sid);
+  nativeCloseLiveTransport(sid);
   nativeStartWorkPolling(sid, true);
   nativeWorkScrollTop(true);
   nUpdateScrollButton();
@@ -78,7 +73,7 @@ function nativeStopWorkPolling(sid){
 }
 function nativeWorkPollDelay(sid){
   var s=nFindRunSession(sid);
-  if(s && (s.state==="running" || s.state==="confirm" || s.state==="plan")) return 1500;
+  if(s && (s.state==="running" || s.state==="confirm" || s.state==="plan")) return 2200;
   return 4500;
 }
 function nativeStartWorkPolling(sid, immediate){
@@ -111,8 +106,18 @@ function nativeWorkPollOnce(sid, manual){
 }
 function nativeWorkMaybeRefresh(s, prevSession){
   if(!s || s.sid!==currentSid || !nativeViewIsWork()) return;
-  var changed=!prevSession || s.state!==prevSession.state || Number(s.last_output_ts||0)>Number(prevSession.last_output_ts||0);
-  if(changed) nativeWorkPollOnce(s.sid);
+  var st=s.state||"", prevState=prevSession&&prevSession.state;
+  var stateChanged=!prevSession || st!==prevState;
+  var outputAdvanced=Number(s.last_output_ts||0)>Number(prevSession&&prevSession.last_output_ts||0);
+  if(!stateChanged && outputAdvanced && (st==="running" || st==="confirm" || st==="plan")){
+    nativeStartWorkPolling(s.sid, false);
+    return;
+  }
+  if(!stateChanged && !outputAdvanced) return;
+  var stage=nativeWorkStages[s.sid], now=Date.now();
+  if(stage && stage.lastSignalPollAt && now-stage.lastSignalPollAt<1200) return;
+  if(stage) stage.lastSignalPollAt=now;
+  nativeWorkPollOnce(s.sid);
 }
 function nativeWorkMarkSubmitted(sid, prompt){
   if(!nativeViewIsWork()) return;
@@ -125,19 +130,19 @@ function nWorkStatusText(status, running){
   if(status==="confirm") return "等待确认";
   if(status==="plan") return "计划待确认";
   if(running || status==="running") return "运行中";
-  if(status==="error") return "出错";
-  if(status==="new") return "新会话";
+  if(status==="error") return "需要处理";
+  if(status==="new") return "新任务";
   return "空闲";
 }
 function nWorkTurnStatusText(status){
-  if(status==="running") return "进行中";
+  if(status==="running") return "运行中";
   if(status==="error") return "失败";
-  if(status==="interrupted") return "已打断";
-  return "完成";
+  if(status==="interrupted") return "已中断";
+  return "已完成";
 }
 function nWorkSafeStatus(status){
   status=String(status||"");
-  return /^(running|done|error|interrupted|pending|in_progress|completed|confirm|plan|idle|new)$/.test(status) ? status : "pending";
+  return /^(running|done|error|interrupted|pending|in_progress|completed|confirm|plan|idle|new|failed|empty)$/.test(status) ? status : "pending";
 }
 function nWorkElapsedMs(work){
   var ms=Number(work&&work.turn_elapsed_ms);
@@ -217,16 +222,20 @@ function nativeWorkRestoreOpenDetails(st, open){
     if(key && open[key]) nodes[i].open=true;
   }
 }
-function nWorkTodosHtml(todos){
+function nWorkTodosHtml(todos, opts){
   todos=Array.isArray(todos)?todos:[];
   if(!todos.length) return "";
+  opts=opts||{};
   var done=0; todos.forEach(function(t){ if((t.status||"")==="completed") done++; });
-  return '<div class="work-todos"><div class="work-subhead">'+_I('list-checks')+' 任务 '+done+'/'+todos.length+'</div>'+
-    todos.map(function(t){
-      var st=t.status||"pending";
-      var ic=st==="completed"?_I('circle-check'):(st==="in_progress"?_I('circle-dashed'):_I('circle'));
-      return '<div class="work-todo '+nWorkSafeStatus(st)+'"><span>'+ic+'</span><b>'+nEsc(t.content||"")+'</b></div>';
-    }).join("")+'</div>';
+  var complete=done===todos.length;
+  var open=opts.open!=null ? !!opts.open : !complete;
+  var state=complete?"completed":"active";
+  var title='任务 '+done+'/'+todos.length+(complete?' 已完成':'');
+  return '<details class="work-todos '+state+'" data-work-detail="'+nEscAttr(opts.key||"tasks")+'"'+(open?' open':'')+'><summary><span class="work-subhead">'+_I('list-checks')+' '+title+'</span></summary><div class="work-todo-list">'+todos.map(function(t){
+    var st=t.status||"pending";
+    var ic=st==="completed"?_I('circle-check'):(st==="in_progress"?_I('circle-dashed'):_I('circle'));
+    return '<div class="work-todo '+nWorkSafeStatus(st)+'"><span>'+ic+'</span><b>'+nEsc(t.content||"")+'</b></div>';
+  }).join("")+'</div></details>';
 }
 function nWorkInt(value, fallback){
   var n=Number(value);
@@ -243,9 +252,7 @@ function nWorkFileTotal(turn){
 function nWorkCountsText(counts, summary){
   var rows=[];
   if(Array.isArray(summary)){
-    summary.slice(0,4).forEach(function(item){
-      if(item && item.name) rows.push(String(item.name)+" x"+nWorkInt(item.count,0));
-    });
+    summary.slice(0,4).forEach(function(item){ if(item && item.name) rows.push(String(item.name)+" x"+nWorkInt(item.count,0)); });
   }else{
     Object.keys(counts||{}).slice(0,4).forEach(function(k){ rows.push(k+" x"+nWorkInt(counts[k],0)); });
   }
@@ -254,22 +261,22 @@ function nWorkCountsText(counts, summary){
 function nWorkShort(text, limit){
   text=String(text||"").replace(/\s+/g," ").trim();
   limit=limit||96;
-  return text.length>limit ? text.slice(0, Math.max(0, limit-1)).trim()+"…" : text;
+  return text.length>limit ? text.slice(0, Math.max(0, limit-1)).trim()+"..." : text;
 }
 function nWorkToolBits(tool){
   tool=tool||{};
   var bits=[];
-  if(tool.status==="failed") bits.push("failed");
-  if(tool.exit_code!=null && tool.exit_code!=="") bits.push("exit "+tool.exit_code);
+  if(tool.status==="failed") bits.push("失败");
+  if(tool.exit_code!=null && tool.exit_code!=="") bits.push("退出码 "+tool.exit_code);
   if(tool.duration_ms!=null && tool.duration_ms!=="" ) bits.push(nFmtDur(tool.duration_ms));
-  if(tool.output_lines) bits.push(tool.output_lines+" lines");
+  if(tool.output_lines) bits.push(tool.output_lines+" 行");
   if(tool.diff) bits.push("diff +"+(tool.diff.added||0)+" -"+(tool.diff.deleted||0));
   return bits.join(" · ");
 }
 function nWorkTurnElapsedHtml(turn){
   var ms=Number(turn&&turn.elapsed_ms);
   if(!(ms>=0)) return "";
-  return ' · <span class="work-turn-elapsed work-elapsed" title="本轮运行时间">'+nEsc(nFmtDur(ms))+'</span>';
+  return ' · <span class="work-turn-elapsed work-elapsed" title="本轮耗时">'+nEsc(nFmtDur(ms))+'</span>';
 }
 function nWorkLatestToolInfo(turn){
   turn=turn||{};
@@ -295,66 +302,126 @@ function nWorkLatestToolInfo(turn){
 function nWorkCurrentActionHtml(turn){
   var info=nWorkLatestToolInfo(turn);
   var tool=info.tool;
-  if(!tool) return '<div class="work-current-action empty">'+_I('loader')+' <b>等待最近动作</b><em>正在分析，尚未开始工具动作。</em></div>';
+  if(!tool) return '<div class="work-current-action empty">'+_I('loader')+' <b>等待下一步动作</b><em>Agent 正在整理上下文，还没有开始工具操作。</em></div>';
   var bits=nWorkToolBits(tool);
   return '<div class="work-current-action '+nWorkSafeStatus(tool.status||"running")+'">'+
-    '<span>最近动作</span><b>'+nEsc(tool.name||"Tool")+'</b>'+
+    '<span>当前动作</span><b>'+nEsc(tool.name||"工具")+'</b>'+
     '<em>'+nEsc(nWorkShort(tool.label||"", 110))+'</em>'+
     (bits?'<small>'+nEsc(bits)+'</small>':'')+
   '</div>';
 }
 function nWorkCompleteHtml(turn, toolTotal, fileTotal, isLatest){
   var bits=[];
-  bits.push(toolTotal+" 个动作");
+  bits.push(toolTotal+" 次操作");
   if(fileTotal) bits.push(fileTotal+" 个文件");
   if(turn&&turn.duration_ms!=null) bits.push(nFmtDur(turn.duration_ms));
-  var hidden=turn&&turn.assistant_text ? (isLatest?'<em>AI 总结回复默认展开，可收起。</em>':'<em>AI 总结回复默认折叠，下方可展开查看。</em>') :
-    (turn&&turn.assistant_text_hidden&&turn.assistant_text_chars ? '<em>最终回复已折叠（'+nEsc(String(turn.assistant_text_chars))+' 字），可切到 Chat View 查看。</em>' : '<em>详细过程已折叠，可切到 Chat View 查看。</em>');
-  var title=(turn&&turn.status)==="error" ? "本轮失败" : "本轮已完成";
-  return '<div class="work-complete '+nWorkSafeStatus(turn&&turn.status||"done")+'"><span>'+title+'</span><b>'+nEsc(bits.filter(Boolean).join(" · ")||"无工具动作")+'</b>'+hidden+'</div>';
+  var hidden=turn&&turn.assistant_text ? (isLatest?'<em>最终回复已展开，旧记录会自动收进历史。</em>':'<em>最终回复已折叠，可按需展开。</em>') :
+    (turn&&turn.assistant_text_hidden&&turn.assistant_text_chars ? '<em>最终回复已折叠（'+nEsc(String(turn.assistant_text_chars))+' 字）。</em>' : '<em>原始事件已收起，可按需查看。</em>');
+  var title=(turn&&turn.status)==="error" ? "本轮失败" : "本轮完成";
+  return '<div class="work-complete '+nWorkSafeStatus(turn&&turn.status||"done")+'"><span>'+title+'</span><b>'+nEsc(bits.filter(Boolean).join(" · ")||"无工具操作")+'</b>'+hidden+'</div>';
 }
 function nWorkTurnKey(turn, idx){
   return String((turn&&(turn.key||turn.seq||turn.merged_seq))||("turn-"+idx));
 }
-function nWorkChangedFilesHtml(turn, detailKey){
+function nWorkChangedFilesHtml(turn, detailKey, turnKey){
   var rows=Array.isArray(turn&&turn.changed_files)?turn.changed_files:[];
   if(!rows.length) return "";
   var added=nWorkInt(turn&&turn.diff_added,0), deleted=nWorkInt(turn&&turn.diff_deleted,0);
   var total=nWorkInt(turn&&turn.diff_total, added+deleted);
-  return '<details class="work-file-details" data-work-detail="'+nEscAttr(detailKey||"files")+'"><summary>改动文件一览 · '+rows.length+' 文件 · '+total+' 行 <span>+'+added+' -'+deleted+'</span></summary>'+
-    '<div class="work-file-list">'+rows.map(function(row){
-      var a=nWorkInt(row&&row.added,0), d=nWorkInt(row&&row.deleted,0);
-      return '<div class="work-file-row"><b>'+nEsc(row&&row.path||"")+'</b><span class="add">+'+a+'</span><span class="del">-'+d+'</span></div>';
-    }).join("")+'</div></details>';
+  return '<details class="work-file-details" data-work-detail="'+nEscAttr(detailKey||"files")+'"><summary>变更文件 · '+rows.length+' 个 · '+total+' 行 <span>+'+added+' -'+deleted+'</span></summary>'+ '<div class="work-file-list">'+rows.map(function(row){
+    var a=nWorkInt(row&&row.added,0), d=nWorkInt(row&&row.deleted,0);
+    var path=String(row&&row.path||"");
+    return '<div class="work-file-entry"><div class="work-file-row"><b>'+nEsc(path)+'</b><span class="add">+'+a+'</span><span class="del">-'+d+'</span><button type="button" class="work-file-diff-btn" data-work-action="file-diff" data-work-turn-key="'+nEscAttr(turnKey||"")+'" data-work-file-path="'+nEscAttr(path)+'" aria-expanded="false">查看 diff</button></div><div class="work-file-diff" data-work-file-diff-panel hidden></div></div>';
+  }).join("")+'</div></details>';
+}
+function nativeWorkContentText(value){
+  if(value==null) return "";
+  if(typeof value==="string") return value;
+  if(Array.isArray(value)) return value.map(nativeWorkContentText).filter(Boolean).join("\n");
+  if(typeof value==="object"){
+    if(typeof value.text==="string") return value.text;
+    if(value.content!=null) return nativeWorkContentText(value.content);
+    if(value.output!=null) return nativeWorkContentText(value.output);
+    if(value.stdout!=null || value.stderr!=null) return [nativeWorkContentText(value.stdout),nativeWorkContentText(value.stderr)].filter(Boolean).join("\n");
+  }
+  return "";
+}
+function nativeWorkEventBlocks(event){
+  var msg=(event&&event.message)||{}, content=msg.content;
+  if(Array.isArray(content)) return content.filter(function(block){ return block && typeof block==="object"; });
+  if(content && typeof content==="object") return [content];
+  if(typeof content==="string") return [{type:"text", text:content}];
+  return [];
+}
+function nativeWorkToolMayHaveDiff(name){
+  name=String(name||"").toLowerCase();
+  return !name || /^(bash|powershell|toolresult|edit|str_replace_edit|write|write_file|multiedit)$/.test(name);
+}
+function nativeWorkDiffForFile(events, filePath){
+  filePath=typeof nDiffCleanPath==="function" ? nDiffCleanPath(filePath) : String(filePath||"");
+  var out={path:filePath, sections:[]}, toolNames={};
+  (Array.isArray(events)?events:[]).forEach(function(ev){
+    nativeWorkEventBlocks(ev).forEach(function(block){
+      if(block && block.type==="tool_use" && block.id) toolNames[String(block.id)]=String(block.name||"");
+    });
+  });
+  (Array.isArray(events)?events:[]).forEach(function(ev){
+    nativeWorkEventBlocks(ev).forEach(function(block){
+      if(!block || block.type!=="tool_result") return;
+      if(!nativeWorkToolMayHaveDiff(toolNames[String(block.tool_use_id||"")])) return;
+      var txt=nativeWorkContentText(block.content);
+      if(!txt) return;
+      var looks=typeof nLooksLikeDiff==="function" ? nLooksLikeDiff(txt) : (txt.indexOf("diff --git ")>=0);
+      if(!looks || typeof nDiffFileSections!=="function") return;
+      nDiffFileSections(txt).forEach(function(sec){
+        var path=typeof nDiffCleanPath==="function" ? nDiffCleanPath(sec&&sec.path) : String(sec&&sec.path||"");
+        if(path===filePath) out.sections.push(sec);
+      });
+    });
+  });
+  return out;
+}
+function nWorkFileDiffHtml(filePath, diff){
+  filePath=String(filePath||"");
+  diff=diff||{};
+  var sections=Array.isArray(diff.sections)?diff.sections:[];
+  if(!sections.length){
+    return '<div class="work-file-diff-empty">这一轮原始事件里没有找到 <b>'+nEsc(filePath)+'</b> 的 diff。可能只是读取文件、二进制变更，或历史只保存了摘要。</div>';
+  }
+  var added=0, deleted=0, lines=0;
+  sections.forEach(function(sec){ added+=nWorkInt(sec&&sec.add,0); deleted+=nWorkInt(sec&&sec.del,0); lines+=(sec&&sec.lines&&sec.lines.length)||0; });
+  var isLarge=lines>260 || sections.length>4;
+  var body=typeof nDiffBodyHtml==="function" ? nDiffBodyHtml(sections, isLarge) : '<pre class="diff-unified">'+sections.map(function(sec){ return nDiffRowsHtml(sec.lines||[]); }).join("")+'</pre>';
+  return '<div class="work-file-diff-head"><div><span>修改详情</span><b>'+nEsc(filePath)+'</b></div><em>+'+added+' -'+deleted+' · '+lines+' 行</em></div><div class="work-file-diff-body">'+body+'</div>';
 }
 function nWorkFinalHtml(turn, detailKey, open){
   var text=String((turn&&turn.assistant_text)||"").trim();
   if(!text) return "";
   var chars=turn&&turn.assistant_text_chars ? " · "+turn.assistant_text_chars+" 字" : "";
   var trunc=turn&&turn.assistant_text_truncated ? " · 已截断" : "";
-  return '<details class="work-final-details" data-work-detail="'+nEscAttr(detailKey||"final")+'"'+(open?' open':'')+'><summary>AI 总结回复'+nEsc(chars+trunc)+'</summary><div class="work-final">'+renderMd(text)+'</div></details>';
+  return '<details class="work-final-details" data-work-detail="'+nEscAttr(detailKey||"final")+'"'+(open?' open':'')+'><summary>最终回复'+nEsc(chars+trunc)+'</summary><div class="work-final">'+renderMd(text)+'</div></details>';
 }
 function nWorkProgressHtml(turn){
   var text=String((turn&&turn.assistant_text)||"").trim();
   if(!text) return "";
   var chars=turn&&turn.assistant_text_chars ? " · "+turn.assistant_text_chars+" 字" : "";
   var trunc=turn&&turn.assistant_text_truncated ? " · 已截断" : "";
-  return '<div class="work-progress"><div class="work-subhead">AI 中途回复'+nEsc(chars+trunc)+'</div><div class="work-progress-body">'+renderMd(text)+'</div></div>';
+  return '<div class="work-progress"><div class="work-subhead">AI 正在回复'+nEsc(chars+trunc)+'</div><div class="work-progress-body">'+renderMd(text)+'</div></div>';
 }
 function nWorkErrorHtml(turn){
   if(!turn || turn.status!=="error") return "";
-  var err=String(turn.error||"本轮执行失败，未提供详细错误。").trim();
+  var err=String(turn.error||"本轮失败，但没有返回详细错误。").trim();
   return '<div class="work-error"><span>错误</span><pre>'+nEsc(err)+'</pre></div>';
 }
 function nWorkUserTextHtml(turn){
   var full=String((turn&&turn.user_text)||"").trim();
-  return '<div class="work-user">'+nEsc(full||"Agent turn")+'</div>';
+  return '<div class="work-user">'+nEsc(full||"Agent 回合")+'</div>';
 }
 function nWorkTurnHtml(turn, idx, total){
   turn=turn||{};
   var toolTotal=nWorkToolTotal(turn), fileTotal=nWorkFileTotal(turn);
   var running=turn.status==="running";
-  var meta=[nWorkTurnStatusText(turn.status), toolTotal?toolTotal+" 动作":"0 动作", fileTotal?fileTotal+" 文件":""].filter(Boolean);
+  var meta=[nWorkTurnStatusText(turn.status), toolTotal?toolTotal+" 次操作":"0 次操作", fileTotal?fileTotal+" 个文件":""].filter(Boolean);
   var clock=nFmtClock(running ? turn.started_ts : turn.finished_ts);
   if(clock) meta.push((running?"开始 ":"完成 ")+clock);
   meta=meta.join(" · ");
@@ -362,26 +429,46 @@ function nWorkTurnHtml(turn, idx, total){
   var isLatest=idx===total-1;
   var detailKey="final-"+nWorkTurnKey(turn, idx);
   var filesKey="files-"+nWorkTurnKey(turn, idx);
-  var chatKey=nWorkTurnKey(turn, idx);
-  return '<section class="work-turn '+nWorkSafeStatus(turn.status||"done")+'">'+
-    '<div class="work-turn-head"><div><span class="work-pill">'+nEsc("#"+(idx+1))+'</span></div><em>'+metaHtml+'</em></div>'+
+  var traceKey=nWorkTurnKey(turn, idx);
+  return '<section class="work-turn '+nWorkSafeStatus(turn.status||"done")+(isLatest?' latest':'')+'">'+
+    '<div class="work-turn-head"><div><span class="work-pill">#'+nEsc(String(idx+1))+'</span><b>'+(isLatest?'最新结果':'历史记录')+'</b></div><em>'+metaHtml+'</em></div>'+
     nWorkUserTextHtml(turn)+
-    (isLatest?'':nWorkTodosHtml(turn.todos||[]))+
+    (isLatest?'':nWorkTodosHtml(turn.todos||[], {key:"tasks-"+nWorkTurnKey(turn, idx)}))+
     (running?nWorkCurrentActionHtml(turn):nWorkCompleteHtml(turn, toolTotal, fileTotal, isLatest))+
     (running?nWorkProgressHtml(turn):'')+
     nWorkErrorHtml(turn)+
-    nWorkChangedFilesHtml(turn, filesKey)+
+    nWorkChangedFilesHtml(turn, filesKey, traceKey)+
     (!running?nWorkFinalHtml(turn, detailKey, isLatest):'')+
-    '<div class="work-actions"><button type="button" class="ghost" data-work-action="chat-turn" data-work-turn-key="'+nEscAttr(chatKey)+'">查看本卡 Chat View</button></div>'+
-    '<div class="work-turn-chat" data-work-chat-key="'+nEscAttr(chatKey)+'" hidden></div>'+
+    '<div class="work-actions"><button type="button" class="ghost" data-work-action="trace-turn" data-work-turn-key="'+nEscAttr(traceKey)+'">显示原始事件</button></div>'+
+    '<div class="work-turn-trace" data-work-trace-key="'+nEscAttr(traceKey)+'" hidden></div>'+
   '</section>';
 }
+function nWorkPendingEvents(pending){
+  return (pending||[]).filter(function(ev){ return ev && (ev.type==="pending_approval" || ev.type==="pending_ask" || ev.type==="pending_form"); });
+}
 function nWorkPendingHtml(pending){
-  pending=(pending||[]).filter(function(ev){ return ev && (ev.type==="pending_approval" || ev.type==="pending_ask" || ev.type==="pending_form"); });
+  pending=nWorkPendingEvents(pending);
   if(!pending.length) return "";
-  return '<div class="work-pending"><b>'+_I('alert')+' 需要处理 '+pending.length+' 项确认</b>'+
-    pending.map(function(ev){ return '<div><span>'+nEsc(ev.name||ev.question||ev.message||ev.type)+'</span></div>'; }).join("")+
-    '<em>请在输入框工具栏选择 Chat 处理确认。</em></div>';
+  return '<div class="work-pending"><b>'+_I('alert')+' 需要处理：'+pending.length+' 个待确认项</b>'+ '<div class="work-pending-cards" data-work-pending></div></div>';
+}
+function nativeWorkRenderPendingCards(sid, st, pending){
+  var host=st && st.root && st.root.querySelector ? st.root.querySelector("[data-work-pending]") : null;
+  if(!host) return;
+  // Reuse the existing pending-card renderers so approval behavior stays identical in Work mode.
+  var pseudo={root:host, turnCard:host, curTxt:null, curThink:null, thinkBubble:null, thinkBox:null, thinkSum:null, thinkTimer:null, thinking:false, lastWasHumanUser:false};
+  var m=$("nativemsgs"); if(m) m._nativeStickBottom=false;
+  nWorkPendingEvents(pending).forEach(function(ev){
+    try{
+      if(ev.type==="pending_ask") nHandlePendingAsk(sid, pseudo, ev);
+      else if(ev.type==="pending_approval") nHandlePendingApproval(sid, pseudo, ev);
+      else if(ev.type==="pending_form") nHandlePendingForm(sid, pseudo, ev);
+    }catch(e){
+      var warn=document.createElement("div");
+      warn.className="work-trace-empty";
+      warn.textContent="Pending card render failed: "+(e&&e.message||e);
+      host.appendChild(warn);
+    }
+  });
 }
 function nativeWorkTurnRows(turns){
   turns=Array.isArray(turns)?turns:[];
@@ -390,9 +477,20 @@ function nativeWorkTurnRows(turns){
 function nWorkHistoryHtml(rows, total){
   rows=Array.isArray(rows)?rows:[];
   if(!rows.length) return "";
-  return '<details class="work-history" data-work-detail="history"><summary>历史轮次 · '+rows.length+' 轮</summary><div class="work-history-body">'+
-    rows.map(function(row){ return nWorkTurnHtml(row.turn,row.idx,total); }).join("")+
-    '</div></details>';
+  return '<details class="work-history" data-work-detail="history"><summary>历史记录 · '+rows.length+' 轮</summary><div class="work-history-body">'+ rows.map(function(row){ return nWorkTurnHtml(row.turn,row.idx,total); }).join("")+'</div></details>';
+}
+function nWorkNoticeLevel(level){
+  level=String(level||"info").toLowerCase();
+  return /^(info|warning|warn|error)$/.test(level) ? level : "info";
+}
+function nWorkNoticesHtml(notices){
+  notices=Array.isArray(notices)?notices.filter(function(n){ return n && n.text; }).slice(-5):[];
+  if(!notices.length) return "";
+  return '<div class="work-notices" role="status">'+notices.map(function(n){
+    var level=nWorkNoticeLevel(n.level);
+    var icon=(level==="error" || level==="warning" || level==="warn") ? "alert" : "circle-alert";
+    return '<div class="work-notice '+level+'">'+_I(icon)+'<div><b>系统提示</b><p>'+nEsc(n.text||"")+'</p></div></div>';
+  }).join("")+'</div>';
 }
 function nWorkContextHtml(cwd, model){
   var bits=[];
@@ -409,6 +507,7 @@ function nativeRenderWork(sid, payload, force){
   if(!force && sig===st.lastSig){ nativeWorkSyncElapsed(st, work); return; }
   var stickTop=force || !st.lastSig || nativeWorkAtTop();
   var openDetails=nativeWorkRememberOpenDetails(st);
+  st.turnPayloads={};
   st.lastSig=sig;
   var turns=work.turns||[], elapsed=nWorkElapsed(work), status=nWorkStatusText(work.status, work.running);
   var turnRows=nativeWorkTurnRows(turns);
@@ -416,17 +515,20 @@ function nativeRenderWork(sid, payload, force){
   var totals={tools:nWorkInt(work.tool_total,0), files:nWorkInt(work.file_total,0)};
   if(!totals.tools) turns.forEach(function(t){ totals.tools+=nWorkToolTotal(t); });
   if(!totals.files) turns.forEach(function(t){ totals.files+=nWorkFileTotal(t); });
-  var html='<div class="work-board"><div class="work-hero '+nWorkSafeStatus(work.status||"idle")+'">'+
-    '<div><div class="work-head-row"><span class="work-kicker">Work View</span>'+nWorkContextHtml(cwd, model)+'</div><h2>'+nEsc(status)+'</h2><p>过程内容已压缩：运行中显示最近动作和 AI 中途回复，完成后只显示数量概览。</p></div>'+
-    '<div class="work-metrics"><span>'+nEsc(String(work.turn_count||turns.length))+' turns</span><span>'+totals.tools+' actions</span><span>'+totals.files+' files</span>'+(elapsed?'<span class="work-elapsed">'+nEsc(elapsed)+'</span>':'')+'</div>'+
-    '<button type="button" class="ghost" data-work-action="refresh">刷新</button></div>'+
+  var metricText=[nEsc(String(work.turn_count||turns.length))+' 轮', totals.tools+' 次操作', totals.files+' 个文件'].concat(elapsed?['<span class="work-elapsed">'+nEsc(elapsed)+'</span>']:[]).join(' · ');
+  var html='<div class="work-board"><div class="work-hero work-status-strip '+nWorkSafeStatus(work.status||"idle")+'">'+
+    '<div class="work-hero-copy"><div class="work-head-row"><span class="work-kicker">Work</span>'+nWorkContextHtml(cwd, model)+'</div><h2>'+nEsc(status)+'</h2><p>'+metricText+'</p></div>'+
+    '<div class="work-hero-side"><button type="button" class="ghost work-refresh" data-work-action="refresh" title="刷新">'+_I('refresh-cw')+'<span>刷新</span></button></div></div>'+
+    nWorkNoticesHtml(work.notices||[])+
     nWorkPendingHtml(pending)+
-    nWorkTodosHtml(work.latest_todos||[])+
-    (latestRow?nWorkTurnHtml(latestRow.turn,latestRow.idx,turns.length):'<div class="work-empty">暂无对话快照。发送消息后这里会显示任务进度。</div>')+
+    nWorkTodosHtml(work.latest_todos||[], {key:"latest-tasks"})+
+    (latestRow?nWorkTurnHtml(latestRow.turn,latestRow.idx,turns.length):'<div class="work-empty">还没有工作快照。输入任务后，进度、确认项和最终回复会显示在这里。</div>')+
     nWorkHistoryHtml(historyRows, turns.length)+
     '</div>';
   st.root.innerHTML=html;
+  if(st.root.classList) st.root.classList.add("work-mounted");
   nativeWorkRestoreOpenDetails(st, openDetails);
+  nativeWorkRenderPendingCards(sid, st, pending);
   nativeWorkSyncElapsed(st, work);
   nHljs(st.root);
   nativeWorkScrollTop(stickTop);
@@ -439,14 +541,14 @@ function nativeWorkPreviewStage(root){
           replaySigParts:[], replayFetchId:0, lastCatchupPoll:0, catchupInFlight:false,
           lastWasHumanUser:false, lastHumanText:""};
 }
-function nativeWorkRenderTurnChat(sid, key, panel, payload){
+function nativeWorkRenderTurnTrace(sid, key, panel, payload){
   var events=(payload&&payload.events)||[];
   if(!events.length){
-    panel.innerHTML='<div class="work-chat-empty">这一卡片暂无可展示的 Chat 事件。</div>';
+    panel.innerHTML='<div class="work-trace-empty">这一轮没有可用的原始事件。</div>';
     return;
   }
   var body=document.createElement("div");
-  body.className="work-chat-body";
+  body.className="work-trace-body";
   panel.innerHTML="";
   panel.appendChild(body);
   var previewSid=sid+"::work::"+key;
@@ -460,7 +562,7 @@ function nativeWorkRenderTurnChat(sid, key, panel, payload){
       nHandle(previewSid, obj);
     });
   }catch(e){
-    body.innerHTML='<div class="work-chat-empty">Chat 预览渲染失败：'+nEsc(e&&e.message||e)+'</div>';
+    body.innerHTML='<div class="work-trace-empty">原始事件渲染失败：'+nEsc(e&&e.message||e)+'</div>';
   }finally{
     if(st.thinkTimer){ clearInterval(st.thinkTimer); st.thinkTimer=null; }
     if(st.replayTimer){ clearTimeout(st.replayTimer); st.replayTimer=null; }
@@ -469,37 +571,80 @@ function nativeWorkRenderTurnChat(sid, key, panel, payload){
   }
   nHljs(body);
 }
-function nativeWorkToggleTurnChat(sid, btn){
+function nativeWorkToggleTurnTrace(sid, btn){
   var key=btn && btn.dataset ? btn.dataset.workTurnKey : "";
   var card=btn && btn.closest ? btn.closest(".work-turn") : null;
-  var panel=card && card.querySelector ? card.querySelector(".work-turn-chat") : null;
+  var panel=card && card.querySelector ? card.querySelector(".work-turn-trace") : null;
   if(!key || !panel) return;
   if(!panel.hidden){
     panel.hidden=true;
-    btn.textContent="查看本卡 Chat View";
+    btn.textContent="显示原始事件";
     return;
   }
   panel.hidden=false;
-  btn.textContent="收起本卡 Chat View";
+  btn.textContent="隐藏原始事件";
   if(panel.dataset.loaded==="1") return;
-  panel.innerHTML='<div class="work-chat-empty">正在加载这一卡片的 Chat View…</div>';
+  panel.innerHTML='<div class="work-trace-empty">正在加载这一轮的原始事件…</div>';
   var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&view=turn&turn="+encodeURIComponent(key);
   api(url).then(function(r){
     if(panel.hidden) return;
     if(!r || r.ok===false){
-      panel.innerHTML='<div class="work-chat-empty">这一卡片 Chat View 加载失败：'+nEsc(r&&r.error||"unknown error")+'</div>';
+      panel.innerHTML='<div class="work-trace-empty">原始事件加载失败：'+nEsc(r&&r.error||"unknown error")+'</div>';
       return;
     }
     panel.dataset.loaded="1";
-    nativeWorkRenderTurnChat(sid, key, panel, r);
+    nativeWorkRenderTurnTrace(sid, key, panel, r);
   }).catch(function(e){
     if(panel.hidden) return;
-    panel.innerHTML='<div class="work-chat-empty">这一卡片 Chat View 加载失败：'+nEsc(e&&e.message||e)+'</div>';
+    panel.innerHTML='<div class="work-trace-empty">原始事件加载失败：'+nEsc(e&&e.message||e)+'</div>';
+  });
+}
+function nativeWorkToggleFileDiff(sid, btn){
+  var key=btn && btn.dataset ? btn.dataset.workTurnKey : "";
+  var path=btn && btn.dataset ? btn.dataset.workFilePath : "";
+  var entry=btn && btn.closest ? btn.closest(".work-file-entry") : null;
+  var panel=entry && entry.querySelector ? entry.querySelector("[data-work-file-diff-panel]") : null;
+  if(!key || !path || !panel) return;
+  if(!panel.hidden){
+    panel.hidden=true;
+    btn.textContent="查看 diff";
+    btn.setAttribute("aria-expanded","false");
+    return;
+  }
+  panel.hidden=false;
+  btn.textContent="隐藏 diff";
+  btn.setAttribute("aria-expanded","true");
+  if(panel.dataset.loaded==="1") return;
+  var st=nativeWorkStages[sid], cached=st&&st.turnPayloads&&st.turnPayloads[key];
+  if(cached){
+    panel.dataset.loaded="1";
+    panel.innerHTML=nWorkFileDiffHtml(path, nativeWorkDiffForFile(cached.events||[], path));
+    nHljs(panel);
+    return;
+  }
+  btn.setAttribute("aria-busy","true");
+  panel.innerHTML='<div class="work-file-diff-empty">正在加载 '+nEsc(path)+' 的修改详情…</div>';
+  var url="/api/nreplay?sid="+encodeURIComponent(sid)+"&view=turn&turn="+encodeURIComponent(key);
+  api(url).then(function(r){
+    btn.setAttribute("aria-busy","false");
+    if(panel.hidden) return;
+    if(!r || r.ok===false){
+      panel.innerHTML='<div class="work-file-diff-empty">diff 加载失败：'+nEsc(r&&r.error||"unknown error")+'</div>';
+      return;
+    }
+    if(st && st.turnPayloads) st.turnPayloads[key]=r;
+    panel.dataset.loaded="1";
+    panel.innerHTML=nWorkFileDiffHtml(path, nativeWorkDiffForFile(r.events||[], path));
+    nHljs(panel);
+  }).catch(function(e){
+    btn.setAttribute("aria-busy","false");
+    if(panel.hidden) return;
+    panel.innerHTML='<div class="work-file-diff-empty">diff 加载失败：'+nEsc(e&&e.message||e)+'</div>';
   });
 }
 function nativeRenderWorkError(sid){
   var st=nativeWorkStage(sid);
   if(st.root && !st.root.innerHTML){
-    st.root.innerHTML='<div class="work-board"><div class="work-empty">Work View 加载失败，稍后会自动重试。</div></div>';
+    st.root.innerHTML='<div class="work-board"><div class="work-empty">Work 视图加载失败，稍后会自动重试。</div></div>';
   }
 }

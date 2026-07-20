@@ -612,6 +612,7 @@ def _registry_safe_entry(sid, s):
         "state": native_state,
         "busy": bool(getattr(ns, "_busy", False)) if ns else bool(s.get("busy")),
         "current_turn_started_at": getattr(ns, "current_turn_started_at", None) if ns else s.get("current_turn_started_at"),
+        "last_completed_at": getattr(ns, "last_completed_at", None) if ns else s.get("last_completed_at"),
         "last_activity": getattr(ns, "last_activity", None) if ns else s.get("last_activity"),
         "awaiting_plan_decision": bool(getattr(ns, "_awaiting_plan_decision", False)) if ns else bool(s.get("awaiting_plan_decision")),
         "session_id": getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or s.get("session_id"),
@@ -795,6 +796,10 @@ def _notify_enabled_for(event):
 
 def notify_result_text(events, limit=3500):
     return common_notify.notify_result_text(events, limit=limit)
+
+
+def notify_copy(kind, cwd, actor="Agent", detail="", danger=False):
+    return common_notify.notify_copy(kind, cwd, actor=actor, detail=detail, danger=danger)
 
 
 _ps_quote = common_notify.ps_quote

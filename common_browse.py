@@ -3,6 +3,43 @@
 import os
 
 
+def _event_ts_seconds(event):
+    try:
+        value = float((event or {}).get("ts") or 0)
+    except (TypeError, ValueError):
+        return 0
+    if value > 100000000000:
+        value = value / 1000.0
+    return value if value > 0 else 0
+
+
+def _completion_ts_from_events(events):
+    for event in reversed(list(events or [])):
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") not in ("result", "interrupted", "rate_limited"):
+            continue
+        ts = _event_ts_seconds(event)
+        if ts:
+            return ts
+    return 0
+
+
+def _session_completed_at(ns, session):
+    value = getattr(ns, "last_completed_at", None) if ns else session.get("last_completed_at")
+    try:
+        if value:
+            return float(value)
+    except (TypeError, ValueError):
+        pass
+    if ns:
+        for source in (getattr(ns, "timeline", None), getattr(ns, "events", None)):
+            ts = _completion_ts_from_events(source)
+            if ts:
+                return ts
+    return 0
+
+
 def parent_of(path):
     if not path:
         return ""
@@ -52,6 +89,13 @@ def session_obj(sid, session, host="", normalize_backend_fn=None, is_codex_backe
     if not provider:
         provider = "codex" if (is_codex_backend_fn and is_codex_backend_fn(backend)) else "claude"
     session_id = getattr(ns, "claude_sid", None) or getattr(ns, "thread_id", None) or session.get("session_id")
+    state = ns.state() if ns else "idle"
+    last_completed_at = _session_completed_at(ns, session)
+    last_activity = getattr(ns, "last_activity", 0) if ns else 0
+    if state in ("running", "confirm", "plan"):
+        last_output_ts = last_activity
+    else:
+        last_output_ts = last_completed_at
     return {
         "sid": sid,
         "dir": session["dir"],
@@ -64,10 +108,12 @@ def session_obj(sid, session, host="", normalize_backend_fn=None, is_codex_backe
         "backend": backend,
         "provider": provider,
         "native": True,
-        "state": ns.state() if ns else "idle",
+        "state": state,
         "yolo": bool(getattr(ns, "yolo", False) if ns else session.get("yolo")),
-        "last_input_ts": getattr(ns, "last_activity", 0) if ns else 0,
-        "last_output_ts": getattr(ns, "last_activity", 0) if ns else 0,
+        "current_turn_started_at": getattr(ns, "current_turn_started_at", None) if ns else session.get("current_turn_started_at"),
+        "last_completed_at": last_completed_at,
+        "last_input_ts": last_activity,
+        "last_output_ts": last_output_ts,
         "cols": 0,
         "rows": 0,
     }

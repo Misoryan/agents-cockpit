@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "index.html"
+APP_CSS = ROOT / "assets" / "app.css"
 
 
 class ScriptExtractor(HTMLParser):
@@ -47,21 +48,36 @@ def _local_script_text(src):
 
 def main():
     html = INDEX.read_text(encoding="utf-8")
+    css = APP_CSS.read_text(encoding="utf-8")
     assert 'href="/assets/app.css"' in html
+    assert 'href="/assets/agent-cockpit-logo.svg"' in html
+    assert 'class="logo-mark"' in html
+    assert 'class="welcome-logo"' in html
     assert "cdn.jsdelivr.net" not in html
     assert 'href="/assets/vendor/atom-one-light.min.css"' in html
     assert 'id="lm-args"' not in html
     assert 'id="set-args"' not in html
     assert 'id="lm-codex-field"' in html
     assert 'id="slashmenu"' in html
-    assert "#nativesend .nwrap{position:relative" in html
-    assert "max-height:min(420px,calc(100dvh - 190px))" in html
-    assert "contain:layout style paint" in html
-    assert "content-visibility:auto" in html
-    assert "#nativetasks.done" in html
+    assert "#nativesend .nwrap{position:relative" in css
+    assert "max-height:min(420px,calc(100dvh - 190px))" in css
+    assert "contain:layout style paint" in css
+    assert "content-visibility:auto" in css
+    assert "#nativetasks.done" in css
+    assert "top:calc(var(--topbar-h,60px) + 12px + env(safe-area-inset-top))" in css
+    assert ".notice-actions" in css
+    assert "@keyframes noticeOut" in css
+    assert "status-mapped selection and Work hero" in css
+    assert ".osrow.current .osbadge," in css
+    assert ".work-hero.work-status-strip" in css
+    assert "--work-status-color:var(--green)" in css
+    assert "mobile sidebar: hide open session rail" in css
+    assert "#sidebar .sb-open-section{display:none!important}" in css
+    assert "@media (max-width:640px){\n  #sessionquick.available{display:inline-flex}" in css
     assert 'id="hist-archived"' in html
-    assert '&#36827;&#34892;&#20013;' in html
-    assert '&#24050;&#24402;&#26723;' in html
+    assert 'id="history-section-title"' in html
+    assert '&#26368;&#36817;' in html
+    assert '&#24402;&#26723;' in html
     assert 'id="lm-codex-reasoning"' in html
     assert 'id="lm-codex-summary"' in html
     assert 'id="lm-codex-service-tier"' in html
@@ -69,16 +85,22 @@ def main():
     assert 'id="nativeslashhelp"' not in html
     assert 'id="nmode-task"' not in html
     assert 'id="nmode-plan"' in html
-    assert 'id="nview-chat"' in html
-    assert 'id="nview-work"' in html
-    assert '<button type="button" class="nmode" id="nview-chat" aria-pressed="false">Chat</button>' in html
-    assert '<button type="button" class="nmode active" id="nview-work" aria-pressed="true">Work</button>' in html
+    assert 'id="nview-chat"' not in html
+    assert 'id="nview-work"' not in html
+    assert 'class="work-mode-label"' not in html
+    assert 'placeholder="描述任务，或输入 / 命令"' in html
     assert '&#22270;&#29255;' in html
     assert 'id="lm-codex-status"' in html
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
-    assert "查看完整 Chat View" not in js
+    assert "function noticeKindMeta(kind)" in js
+    assert "function noticePayload(kind, s, detail)" in js
+    assert "className=\"notice-actions\"" in js
+    assert "while(area.children.length>3)" in js
+    assert 'row.setAttribute("aria-current", "page")' in js
+    assert 's.sid===currentSid?"\\u5f53\\u524d"' not in js
+    assert "Chat View" not in js
     codex_native = (ROOT / "codex_native.py").read_text(encoding="utf-8")
     assert "_REPLAY_MAX_EVENTS = 400" in codex_native
     assert "def _repair_full_replay_from_thread(self):" in codex_native
@@ -150,6 +172,8 @@ def main():
         "function renderDirRow(d, q)",
         "function renderDirBody(d, mc)",
         "function renderConv(it)",
+        "function sidebarOpenSessionsVisible()",
+        "!window.matchMedia(\"(max-width:640px)\").matches",
         "function closeSession(sid, btn)",
         "function resumeHist(h)",
         "function delHist(h, btn)",
@@ -182,7 +206,8 @@ def main():
         'reason==="foreground"',
         'reason==="switch"',
         "function nativeCatchupPoll(sid, reason)",
-        "function nativeSetViewMode(mode, persist)",
+        "function nativeSetViewMode(_mode, persist)",
+        "function nativeViewIsWork(){ return true; }",
         "var nativeViewMode=\"work\"",
         "function nativeShowWorkSession(sid)",
         "function nativeRenderWork(sid, payload, force)",
@@ -193,9 +218,13 @@ def main():
         "function nWorkHistoryHtml(rows, total)",
         "function nWorkProgressHtml(turn)",
         "function nWorkErrorHtml(turn)",
-        "function nWorkChangedFilesHtml(turn, detailKey)",
-        "function nativeWorkToggleTurnChat(sid, btn)",
-        "function nativeWorkRenderTurnChat(sid, key, panel, payload)",
+        "function nWorkChangedFilesHtml(turn, detailKey, turnKey)",
+        "function nativeWorkDiffForFile(events, filePath)",
+        "function nativeWorkToolMayHaveDiff(name)",
+        "function nWorkFileDiffHtml(filePath, diff)",
+        "function nativeWorkToggleTurnTrace(sid, btn)",
+        "function nativeWorkToggleFileDiff(sid, btn)",
+        "function nativeWorkRenderTurnTrace(sid, key, panel, payload)",
         "nativeWorkTurnRows(turns)",
         "nWorkHistoryHtml(historyRows, turns.length)",
         "nativeWorkScrollTop(stickTop)",
@@ -205,12 +234,17 @@ def main():
         "work-progress-body",
         "本轮失败",
         "data-work-detail",
-        'data-work-action="chat-turn"',
+        'data-work-action="trace-turn"',
+        'data-work-action="file-diff"',
+        'data-work-file-path',
+        "显示原始事件",
+        "查看 diff",
+        "历史记录",
         '"&view=turn&turn="+encodeURIComponent(key)',
         "work-file-details",
+        "work-file-diff",
+        "diff-unified",
         '"/api/nreplay?sid="+encodeURIComponent(sid)+"&view=work"',
-        '$("nview-chat")',
-        '$("nview-work")',
         "st.catchupInFlight",
         "st.lastCatchupPoll",
         "if(!ws || ws.readyState!==1)",
@@ -221,6 +255,8 @@ def main():
         'nativeCatchupPoll(sid, "foreground")',
         'nativeCatchupPoll(sid, "switch")',
         "function nativeSlashCommand(command, st)",
+        "function nativeSlashFeedback(sid, command, message, isError)",
+        "nativeWorkPollOnce(sid, true)",
         "var nativeSlashCommands=[",
         "function nRenderSlashMenu()",
         'postJSON("/api/nslash"',

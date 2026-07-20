@@ -197,6 +197,7 @@ class CodexSession:
         self.thread_id = None
         self.last_turn_id = None
         self.current_turn_started_at = None
+        self.last_completed_at = None
         self.model = ""
         self.model_provider = ""
         self.service_tier = ""

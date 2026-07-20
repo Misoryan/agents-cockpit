@@ -11,9 +11,11 @@ _MAX_TOOL_PREVIEW = 900
 _MAX_TOOL_INPUT = 1600
 _MAX_ACTION_LABEL = 180
 _MAX_TURNS = 80
+_MAX_NOTICES = 5
 _MAX_TOOLS_PER_TURN = 80
 _MAX_RUNNING_TOOLS_VISIBLE = 1
 _MAX_FILES = 80
+_WORK_CACHE_ATTR = "_work_replay_cache"
 
 
 def _seq(event):
@@ -204,6 +206,16 @@ def _tool_files(name, inp):
     return files
 
 
+def _tool_declares_file_changes(name):
+    lower = str(name or "").lower()
+    return lower in ("edit", "str_replace_edit", "write", "write_file", "multiedit")
+
+
+def _tool_result_may_contain_diff(name):
+    lower = str(name or "").lower()
+    return lower in ("bash", "powershell", "toolresult") or _tool_declares_file_changes(lower)
+
+
 def _compact_tool(tool):
     if not tool:
         return None
@@ -377,8 +389,9 @@ def _add_tool(turn, block, event):
     if len(turn["tools"]) > _MAX_TOOLS_PER_TURN:
         turn["tools"] = turn["tools"][-_MAX_TOOLS_PER_TURN:]
     turn["tool_counts"][name] = int(turn["tool_counts"].get(name) or 0) + 1
-    for path in tool["files"]:
-        _uniq_append(turn["files"], path, _MAX_FILES)
+    if _tool_declares_file_changes(name):
+        for path in tool["files"]:
+            _uniq_append(turn["files"], path, _MAX_FILES)
     if lower in ("bash", "powershell"):
         _uniq_append(turn["commands"], tool["label"], 40)
     if lower in ("todowrite", "todo_write"):
@@ -438,7 +451,12 @@ def _apply_tool_result(turn, block, event):
     tool["result"] = result_text
     if failed or tool["output_lines"] <= 80:
         tool["preview"] = result_text
-    stats = _diff_stats(text)
+    stats = _diff_stats(text) if _tool_result_may_contain_diff(tool.get("name")) else {
+        "files": [],
+        "file_stats": [],
+        "added": 0,
+        "deleted": 0,
+    }
     if stats["files"]:
         tool["diff"] = {"files": len(stats["files"]), "added": stats["added"], "deleted": stats["deleted"]}
         tool["changed_files"] = stats.get("file_stats") or []
@@ -463,6 +481,25 @@ def _append_assistant_text(turn, text):
     turn["assistant_text"] = _short(combined, _MAX_ASSISTANT_TEXT)
 
 
+def _notice_text(event):
+    message = str((event or {}).get("message") or "").strip()
+    if not message:
+        return ""
+    method = str((event or {}).get("method") or "").strip()
+    return "Codex: %s%s" % (message, ("\n\n%s" % method) if method else "")
+
+
+def _notice_entry(event, text):
+    return {
+        "type": "work_notice",
+        "seq": _seq(event),
+        "merged_seq": _seq(event),
+        "level": (event or {}).get("level") or "info",
+        "text": _short(text, _MAX_TOOL_PREVIEW),
+        "ts": (event or {}).get("ts"),
+    }
+
+
 def _stream_delta_text(event, field):
     chunks = (event or {}).get("_stream_chunks") or []
     if chunks:
@@ -477,7 +514,6 @@ def _finalize_turn_for_work(turn):
         sum(int(v or 0) for v in (turn.get("tool_counts") or {}).values()),
         len(turn.get("tools") or []),
     )
-    turn["file_total"] = len(turn.get("files") or [])
     turn["tool_summary"] = _tool_summary(turn.get("tool_counts") or {})
     changed = sorted(
         (turn.get("changed_files") or []),
@@ -488,6 +524,7 @@ def _finalize_turn_for_work(turn):
     turn["diff_added"] = sum(int(row.get("added") or 0) for row in changed)
     turn["diff_deleted"] = sum(int(row.get("deleted") or 0) for row in changed)
     turn["diff_total"] = int(turn.get("diff_added") or 0) + int(turn.get("diff_deleted") or 0)
+    turn["file_total"] = len(changed)
 
     latest = turn.get("latest_tool") or ((turn.get("tools") or [])[-1] if turn.get("tools") else None)
     latest = _compact_tool(latest)
@@ -518,6 +555,7 @@ def _finalize_turn_for_work(turn):
 
 def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
     turns = []
+    notices = []
     current = None
     latest_todos = []
     last_seq = 0
@@ -526,6 +564,18 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
             continue
         typ = event.get("type")
         last_seq = max(last_seq, _seq(event))
+        if typ == "codex_notice":
+            if event.get("silent") or event.get("level") == "debug":
+                continue
+            text = _notice_text(event)
+            if not text:
+                continue
+            if current is None:
+                notices.append(_notice_entry(event, text))
+            else:
+                _append_assistant_text(current, text)
+                current["merged_seq"] = max(current.get("merged_seq") or 0, _seq(event))
+            continue
         if typ == "user":
             text, images, is_human = _human_user_content(event)
             if is_human:
@@ -533,8 +583,7 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
                 turns.append(current)
                 continue
             if current is None:
-                current = _new_turn(event)
-                turns.append(current)
+                continue
             for block in _blocks(event):
                 if block.get("type") == "tool_result":
                     _apply_tool_result(current, block, event)
@@ -542,14 +591,10 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
             continue
         if typ == "turn_started":
             if current is None:
-                current = _new_turn(event)
-                turns.append(current)
+                continue
             current["status"] = "running"
             current["merged_seq"] = max(current.get("merged_seq") or 0, _seq(event))
             continue
-        if current is None and typ in ("assistant", "stream_event", "result", "interrupted"):
-            current = _new_turn(event)
-            turns.append(current)
         if current is None:
             continue
         if typ == "stream_event":
@@ -610,7 +655,12 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
     if pending:
         status = "confirm"
     visible_turns = turns[-max_turns:]
-    file_total = len({path for turn in visible_turns for path in (turn.get("files") or [])})
+    file_total = len({
+        str(row.get("path") or "").strip()
+        for turn in visible_turns
+        for row in (turn.get("changed_files") or [])
+        if isinstance(row, dict) and str(row.get("path") or "").strip()
+    })
     tool_total = sum(int(turn.get("tool_total") or len(turn.get("tools") or [])) for turn in visible_turns)
     visible_turns = [_finalize_turn_for_work(turn) for turn in visible_turns]
     return {
@@ -622,6 +672,7 @@ def summarize_events(events, snapshot=None, pending=None, max_turns=_MAX_TURNS):
         "tool_total": tool_total,
         "file_total": file_total,
         "latest_todos": latest_todos,
+        "notices": notices[-_MAX_NOTICES:],
         "pending_count": len(pending),
         "last_seq": snapshot.get("last_seq") or last_seq,
         "turn_elapsed_ms": snapshot.get("turn_elapsed_ms"),
@@ -721,3 +772,69 @@ def replay_payload(events, snapshot, pending):
         "pending": pending,
         "last_seq": snapshot.get("last_seq") or work.get("last_seq") or 0,
     }
+
+
+def _pending_cache_signature(pending):
+    try:
+        return json.dumps(pending or [], ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:
+        return repr(pending or [])
+
+
+def replay_cache_key(snapshot, pending):
+    snapshot = snapshot or {}
+    return (
+        int(snapshot.get("last_seq") or 0),
+        str(snapshot.get("state") or ""),
+        bool(snapshot.get("running")),
+        bool(snapshot.get("plan")),
+        bool(snapshot.get("task")),
+        str(snapshot.get("model") or ""),
+        str(snapshot.get("cwd") or ""),
+        int(snapshot.get("turn_started_at_ms") or 0),
+        _pending_cache_signature(pending),
+    )
+
+
+def _dynamic_status(snapshot, pending):
+    snapshot = snapshot or {}
+    if pending:
+        return "confirm"
+    return snapshot.get("state") or ("running" if snapshot.get("running") else "idle")
+
+
+def replay_payload_with_snapshot(payload, snapshot, pending):
+    snapshot = snapshot or {}
+    pending = pending or []
+    out = copy.deepcopy(payload or {})
+    out["snapshot"] = snapshot
+    out["pending"] = pending
+    last_seq = snapshot.get("last_seq") or ((out.get("work") or {}).get("last_seq")) or out.get("last_seq") or 0
+    out["last_seq"] = last_seq
+    work = out.get("work")
+    if isinstance(work, dict):
+        work["status"] = _dynamic_status(snapshot, pending)
+        work["running"] = bool(snapshot.get("running"))
+        work["pending_count"] = len(pending)
+        work["last_seq"] = last_seq
+        for key in ("turn_elapsed_ms", "turn_started_at_ms", "server_now_ms"):
+            work[key] = snapshot.get(key)
+        turns = work.get("turns") or []
+        if turns and isinstance(turns[-1], dict) and turns[-1].get("status") == "running":
+            turns[-1]["elapsed_ms"] = snapshot.get("turn_elapsed_ms")
+            turns[-1]["started_at_ms"] = snapshot.get("turn_started_at_ms")
+    return out
+
+
+def replay_payload_cached(session, events_fn, snapshot, pending):
+    key = replay_cache_key(snapshot, pending)
+    cached = getattr(session, _WORK_CACHE_ATTR, None)
+    if isinstance(cached, dict) and cached.get("key") == key and cached.get("payload"):
+        return replay_payload_with_snapshot(cached.get("payload"), snapshot, pending)
+    events = events_fn() if callable(events_fn) else (events_fn or [])
+    payload = replay_payload(events, snapshot or {}, pending or [])
+    try:
+        setattr(session, _WORK_CACHE_ATTR, {"key": key, "payload": copy.deepcopy(payload)})
+    except Exception:
+        pass
+    return payload

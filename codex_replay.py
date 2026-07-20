@@ -157,8 +157,16 @@ def record_timeline(session, obj, replay_max_events, stream_max_chars):
         seq, event_id = event_identity(session, out)
         out["seq"] = seq
         out["event_id"] = event_id
-    elif not out.get("event_id"):
-        out["event_id"] = "%s-%06d-%s" % (session.sid, int(out.get("seq") or 0), out.get("type") or "event")
+    else:
+        # 高水位维护:带 seq 重放/重录(如 repair 回灌 local_tail)时,推进 _next_seq,
+        # 保证新事件 seq 严格大于任何客户端可能已见的 seq,否则 catchup/重连会漏事件。
+        try:
+            high = max(int(out.get("seq") or 0), int(out.get("merged_seq") or 0))
+            session._next_seq = max(int(session._next_seq or 1), high + 1)
+        except (TypeError, ValueError):
+            pass
+        if not out.get("event_id"):
+            out["event_id"] = "%s-%06d-%s" % (session.sid, int(out.get("seq") or 0), out.get("type") or "event")
     field, text = stream_delta_info(out)
     if field and text and not out.get("_stream_chunks"):
         out["_stream_chunks"] = [{"seq": int(out.get("seq") or 0), "text": text}]
@@ -168,6 +176,28 @@ def record_timeline(session, obj, replay_max_events, stream_max_chars):
     if len(session.timeline) > replay_max_events:
         session.timeline = session.timeline[-replay_max_events:]
     return out
+
+
+def _event_ts_seconds(event):
+    try:
+        value = float((event or {}).get("ts") or 0)
+    except (TypeError, ValueError):
+        return 0
+    if value > 100000000000:
+        value = value / 1000.0
+    return value if value > 0 else 0
+
+
+def completion_ts_from_events(events):
+    for event in reversed(list(events or [])):
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") not in ("result", "interrupted", "rate_limited"):
+            continue
+        ts = _event_ts_seconds(event)
+        if ts:
+            return ts
+    return 0
 
 
 def replay_content_score(events):
@@ -212,6 +242,7 @@ def _normalize_history_events(session, events, replay_max_events, stream_max_cha
         max_seq = max(int(event.get("seq") or 0) for event in clean)
         session._next_seq = max(int(session._next_seq or 1), max_seq + 1)
         return clean
+    prev_next = int(session._next_seq or 1)
     session.timeline = []
     session._next_seq = 1
     normalized = []
@@ -222,6 +253,9 @@ def _normalize_history_events(session, events, replay_max_events, stream_max_cha
         recorded = record_timeline(session, item, replay_max_events, stream_max_chars)
         if recorded.get("type") not in ("replay_batch", "state_snapshot", "codex_usage"):
             normalized.append(dict(recorded))
+    # 高水位维护:mid-turn repair 重排历史后,_next_seq 不得回退到已发放过的 seq 之下,
+    # 否则后续事件(含本轮 result)与客户端已渲染的 seq 冲突,完成事件永远到不了前端。
+    session._next_seq = max(session._next_seq, prev_next)
     return normalized
 
 
@@ -333,7 +367,8 @@ def replay_payload(session, after_seq=0, view=None, turn=None):
     pending = session._pending_events_snapshot()
     view = str(view or "").lower()
     if view == "work":
-        return work_summary.replay_payload(_work_replay_events(session), state, pending)
+        return work_summary.replay_payload_cached(
+            session, lambda: _work_replay_events(session), state, pending)
     if view in ("turn", "work_turn", "chat_turn"):
         return work_summary.turn_events_payload(_work_replay_events(session), state, pending, turn=turn)
     return {

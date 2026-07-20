@@ -41,6 +41,28 @@ def record_event(session, obj, limit=200, stamp=True):
     return event
 
 
+def _event_ts_seconds(event):
+    try:
+        value = float((event or {}).get("ts") or 0)
+    except (TypeError, ValueError):
+        return 0
+    if value > 100000000000:
+        value = value / 1000.0
+    return value if value > 0 else 0
+
+
+def completion_ts_from_events(events):
+    for event in reversed(list(events or [])):
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") not in ("result", "interrupted", "rate_limited"):
+            continue
+        ts = _event_ts_seconds(event)
+        if ts:
+            return ts
+    return 0
+
+
 def events_after_seq(session, after_seq=0):
     try:
         after = int(after_seq or 0)
@@ -107,7 +129,7 @@ def replay_payload(session, events, pending, model="", after_seq=0, state_fn=Non
     pending_events = ([{"type": "system", "model": model}] if model and not after_seq else []) + pending
     view = str(view or "").lower()
     if view == "work":
-        return work_summary.replay_payload(events, snapshot, pending)
+        return work_summary.replay_payload_cached(session, lambda: events, snapshot, pending)
     if view in ("turn", "work_turn", "chat_turn"):
         return work_summary.turn_events_payload(events, snapshot, pending, turn=turn)
     return {

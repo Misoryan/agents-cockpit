@@ -9,6 +9,14 @@ TASK_SYSTEM = (
     "Task mode: for multi-step work, keep a concise todo list and update it as "
     "you make progress so the user can follow the task state."
 )
+ASK_SYSTEM = (
+    "When progress depends on a user decision, missing requirement, or choice "
+    "between materially different paths, use the request_user_input tool instead "
+    "of guessing. Prefer a structured questions array for choices: include a "
+    "short header, a clear question, 2-4 options with label and description, and "
+    "multiSelect only when multiple answers are valid. Keep the choices concrete "
+    "so the web UI can render them as a tappable question card."
+)
 
 
 class CodexTurnRunner:
@@ -72,7 +80,7 @@ class CodexTurnRunner:
             "settings": {
                 "model": session.model or session.cfg.get("model") or "",
                 "reasoning_effort": session.cfg.get("reasoning_effort") or None,
-                "developer_instructions": None,
+                "developer_instructions": ASK_SYSTEM,
             },
         }
 

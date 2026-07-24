@@ -19,16 +19,18 @@ def main():
 
     questions = codex_text.clean_questions([
         {"id": "q1", "header": "Pick", "question": "Choose", "isOther": True,
-         "isSecret": True, "options": [{"label": "A", "description": "first"}, "B"]},
+         "isSecret": True, "multiSelect": True,
+         "options": [{"label": "A", "value": "a", "description": "first"}, "B"]},
         "ignored",
     ])
     assert questions == [{
         "id": "q1",
         "header": "Pick",
         "question": "Choose",
+        "multiSelect": True,
         "isOther": True,
         "isSecret": True,
-        "options": [{"label": "A", "description": "first"}, {"label": "B", "description": ""}],
+        "options": [{"label": "A", "value": "a", "description": "first"}, {"label": "B", "description": ""}],
     }]
     assert codex_native._clean_questions(questions) == questions
     assert codex_text.question_text(questions, fallback="fallback") == "Choose"

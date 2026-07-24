@@ -65,6 +65,7 @@ def main():
         turn_params = session._turn_params("hello")
         assert turn_params["input"][0]["text"].startswith(codex_turn.TASK_SYSTEM)
         assert turn_params["collaborationMode"]["settings"]["reasoning_effort"] == "medium"
+        assert "request_user_input" in turn_params["collaborationMode"]["settings"]["developer_instructions"]
         assert turn_params["effort"] == "medium"
         assert turn_params["summary"] == "concise"
 

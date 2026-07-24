@@ -94,6 +94,9 @@ def main():
     parser = ScriptExtractor()
     parser.feed(html)
     js = "\n".join(parser.parts + [_local_script_text(src) for src in parser.srcs])
+    assert "function nAskQuestionMulti(question)" in js
+    assert 'obj.title||"需要你选择"' in js
+    assert "aria-selected" in js
     assert "function noticeKindMeta(kind)" in js
     assert "function noticePayload(kind, s, detail)" in js
     assert "className=\"notice-actions\"" in js

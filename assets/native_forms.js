@@ -44,16 +44,36 @@ function nFindAskItem(card, qid){
   for(var i=0;i<items.length;i++){ if(items[i].dataset.qid===qid) return items[i]; }
   return null;
 }
+function nAskOptionLabel(option){
+  if(option && typeof option==="object") return String(option.label!=null ? option.label : (option.value!=null ? option.value : ""));
+  return String(option==null ? "" : option);
+}
+function nAskOptionValue(option){
+  if(option && typeof option==="object") return String(option.value!=null ? option.value : nAskOptionLabel(option));
+  return nAskOptionLabel(option);
+}
+function nAskOptionDescription(option){
+  return option && typeof option==="object" ? String(option.description||"") : "";
+}
+function nAskBool(value){
+  if(typeof value==="string") return /^(1|true|yes|on)$/i.test(value.trim());
+  return !!value;
+}
+function nAskQuestionMulti(question){
+  question=question||{};
+  return nAskBool(question.multiSelect || question.multi_select || question.multiple || question.allowMultiple);
+}
 function nSubmitAsk(sid, obj, card){
   var qs=nAskQuestions(obj), payload={sid:sid,tool_use_id:obj.tool_use_id};
   if(qs.length){
     var answers={}, fallback=[];
     qs.forEach(function(q,idx){
       var qid=q.id||String(idx), wrap=nFindAskItem(card, qid);
+      if(!wrap) return;
       var vals=[], sels=wrap.querySelectorAll('.qopt.selected');
       sels.forEach(function(sel){ if(sel.dataset.value){ vals.push(sel.dataset.value); } });
       var free=wrap&&wrap.querySelector('.ainp');
-      if(!vals.length && free && free.value.trim()){ vals.push(free.value.trim()); }
+      if(free && free.value.trim()){ vals.push(free.value.trim()); }
       if(vals.length){ answers[qid]=vals; fallback.push(vals.join(", ")); }
     });
     payload.answers=answers; payload.answer=fallback.join("\n");
@@ -70,17 +90,17 @@ function nRenderAsk(sid, st, obj){
   var acard=document.createElement("div"); acard.className="nmsg ask"; acard.dataset.tuid=obj.tool_use_id;
   var qs=nAskQuestions(obj);
   if(qs.length){
-    acard.innerHTML='<div class="aq">'+_I('help-circle')+' '+nEsc(obj.question||"需要你选择")+'</div>';
+    acard.innerHTML='<div class="aq">'+_I('help-circle')+' '+nEsc(obj.title||"需要你选择")+'</div>';
     qs.forEach(function(q,idx){
       var qid=q.id||String(idx), opts=Array.isArray(q.options)?q.options:[];
-      var item=document.createElement("div"); item.className="qitem"; item.dataset.qid=qid;
+      var item=document.createElement("div"); item.className="qitem"; item.dataset.qid=qid; item.dataset.multi=nAskQuestionMulti(q)?"1":"0";
       var html='';
       if(q.header){ html+='<div class="qhead">'+nEsc(q.header)+'</div>'; }
       html+='<div class="qtext">'+nEsc(q.question||q.header||"")+'</div>';
       if(opts.length){
-        html+='<div class="qopts">'+opts.map(function(o){
-          var lab=(o&&o.label)||String(o||""), desc=(o&&o.description)||"";
-          return '<button type="button" class="qopt" data-value="'+nEscAttr(lab)+'"><span class="qlabel">'+nEsc(lab)+'</span>'+(desc?'<span class="qdesc">'+nEsc(desc)+'</span>':'')+'</button>';
+        html+='<div class="qopts" role="'+(nAskQuestionMulti(q)?'group':'listbox')+'">'+opts.map(function(o){
+          var lab=nAskOptionLabel(o), desc=nAskOptionDescription(o), val=nAskOptionValue(o);
+          return '<button type="button" class="qopt" role="option" aria-selected="false" data-value="'+nEscAttr(val)+'"><span class="qlabel">'+nEsc(lab)+'</span>'+(desc?'<span class="qdesc">'+nEsc(desc)+'</span>':'')+'</button>';
         }).join("")+'</div>';
       }
       html+='<textarea class="ainp qfree" rows="2" placeholder="其他 / 补充回答"></textarea>';
@@ -92,10 +112,15 @@ function nRenderAsk(sid, st, obj){
       btn.addEventListener("click", function(){
         var wrap=btn.closest('.qitem');
         var _q=_qmap[wrap.dataset.qid]||{};
-        if(_q.multiSelect){
+        if(nAskQuestionMulti(_q)){
           btn.classList.toggle("selected");
+          btn.setAttribute("aria-selected", btn.classList.contains("selected")?"true":"false");
         }else{
-          wrap.querySelectorAll('.qopt').forEach(function(x){ x.classList.toggle("selected", x===btn); });
+          wrap.querySelectorAll('.qopt').forEach(function(x){
+            var on=x===btn;
+            x.classList.toggle("selected", on);
+            x.setAttribute("aria-selected", on?"true":"false");
+          });
           var free=wrap.querySelector('.ainp'); if(free) free.value="";
           if(qs.length===1) nSubmitAsk(sid,obj,acard);
         }

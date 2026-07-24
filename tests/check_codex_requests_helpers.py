@@ -125,10 +125,11 @@ def main():
     session = FakeSession()
     result = codex_requests.await_user_input(
         session, "ask-1", "item/tool/requestUserInput",
-        {"questions": [{"id": "q1", "question": "Pick?", "options": ["A"]}], "autoResolutionMs": 1000},
+        {"questions": [{"id": "q1", "question": "Pick?", "multiSelect": True, "options": ["A"]}], "autoResolutionMs": 1000},
         timeout=2)
     assert result == {"answers": {"q1": {"answers": ["A"]}}}
     assert session.broadcasts[0]["type"] == "pending_ask"
+    assert session.broadcasts[0]["questions"][0]["multiSelect"] is True
     assert session.broadcasts[0]["auto_resolution_ms"] == 1000
 
     assert codex_requests.form_response({"action": "accept", "content": {"x": 1}}) == {

@@ -3,6 +3,12 @@
 import json
 
 
+def _truthy(value):
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 def text_from_user_input(items):
     parts = []
     for item in items or []:
@@ -19,16 +25,25 @@ def clean_questions(questions):
         options = []
         for option in question.get("options") or []:
             if isinstance(option, dict):
-                options.append({
+                clean_option = {
                     "label": str(option.get("label") or ""),
                     "description": str(option.get("description") or ""),
-                })
+                }
+                if option.get("value") is not None:
+                    clean_option["value"] = str(option.get("value"))
+                options.append(clean_option)
             elif option is not None:
                 options.append({"label": str(option), "description": ""})
         out.append({
             "id": str(question.get("id") or ""),
             "header": str(question.get("header") or ""),
             "question": str(question.get("question") or ""),
+            "multiSelect": _truthy(
+                question.get("multiSelect")
+                or question.get("multi_select")
+                or question.get("multiple")
+                or question.get("allowMultiple")
+            ),
             "isOther": bool(question.get("isOther")),
             "isSecret": bool(question.get("isSecret")),
             "options": options,
